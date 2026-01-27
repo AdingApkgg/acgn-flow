@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import Image from "next/image";
 import Artplayer from "artplayer";
 import artplayerPluginDanmuku from "artplayer-plugin-danmuku";
@@ -40,14 +40,35 @@ export function VideoPlayer({
   const [isReady, setIsReady] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [showPlayer, setShowPlayer] = useState(autoStart || !poster);
+  
+  // 使用 ref 存储不应触发重新初始化的值
   const onProgressRef = useRef(onProgress);
   const onEndedRef = useRef(onEnded);
+  const initialProgressRef = useRef(initialProgress);
+  const posterRef = useRef(poster);
+  const subtitlesRef = useRef(subtitles);
+  const hasInitializedRef = useRef(false);
 
-  // 保持回调引用最新
+  // 保持回调和配置引用最新（不触发重新初始化）
   useEffect(() => {
     onProgressRef.current = onProgress;
     onEndedRef.current = onEnded;
-  }, [onProgress, onEnded]);
+    posterRef.current = poster;
+    subtitlesRef.current = subtitles;
+  }, [onProgress, onEnded, poster, subtitles]);
+  
+  // 只在首次设置时更新 initialProgress
+  useEffect(() => {
+    if (!hasInitializedRef.current) {
+      initialProgressRef.current = initialProgress;
+    }
+  }, [initialProgress]);
+  
+  // 稳定的字幕 URL 列表，用于依赖比较
+  const subtitleUrls = useMemo(() => 
+    subtitles.map(s => s.url).join(","), 
+    [subtitles]
+  );
 
   // 初始化 ArtPlayer
   useEffect(() => {
@@ -109,10 +130,14 @@ export function VideoPlayer({
       );
     }
 
+    // 使用 ref 中的值，避免依赖变化导致重建
+    const currentSubtitles = subtitlesRef.current;
+    const currentPoster = posterRef.current;
+    
     const art = new Artplayer({
       container: containerRef.current,
       url: url,
-      poster: poster || "",
+      poster: currentPoster || "",
       volume: 0.7,
       isLive: false,
       muted: false,
@@ -137,15 +162,14 @@ export function VideoPlayer({
       airplay: true,
       theme: "#a855f7", // 主题色 - 紫色
       lang: "zh-cn",
-      moreVideoAttr: {
-        crossOrigin: "anonymous",
-      },
+      // 注意：不设置 crossOrigin，因为外部视频源（如B站）不支持 CORS
+      // 这会导致截图功能对跨域视频不可用，但视频可以正常播放
       plugins: plugins,
       // 字幕配置（仅在有字幕时添加）
-      ...(subtitles.length > 0
+      ...(currentSubtitles.length > 0
         ? {
             subtitle: {
-              url: subtitles.find((s) => s.default)?.url || subtitles[0]?.url || "",
+              url: currentSubtitles.find((s) => s.default)?.url || currentSubtitles[0]?.url || "",
               type: "vtt",
               style: {
                 color: "#fff",
@@ -177,15 +201,15 @@ export function VideoPlayer({
           },
         },
         // 字幕切换（如果有多个字幕）
-        ...(subtitles.length > 1
+        ...(currentSubtitles.length > 1
           ? [
               {
                 html: "字幕",
                 width: 200,
-                tooltip: subtitles.find((s) => s.default)?.name || subtitles[0]?.name || "无",
+                tooltip: currentSubtitles.find((s) => s.default)?.name || currentSubtitles[0]?.name || "无",
                 selector: [
                   { html: "关闭", value: "" },
-                  ...subtitles.map((sub) => ({
+                  ...currentSubtitles.map((sub) => ({
                     html: sub.name,
                     value: sub.url,
                     default: sub.default,
@@ -216,10 +240,12 @@ export function VideoPlayer({
     art.on("ready", () => {
       setIsReady(true);
       setHasError(false);
+      hasInitializedRef.current = true;
       
-      // 设置初始进度
-      if (initialProgress > 0) {
-        art.currentTime = initialProgress;
+      // 设置初始进度（只在首次初始化时）
+      const progress = initialProgressRef.current;
+      if (progress > 0) {
+        art.currentTime = progress;
       }
     });
 
@@ -246,7 +272,9 @@ export function VideoPlayer({
         artRef.current = null;
       }
     };
-  }, [showPlayer, url, poster, initialProgress, subtitles, danmakuUrl]);
+    // 只在 url、danmakuUrl 或字幕列表真正变化时重建播放器
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPlayer, url, danmakuUrl, subtitleUrls]);
 
   const handlePlay = useCallback(() => {
     setShowPlayer(true);
