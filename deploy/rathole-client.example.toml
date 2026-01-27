@@ -12,9 +12,5 @@ keepalive_secs = 30
 keepalive_interval = 5
 
 # Next.js 应用
-[client.services.acgn-web]
-local_addr = "127.0.0.1:3000"
-
-# Artalk 评论系统
-[client.services.acgn-artalk]
-local_addr = "127.0.0.1:8080"
+[client.services.acgn-flow]
+local_addr = "127.0.0.1:1270"

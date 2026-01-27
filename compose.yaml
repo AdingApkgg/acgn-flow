@@ -1,5 +1,6 @@
 # 内网机 - 运行应用服务
 # 通过 rathole 暴露到公网机
+# PostgreSQL 和 Redis 使用外部服务
 
 services:
   app:
@@ -8,11 +9,11 @@ services:
       dockerfile: Dockerfile
     container_name: acgn-flow-app
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:1270:3000"  # 只监听本地，通过 rathole 转发
+    network_mode: host  # 使用宿主机网络，可直接访问 localhost 上的服务
     environment:
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/acgn_flow
-      - REDIS_URL=redis://redis:6379
+      - PORT=1270
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
       - AUTH_SECRET=${AUTH_SECRET}
       - AUTH_URL=${AUTH_URL}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
@@ -26,47 +27,6 @@ services:
       - UPLOAD_DIR=/app/uploads
     volumes:
       - uploads:/app/uploads
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks:
-      - acgn-flow-network
-
-  postgres:
-    image: postgres:16-alpine
-    container_name: acgn-flow-postgres
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=acgn_flow
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - acgn-flow-network
-
-  redis:
-    image: redis:7-alpine
-    container_name: acgn-flow-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
-    networks:
-      - acgn-flow-network
 
 volumes:
-  postgres_data:
-  redis_data:
   uploads:
-
-networks:
-  acgn-flow-network:
-    driver: bridge

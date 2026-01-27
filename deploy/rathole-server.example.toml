@@ -7,5 +7,5 @@ default_token = "your-secret-token"  # 修改为强密钥，与客户端一致
 heartbeat_interval = 30
 
 # Next.js 应用 - Nginx 反代 127.0.0.1:1270
-[server.services.acgn-web]
+[server.services.acgn-flow]
 bind_addr = "127.0.0.1:1270"
