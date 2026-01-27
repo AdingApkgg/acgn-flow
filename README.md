@@ -118,4 +118,4 @@ anime-flow/
 
 ## License
 
-MIT
+[GNU AGPLv3](LICENSE)
