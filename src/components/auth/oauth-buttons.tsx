@@ -133,16 +133,17 @@ export function OAuthButtons({ callbackUrl = "/", enabledProviders }: OAuthButto
             <Button
               key={provider.id}
               variant="outline"
-              className={`w-full ${provider.className}`}
+              size="sm"
+              className={`w-full text-xs sm:text-sm ${provider.className}`}
               onClick={() => handleOAuthSignIn(provider.id)}
               disabled={loadingProvider !== null}
             >
               {isLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-1.5 sm:mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <Icon className="mr-2 h-4 w-4" />
+                <Icon className="mr-1.5 sm:mr-2 h-4 w-4 flex-shrink-0" />
               )}
-              {provider.name}
+              <span className="truncate">{provider.name}</span>
             </Button>
           );
         })}

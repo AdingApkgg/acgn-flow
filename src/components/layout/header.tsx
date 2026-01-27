@@ -30,7 +30,8 @@ import {
 import { useTheme } from "next-themes";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { motion } from "framer-motion";
 
 export function Header() {
@@ -116,15 +117,15 @@ export function Header() {
         </nav>
 
         {/* Search */}
-        <form onSubmit={handleSearch} className="flex-1 max-w-md mx-4">
+        <form onSubmit={handleSearch} className="flex-1 max-w-md mx-2 md:mx-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="搜索视频..."
+              placeholder="搜索..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-full"
+              className="pl-10 w-full text-sm md:text-base"
             />
           </div>
         </form>
@@ -240,11 +241,11 @@ export function Header() {
               </DropdownMenu>
             </>
           ) : (
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" asChild>
+            <div className="flex items-center gap-1 sm:gap-2">
+              <Button variant="ghost" size="sm" asChild className="px-2 sm:px-4">
                 <Link href="/login">登录</Link>
               </Button>
-              <Button asChild>
+              <Button size="sm" asChild className="px-2 sm:px-4">
                 <Link href="/register">注册</Link>
               </Button>
             </div>

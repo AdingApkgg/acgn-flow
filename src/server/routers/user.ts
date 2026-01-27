@@ -50,6 +50,7 @@ export const userRouter = router({
         where: { id: input.id },
         select: {
           id: true,
+          email: true,
           username: true,
           nickname: true,
           avatar: true,

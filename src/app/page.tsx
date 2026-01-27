@@ -72,9 +72,9 @@ export default function HomePage() {
         </AnimatePresence>
 
         <section className="mb-8">
-          <FadeIn className="flex items-center justify-between mb-6">
+          <FadeIn className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <motion.h1 
-              className="text-2xl font-bold"
+              className="text-xl sm:text-2xl font-bold"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.4 }}
@@ -85,15 +85,17 @@ export default function HomePage() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.4, delay: 0.1 }}
+              className="w-full sm:w-auto"
             >
               <Tabs
                 value={sortBy}
                 onValueChange={(v) => setSortBy(v as SortBy)}
+                className="w-full sm:w-auto"
               >
-                <TabsList>
-                  <TabsTrigger value="latest">最新</TabsTrigger>
-                  <TabsTrigger value="views">热门</TabsTrigger>
-                  <TabsTrigger value="likes">最多点赞</TabsTrigger>
+                <TabsList className="w-full sm:w-auto grid grid-cols-3 sm:flex">
+                  <TabsTrigger value="latest" className="text-xs sm:text-sm">最新</TabsTrigger>
+                  <TabsTrigger value="views" className="text-xs sm:text-sm">热门</TabsTrigger>
+                  <TabsTrigger value="likes" className="text-xs sm:text-sm">最多点赞</TabsTrigger>
                 </TabsList>
               </Tabs>
             </motion.div>

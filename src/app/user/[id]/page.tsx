@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Calendar, Video, Heart, Star, Loader2, MapPin, Globe, ExternalLink } from "lucide-react";
+import { Calendar, Video, Heart, Star, Loader2, MapPin, Globe, ExternalLink, Mail } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useInView } from "react-intersection-observer";
 import { motion } from "framer-motion";
@@ -218,6 +218,13 @@ export default function UserPage({ params }: UserPageProps) {
               )}
             </div>
             <p className="text-muted-foreground">@{user.username}</p>
+            <a
+              href={`mailto:${user.email}`}
+              className="text-sm text-muted-foreground flex items-center gap-1 mt-1 hover:text-primary transition-colors"
+            >
+              <Mail className="h-3 w-3" />
+              {user.email}
+            </a>
 
             {user.bio && (
               <p className="mt-3 text-sm text-muted-foreground max-w-md">

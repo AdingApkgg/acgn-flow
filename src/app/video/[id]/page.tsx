@@ -300,7 +300,7 @@ export default function VideoPage({ params }: VideoPageProps) {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <Link
               href={`/user/${video.uploader.id}`}
               className="flex items-center gap-3 hover:opacity-80"
@@ -320,57 +320,61 @@ export default function VideoPage({ params }: VideoPageProps) {
               </div>
             </Link>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
               <Button
                 variant={status?.liked ? "default" : "outline"}
                 size="sm"
                 onClick={handleLike}
                 disabled={likeMutation.isPending}
-                className={status?.liked ? "bg-green-600 hover:bg-green-700" : ""}
+                className={`px-2 sm:px-3 ${status?.liked ? "bg-green-600 hover:bg-green-700" : ""}`}
               >
                 <Heart
-                  className={`h-4 w-4 mr-1 ${status?.liked ? "fill-current" : ""}`}
+                  className={`h-4 w-4 sm:mr-1 ${status?.liked ? "fill-current" : ""}`}
                 />
-                {video._count.likes}
+                <span className="hidden sm:inline">{video._count.likes}</span>
+                <span className="sm:hidden text-xs ml-1">{video._count.likes}</span>
               </Button>
               <Button
                 variant={status?.confused ? "default" : "outline"}
                 size="sm"
                 onClick={handleConfused}
                 disabled={confusedMutation.isPending}
-                className={status?.confused ? "bg-yellow-600 hover:bg-yellow-700" : ""}
+                className={`px-2 sm:px-3 ${status?.confused ? "bg-yellow-600 hover:bg-yellow-700" : ""}`}
               >
                 <HelpCircle
-                  className={`h-4 w-4 mr-1 ${status?.confused ? "fill-current" : ""}`}
+                  className={`h-4 w-4 sm:mr-1 ${status?.confused ? "fill-current" : ""}`}
                 />
-                {video._count.confused}
+                <span className="hidden sm:inline">{video._count.confused}</span>
+                <span className="sm:hidden text-xs ml-1">{video._count.confused}</span>
               </Button>
               <Button
                 variant={status?.disliked ? "default" : "outline"}
                 size="sm"
                 onClick={handleDislike}
                 disabled={dislikeMutation.isPending}
-                className={status?.disliked ? "bg-red-600 hover:bg-red-700" : ""}
+                className={`px-2 sm:px-3 ${status?.disliked ? "bg-red-600 hover:bg-red-700" : ""}`}
               >
                 <ThumbsDown
-                  className={`h-4 w-4 mr-1 ${status?.disliked ? "fill-current" : ""}`}
+                  className={`h-4 w-4 sm:mr-1 ${status?.disliked ? "fill-current" : ""}`}
                 />
-                {video._count.dislikes}
+                <span className="hidden sm:inline">{video._count.dislikes}</span>
+                <span className="sm:hidden text-xs ml-1">{video._count.dislikes}</span>
               </Button>
               <Button
                 variant={status?.favorited ? "default" : "outline"}
                 size="sm"
                 onClick={handleFavorite}
                 disabled={favoriteMutation.isPending}
+                className="px-2 sm:px-3"
               >
                 <Star
-                  className={`h-4 w-4 mr-1 ${status?.favorited ? "fill-current" : ""}`}
+                  className={`h-4 w-4 sm:mr-1 ${status?.favorited ? "fill-current" : ""}`}
                 />
-                收藏
+                <span className="hidden sm:inline">收藏</span>
               </Button>
-              <Button variant="outline" size="sm" onClick={handleShare}>
-                <Share2 className="h-4 w-4 mr-1" />
-                分享
+              <Button variant="outline" size="sm" onClick={handleShare} className="px-2 sm:px-3">
+                <Share2 className="h-4 w-4 sm:mr-1" />
+                <span className="hidden sm:inline">分享</span>
               </Button>
             </div>
           </div>
@@ -419,7 +423,7 @@ export default function VideoPage({ params }: VideoPageProps) {
           />
         </div>
 
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 mt-6 lg:mt-0">
           <h3 className="font-medium mb-4">相关推荐</h3>
           <p className="text-sm text-muted-foreground">暂无推荐</p>
         </div>

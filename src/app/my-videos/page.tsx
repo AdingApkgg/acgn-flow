@@ -182,12 +182,12 @@ export default function MyVideosPage() {
                 <motion.div
                   key={video.id}
                   variants={staggerItem}
-                  className="flex gap-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                  className="flex flex-col sm:flex-row gap-3 sm:gap-4 p-3 sm:p-4 border rounded-lg hover:bg-muted/50 transition-colors"
                 >
                   {/* 封面 */}
                   <Link
                     href={`/video/${video.id}`}
-                    className="relative w-40 h-24 flex-shrink-0 rounded-md overflow-hidden bg-muted"
+                    className="relative w-full sm:w-40 aspect-video sm:h-24 flex-shrink-0 rounded-md overflow-hidden bg-muted"
                   >
                     {video.coverUrl ? (
                       <Image
@@ -205,15 +205,15 @@ export default function MyVideosPage() {
 
                   {/* 信息 */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                      <div className="min-w-0 flex-1">
                         <Link
                           href={`/video/${video.id}`}
-                          className="font-medium hover:text-primary line-clamp-1"
+                          className="font-medium hover:text-primary line-clamp-2 sm:line-clamp-1"
                         >
                           {video.title}
                         </Link>
-                        <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground flex-wrap">
                           <Badge variant={statusMap[video.status as keyof typeof statusMap]?.variant || "outline"}>
                             {statusMap[video.status as keyof typeof statusMap]?.label || video.status}
                           </Badge>
@@ -221,7 +221,7 @@ export default function MyVideosPage() {
                             <span>{video.category.name}</span>
                           )}
                         </div>
-                        <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-3 sm:gap-4 mt-2 text-xs sm:text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Eye className="h-3 w-3" />
                             {formatViews(video.views)}
@@ -235,7 +235,7 @@ export default function MyVideosPage() {
                       </div>
 
                       {/* 操作按钮 */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0 mt-2 sm:mt-0">
                         <Button variant="ghost" size="icon" asChild>
                           <Link href={`/video/${video.id}`} target="_blank">
                             <ExternalLink className="h-4 w-4" />
