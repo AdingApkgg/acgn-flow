@@ -1,0 +1,77 @@
+# ACGN Flow Docker Compose 配置
+# 复制为 docker-compose.yml 并修改配置
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: acgn-flow-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/acgn_flow
+      - REDIS_URL=redis://redis:6379
+      - AUTH_SECRET=${AUTH_SECRET}
+      - AUTH_URL=${AUTH_URL}
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+      - NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME}
+      - NEXT_PUBLIC_ARTALK_SERVER=${NEXT_PUBLIC_ARTALK_SERVER}
+      - NEXT_PUBLIC_ARTALK_SITE=${NEXT_PUBLIC_ARTALK_SITE}
+    volumes:
+      - ../uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: acgn-flow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: acgn_flow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: acgn-flow-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  artalk:
+    image: artalk/artalk-go:latest
+    container_name: acgn-flow-artalk
+    restart: unless-stopped
+    ports:
+      - "8080:23366"
+    volumes:
+      - artalk_data:/data
+    environment:
+      - ATK_TRUSTED_DOMAINS=${NEXT_PUBLIC_APP_URL}
+
+volumes:
+  postgres_data:
+  redis_data:
+  artalk_data:

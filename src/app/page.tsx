@@ -9,6 +9,7 @@ import { useInView } from "react-intersection-observer";
 import { motion, AnimatePresence } from "framer-motion";
 import { PageWrapper, FadeIn } from "@/components/motion";
 import { AlertTriangle, X } from "lucide-react";
+import { WebsiteJsonLd, OrganizationJsonLd } from "@/components/seo/json-ld";
 
 type SortBy = "latest" | "views" | "likes";
 
@@ -40,6 +41,10 @@ export default function HomePage() {
 
   return (
     <PageWrapper>
+      {/* SEO 结构化数据 */}
+      <WebsiteJsonLd />
+      <OrganizationJsonLd />
+
       <div className="container py-6">
         {/* 公告横幅 */}
         <AnimatePresence>

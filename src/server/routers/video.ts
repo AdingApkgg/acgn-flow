@@ -102,16 +102,11 @@ export const videoRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const whereClause: { uploaderId: string; status?: string } = {
-        uploaderId: ctx.session.user.id,
-      };
-
-      if (input.status !== "ALL") {
-        whereClause.status = input.status;
-      }
-
       const videos = await ctx.prisma.video.findMany({
-        where: whereClause,
+        where: {
+          uploaderId: ctx.session.user.id,
+          ...(input.status !== "ALL" && { status: input.status as "PUBLISHED" | "PENDING" | "REJECTED" }),
+        },
         take: input.limit + 1,
         cursor: input.cursor ? { id: input.cursor } : undefined,
         orderBy: { createdAt: "desc" },

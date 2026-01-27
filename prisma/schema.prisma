@@ -20,6 +20,10 @@ model User {
   nickname      String?
   avatar        String?
   bio           String?
+  pronouns      String?   // 代词 (he/him, she/her, they/them, etc.)
+  website       String?   // 个人网站
+  location      String?   // 所在地
+  socialLinks   Json?     // 社交账号 { twitter?: string, github?: string, ... }
   role          Role      @default(USER)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

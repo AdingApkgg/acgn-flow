@@ -5,10 +5,10 @@ import { trpc } from "@/lib/trpc";
 import { VideoGrid } from "@/components/video/video-grid";
 import { Button } from "@/components/ui/button";
 import { useInView } from "react-intersection-observer";
-import { useEffect } from "react";
-import { Search } from "lucide-react";
+import { useEffect, Suspense } from "react";
+import { Search, Loader2 } from "lucide-react";
 
-export default function SearchPage() {
+function SearchContent() {
   const searchParams = useSearchParams();
   const query = searchParams.get("q") || "";
   const { ref, inView } = useInView();
@@ -74,5 +74,22 @@ export default function SearchPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function SearchFallback() {
+  return (
+    <div className="container py-12 text-center">
+      <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+      <p className="text-muted-foreground mt-4">加载中...</p>
+    </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={<SearchFallback />}>
+      <SearchContent />
+    </Suspense>
   );
 }

@@ -1,0 +1,17 @@
+[Unit]
+Description=Rathole Client - ACGN Flow
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/rathole -c /opt/acgn-flow/deploy/rathole-client.toml
+Restart=always
+RestartSec=5
+User=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rathole-client
+
+[Install]
+WantedBy=multi-user.target

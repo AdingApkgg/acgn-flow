@@ -33,6 +33,7 @@ import { formatViews, formatRelativeTime } from "@/lib/format";
 import { toast } from "sonner";
 import Link from "next/link";
 import { ArtalkComments } from "@/components/comment/artalk-comments";
+import { VideoJsonLd, BreadcrumbJsonLd } from "@/components/seo/json-ld";
 
 interface VideoPageProps {
   params: Promise<{ id: string }>;
@@ -209,15 +210,30 @@ export default function VideoPage({ params }: VideoPageProps) {
     );
   }
 
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://af.saop.cc";
+
   return (
-    <div className="container py-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-4">
-          <VideoPlayer
-            url={video.videoUrl}
-            poster={video.coverUrl}
-            onProgress={handleProgress}
-          />
+    <>
+      {/* SEO 结构化数据 */}
+      <VideoJsonLd video={video} />
+      <BreadcrumbJsonLd
+        items={[
+          { name: "首页", url: baseUrl },
+          ...(video.category
+            ? [{ name: video.category.name, url: `${baseUrl}/category/${video.category.slug}` }]
+            : []),
+          { name: video.title, url: `${baseUrl}/video/${video.id}` },
+        ]}
+      />
+
+      <div className="container py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-4">
+            <VideoPlayer
+              url={video.videoUrl}
+              poster={video.coverUrl}
+              onProgress={handleProgress}
+            />
 
           <div>
             <div className="flex items-start justify-between gap-2">
@@ -409,5 +425,6 @@ export default function VideoPage({ params }: VideoPageProps) {
         </div>
       </div>
     </div>
+    </>
   );
 }

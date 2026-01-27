@@ -15,6 +15,7 @@ import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { motion } from "framer-motion";
 import { CaptchaInput } from "@/components/ui/captcha-input";
+import { OAuthButtons } from "@/components/auth/oauth-buttons";
 
 const registerSchema = z.object({
   email: z.string().email("请输入有效的邮箱地址"),
@@ -183,6 +184,15 @@ export default function RegisterPage() {
               </Button>
             </form>
           </Form>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="mt-6"
+          >
+            <OAuthButtons callbackUrl="/" />
+          </motion.div>
 
           <motion.div 
             className="mt-6 text-center text-sm text-muted-foreground"

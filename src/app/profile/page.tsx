@@ -25,12 +25,42 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Loader2, Camera, Upload, Link, X, Images } from "lucide-react";
+import { Loader2, Camera, Upload, Link, X, Images, MapPin, Globe, AtSign } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const PRONOUNS_OPTIONS = [
+  { value: "", label: "不设置" },
+  { value: "he/him", label: "he/him" },
+  { value: "she/her", label: "she/her" },
+  { value: "they/them", label: "they/them" },
+  { value: "he/they", label: "he/they" },
+  { value: "she/they", label: "she/they" },
+  { value: "any", label: "any pronouns" },
+  { value: "custom", label: "自定义" },
+];
 
 const profileSchema = z.object({
   nickname: z.string().min(1, "昵称不能为空").max(50, "昵称最多50个字符"),
   bio: z.string().max(500, "简介最多500个字符").optional(),
+  pronouns: z.string().max(30).optional(),
+  website: z.string().url("请输入有效的URL").or(z.literal("")).optional(),
+  location: z.string().max(100).optional(),
+  socialLinks: z.object({
+    twitter: z.string().optional(),
+    github: z.string().optional(),
+    discord: z.string().optional(),
+    bilibili: z.string().optional(),
+    youtube: z.string().optional(),
+    pixiv: z.string().optional(),
+  }).optional(),
 });
 
 type ProfileForm = z.infer<typeof profileSchema>;
@@ -78,19 +108,48 @@ export default function ProfilePage() {
     },
   });
 
+  const [customPronouns, setCustomPronouns] = useState(false);
+
   const form = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
       nickname: "",
       bio: "",
+      pronouns: "",
+      website: "",
+      location: "",
+      socialLinks: {
+        twitter: "",
+        github: "",
+        discord: "",
+        bilibili: "",
+        youtube: "",
+        pixiv: "",
+      },
     },
   });
 
   useEffect(() => {
     if (user) {
+      const socialLinks = (user.socialLinks as Record<string, string>) || {};
+      const pronounsValue = user.pronouns || "";
+      const isCustomPronouns = Boolean(pronounsValue && !PRONOUNS_OPTIONS.find(p => p.value === pronounsValue));
+      setCustomPronouns(isCustomPronouns);
+      
       form.reset({
         nickname: user.nickname || "",
         bio: user.bio || "",
+        pronouns: pronounsValue,
+        website: user.website || "",
+        location: user.location || "",
+        socialLinks: {
+          twitter: socialLinks.twitter || "",
+          github: socialLinks.github || "",
+          discord: socialLinks.discord || "",
+          bilibili: socialLinks.bilibili || "",
+          youtube: socialLinks.youtube || "",
+          pixiv: socialLinks.pixiv || "",
+        },
       });
     }
   }, [user, form]);
@@ -443,10 +502,200 @@ export default function ProfilePage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" disabled={isLoading}>
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                保存更改
-              </Button>
+
+              <Separator className="my-6" />
+
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">个人信息</h3>
+
+                <FormField
+                  control={form.control}
+                  name="pronouns"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <AtSign className="h-4 w-4" />
+                        代词 (Pronouns)
+                      </FormLabel>
+                      {customPronouns ? (
+                        <div className="flex gap-2">
+                          <FormControl>
+                            <Input
+                              placeholder="自定义代词"
+                              {...field}
+                            />
+                          </FormControl>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setCustomPronouns(false);
+                              field.onChange("");
+                            }}
+                          >
+                            选择
+                          </Button>
+                        </div>
+                      ) : (
+                        <Select
+                          value={field.value || ""}
+                          onValueChange={(value) => {
+                            if (value === "custom") {
+                              setCustomPronouns(true);
+                              field.onChange("");
+                            } else {
+                              field.onChange(value);
+                            }
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="选择代词" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {PRONOUNS_OPTIONS.map((option) => (
+                              <SelectItem key={option.value || "none"} value={option.value || "none"}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="website"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <Globe className="h-4 w-4" />
+                        个人网站
+                      </FormLabel>
+                      <FormControl>
+                        <Input placeholder="https://example.com" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="location"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        所在地
+                      </FormLabel>
+                      <FormControl>
+                        <Input placeholder="城市、国家" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <Separator className="my-6" />
+
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">社交账号</h3>
+                <p className="text-sm text-muted-foreground">填写您的社交账号用户名或链接</p>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="socialLinks.twitter"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Twitter / X</FormLabel>
+                        <FormControl>
+                          <Input placeholder="@username 或链接" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="socialLinks.github"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>GitHub</FormLabel>
+                        <FormControl>
+                          <Input placeholder="用户名或链接" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="socialLinks.discord"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Discord</FormLabel>
+                        <FormControl>
+                          <Input placeholder="用户名#1234" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="socialLinks.bilibili"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>哔哩哔哩</FormLabel>
+                        <FormControl>
+                          <Input placeholder="UID 或主页链接" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="socialLinks.youtube"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>YouTube</FormLabel>
+                        <FormControl>
+                          <Input placeholder="频道链接" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="socialLinks.pixiv"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Pixiv</FormLabel>
+                        <FormControl>
+                          <Input placeholder="用户 ID 或链接" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4">
+                <Button type="submit" disabled={isLoading}>
+                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  保存更改
+                </Button>
+              </div>
             </form>
           </Form>
         </CardContent>

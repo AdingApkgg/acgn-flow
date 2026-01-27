@@ -4,12 +4,13 @@ import { ZodError } from "zod";
 import { prisma } from "@/lib/prisma";
 import { redis } from "@/lib/redis";
 import { auth } from "@/lib/auth";
+import type { Session } from "next-auth";
 
 // Context 类型
 export interface Context {
   prisma: typeof prisma;
   redis: typeof redis;
-  session: Awaited<ReturnType<typeof auth>> | null;
+  session: Session | null;
 }
 
 // 创建 Context

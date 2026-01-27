@@ -2,18 +2,19 @@
 # 将本地服务暴露到公网机
 
 [client]
-remote_addr = "公网机IP:2333"  # 修改为你的公网机 IP 和 rathole 服务端口
-default_token = "your-secret-token"  # 修改为你的密钥
+remote_addr = "公网机IP:2333"  # 修改为你的公网机 IP
+default_token = "your-secret-token"  # 修改为强密钥
+retry_interval = 5  # 重连间隔(秒)
 
 [client.transport]
 type = "tcp"
+keepalive_secs = 30
+keepalive_interval = 5
 
+# Next.js 应用
 [client.services.acgn-web]
 local_addr = "127.0.0.1:3000"
 
+# Artalk 评论系统
 [client.services.acgn-artalk]
 local_addr = "127.0.0.1:8080"
-
-# 如果需要暴露上传文件目录（通过 nginx 静态服务）
-# [client.services.acgn-uploads]
-# local_addr = "127.0.0.1:8081"

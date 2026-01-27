@@ -110,6 +110,9 @@ export default function RootLayout({
         <link rel="alternate" type="application/rss+xml" title="RSS Feed" href="/feed.xml" />
         <link rel="apple-touch-icon" href="/apple-icon" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        {/* AI 友好标签 */}
+        <meta name="ai-content-description" content="ACGN Flow - 动画、漫画、游戏、轻小说相关视频内容分享平台" />
+        <link rel="author" href="/llms.txt" />
       </head>
       <body className={`${notoSansSC.variable} ${notoSansJP.variable} font-sans`}>
         <Providers>

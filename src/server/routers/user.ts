@@ -54,6 +54,10 @@ export const userRouter = router({
           nickname: true,
           avatar: true,
           bio: true,
+          pronouns: true,
+          website: true,
+          location: true,
+          socialLinks: true,
           createdAt: true,
           _count: {
             select: {
@@ -119,6 +123,10 @@ export const userRouter = router({
         nickname: true,
         avatar: true,
         bio: true,
+        pronouns: true,
+        website: true,
+        location: true,
+        socialLinks: true,
         role: true,
         createdAt: true,
       },
@@ -137,12 +145,27 @@ export const userRouter = router({
       z.object({
         nickname: z.string().min(1).max(50).optional(),
         bio: z.string().max(500).optional(),
+        pronouns: z.string().max(30).optional(),
+        website: z.string().url().or(z.literal("")).optional(),
+        location: z.string().max(100).optional(),
+        socialLinks: z.object({
+          twitter: z.string().optional(),
+          github: z.string().optional(),
+          discord: z.string().optional(),
+          bilibili: z.string().optional(),
+          youtube: z.string().optional(),
+          pixiv: z.string().optional(),
+        }).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const { socialLinks, ...rest } = input;
       const user = await ctx.prisma.user.update({
         where: { id: ctx.session.user.id },
-        data: input,
+        data: {
+          ...rest,
+          ...(socialLinks !== undefined && { socialLinks }),
+        },
       });
 
       return { success: true, user };
