@@ -24,22 +24,37 @@ const WaveBackground = dynamic(
 
 export type BackgroundType = "particles" | "shapes" | "wave" | "none";
 
-interface BackgroundStore {
+interface VisualSettings {
   backgroundType: BackgroundType;
+  opacity: number; // 0-100
+  blur: number; // 0-20
+  borderRadius: number; // 0-24
   setBackgroundType: (type: BackgroundType) => void;
+  setOpacity: (value: number) => void;
+  setBlur: (value: number) => void;
+  setBorderRadius: (value: number) => void;
 }
 
-export const useBackgroundStore = create<BackgroundStore>()(
+export const useVisualSettings = create<VisualSettings>()(
   persist(
     (set) => ({
       backgroundType: "particles",
+      opacity: 95,
+      blur: 10,
+      borderRadius: 12,
       setBackgroundType: (type) => set({ backgroundType: type }),
+      setOpacity: (value) => set({ opacity: value }),
+      setBlur: (value) => set({ blur: value }),
+      setBorderRadius: (value) => set({ borderRadius: value }),
     }),
     {
-      name: "background-preference",
+      name: "visual-settings",
     }
   )
 );
+
+// 兼容旧的 useBackgroundStore
+export const useBackgroundStore = useVisualSettings;
 
 export function SceneBackground() {
   const { backgroundType } = useBackgroundStore();

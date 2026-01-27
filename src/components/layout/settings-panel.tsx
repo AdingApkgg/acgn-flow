@@ -1,0 +1,195 @@
+"use client";
+
+import { useTheme } from "next-themes";
+import { useVisualSettings, type BackgroundType } from "@/components/three/scene-background";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Settings,
+  Sun,
+  Moon,
+  Monitor,
+  Sparkles,
+  Circle,
+  Waves,
+  EyeOff,
+  Check,
+} from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Separator } from "@/components/ui/separator";
+
+export function SettingsPanel() {
+  const { theme, setTheme } = useTheme();
+  const {
+    backgroundType,
+    opacity,
+    blur,
+    borderRadius,
+    setBackgroundType,
+    setOpacity,
+    setBlur,
+    setBorderRadius,
+  } = useVisualSettings();
+
+  const themeOptions = [
+    { value: "system", label: "跟随系统", icon: Monitor },
+    { value: "light", label: "浅色", icon: Sun },
+    { value: "dark", label: "深色", icon: Moon },
+  ] as const;
+
+  const backgroundOptions = [
+    { value: "particles", label: "粒子", icon: Sparkles },
+    { value: "shapes", label: "悬浮", icon: Circle },
+    { value: "wave", label: "波浪", icon: Waves },
+    { value: "none", label: "关闭", icon: EyeOff },
+  ] as const;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="icon">
+          <Settings className="h-5 w-5" />
+          <span className="sr-only">设置</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="font-medium text-sm">外观设置</h4>
+          </div>
+
+          {/* 主题切换 */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">主题</Label>
+            <div className="flex gap-1">
+              {themeOptions.map((option) => (
+                <Button
+                  key={option.value}
+                  variant={theme === option.value ? "default" : "outline"}
+                  size="sm"
+                  className="flex-1 gap-1.5"
+                  onClick={() => setTheme(option.value)}
+                >
+                  <option.icon className="h-3.5 w-3.5" />
+                  <span className="text-xs">{option.label}</span>
+                  {theme === option.value && (
+                    <Check className="h-3 w-3 ml-auto" />
+                  )}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* 背景动画 */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">背景动画</Label>
+            <ToggleGroup
+              type="single"
+              value={backgroundType}
+              onValueChange={(value) => {
+                if (value) setBackgroundType(value as BackgroundType);
+              }}
+              className="justify-start"
+            >
+              {backgroundOptions.map((option) => (
+                <ToggleGroupItem
+                  key={option.value}
+                  value={option.value}
+                  aria-label={option.label}
+                  className="gap-1 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                  size="sm"
+                >
+                  <option.icon className="h-3.5 w-3.5" />
+                  <span className="text-xs">{option.label}</span>
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
+
+          <Separator />
+
+          {/* 透明度 */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">
+                页面透明度
+              </Label>
+              <span className="text-xs text-muted-foreground">{opacity}%</span>
+            </div>
+            <Slider
+              value={[opacity]}
+              onValueChange={([value]) => setOpacity(value)}
+              min={50}
+              max={100}
+              step={5}
+              className="w-full"
+            />
+          </div>
+
+          {/* 模糊度 */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">
+                页面模糊度
+              </Label>
+              <span className="text-xs text-muted-foreground">{blur}px</span>
+            </div>
+            <Slider
+              value={[blur]}
+              onValueChange={([value]) => setBlur(value)}
+              min={0}
+              max={20}
+              step={2}
+              className="w-full"
+            />
+          </div>
+
+          {/* 圆角 */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">
+                页面圆角
+              </Label>
+              <span className="text-xs text-muted-foreground">
+                {borderRadius}px
+              </span>
+            </div>
+            <Slider
+              value={[borderRadius]}
+              onValueChange={([value]) => setBorderRadius(value)}
+              min={0}
+              max={24}
+              step={4}
+              className="w-full"
+            />
+          </div>
+
+          <Separator />
+
+          <p className="text-xs text-muted-foreground text-center">
+            设置会自动保存到本地
+          </p>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// CSS 变量 Hook，用于应用视觉设置
+export function useVisualSettingsCSS() {
+  const { opacity, blur, borderRadius } = useVisualSettings();
+
+  return {
+    "--visual-opacity": opacity / 100,
+    "--visual-blur": `${blur}px`,
+    "--visual-radius": `${borderRadius}px`,
+  } as React.CSSProperties;
+}

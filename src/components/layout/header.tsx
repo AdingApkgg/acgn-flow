@@ -19,26 +19,20 @@ import {
   Menu,
   Upload,
   User,
-  Settings,
   LogOut,
   Heart,
   History,
   Video,
-  Moon,
-  Sun,
-  Monitor,
-  Check,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { motion } from "framer-motion";
+import { SettingsPanel } from "./settings-panel";
 
 export function Header() {
   const { data: session, status } = useSession();
-  const { theme, setTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState("");
   const router = useRouter();
 
@@ -133,33 +127,8 @@ export function Header() {
 
         {/* Right Section */}
         <div className="flex items-center gap-2 flex-1 justify-end">
-          {/* Theme Toggle */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                <span className="sr-only">切换主题</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setTheme("system")}>
-                <Monitor className="mr-2 h-4 w-4" />
-                跟随系统
-                {theme === "system" && <Check className="ml-auto h-4 w-4" />}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("light")}>
-                <Sun className="mr-2 h-4 w-4" />
-                浅色
-                {theme === "light" && <Check className="ml-auto h-4 w-4" />}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("dark")}>
-                <Moon className="mr-2 h-4 w-4" />
-                深色
-                {theme === "dark" && <Check className="ml-auto h-4 w-4" />}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Settings Panel */}
+          <SettingsPanel />
 
           {status === "loading" ? (
             <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
@@ -211,7 +180,7 @@ export function Header() {
                   <DropdownMenuItem asChild>
                     <Link href="/profile">
                       <User className="mr-2 h-4 w-4" />
-                      个人中心
+                      个人信息
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
@@ -230,12 +199,6 @@ export function Header() {
                     <Link href="/history">
                       <History className="mr-2 h-4 w-4" />
                       观看历史
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/settings">
-                      <Settings className="mr-2 h-4 w-4" />
-                      设置
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />

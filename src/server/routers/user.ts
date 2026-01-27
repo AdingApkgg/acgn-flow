@@ -545,4 +545,64 @@ export const userRouter = router({
 
       return { success: true };
     }),
+
+  // ==================== OAuth 账号绑定 ====================
+
+  // 获取已绑定的 OAuth 账号
+  getLinkedAccounts: protectedProcedure.query(async ({ ctx }) => {
+    const accounts = await ctx.prisma.account.findMany({
+      where: { userId: ctx.session.user.id },
+      select: {
+        id: true,
+        provider: true,
+        providerAccountId: true,
+      },
+    });
+
+    return accounts.map((account) => ({
+      id: account.id,
+      provider: account.provider,
+      providerAccountId: account.providerAccountId,
+    }));
+  }),
+
+  // 解绑 OAuth 账号
+  unlinkAccount: protectedProcedure
+    .input(z.object({ provider: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      // 检查用户是否有密码（如果没有密码且只有一个 OAuth 账号，不能解绑）
+      const user = await ctx.prisma.user.findUnique({
+        where: { id: ctx.session.user.id },
+        select: { password: true },
+      });
+
+      const accountCount = await ctx.prisma.account.count({
+        where: { userId: ctx.session.user.id },
+      });
+
+      // 如果没有密码且只有一个 OAuth 账号，不能解绑
+      if (!user?.password && accountCount <= 1) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "您需要先设置密码才能解绑最后一个第三方账号",
+        });
+      }
+
+      // 删除绑定
+      const deleted = await ctx.prisma.account.deleteMany({
+        where: {
+          userId: ctx.session.user.id,
+          provider: input.provider,
+        },
+      });
+
+      if (deleted.count === 0) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "未找到该第三方账号绑定",
+        });
+      }
+
+      return { success: true };
+    }),
 });

@@ -54,6 +54,10 @@
 
 :root {
   --radius: 0.625rem;
+  /* 视觉设置变量（由 JS 动态更新） */
+  --visual-opacity: 0.95;
+  --visual-blur: 10px;
+  --visual-radius: 12px;
   --background: oklch(0.99 0.005 285);
   --foreground: oklch(0.15 0.02 285);
   --card: oklch(1 0 0);
@@ -251,4 +255,34 @@
   .dark ::-webkit-scrollbar-thumb:hover {
     background: oklch(0.6 0.15 285 / 60%);
   }
+}
+
+/* 视觉设置应用 - 使用 CSS 变量控制透明度、模糊度和圆角 */
+@layer utilities {
+  .glass-effect {
+    background-color: hsl(var(--background) / var(--visual-opacity));
+    backdrop-filter: blur(var(--visual-blur));
+    -webkit-backdrop-filter: blur(var(--visual-blur));
+  }
+
+  .visual-radius {
+    border-radius: var(--visual-radius);
+  }
+}
+
+/* Header 玻璃态效果 */
+header.sticky {
+  background-color: hsl(var(--background) / var(--visual-opacity)) !important;
+  backdrop-filter: blur(var(--visual-blur));
+  -webkit-backdrop-filter: blur(var(--visual-blur));
+}
+
+/* Card 圆角应用 */
+[data-slot="card"] {
+  border-radius: var(--visual-radius);
+}
+
+/* Popover/Dialog 圆角应用 */
+[data-radix-popper-content-wrapper] > div {
+  border-radius: var(--visual-radius);
 }

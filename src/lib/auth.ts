@@ -4,7 +4,6 @@ import Credentials from "next-auth/providers/credentials";
 import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
 import Discord from "next-auth/providers/discord";
-import SteamProvider from "authjs-steam-provider";
 import type { Provider } from "next-auth/providers";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
@@ -81,17 +80,6 @@ if (process.env.AUTH_DISCORD_ID && process.env.AUTH_DISCORD_SECRET) {
       clientId: process.env.AUTH_DISCORD_ID,
       clientSecret: process.env.AUTH_DISCORD_SECRET,
     })
-  );
-}
-
-// Steam OpenID - 使用函数式 provider（需要 Request 对象）
-if (process.env.AUTH_STEAM_KEY) {
-  staticProviders.push(
-    ((req: Request) =>
-      SteamProvider(req, {
-        clientSecret: process.env.AUTH_STEAM_KEY!,
-        callbackUrl: `${process.env.AUTH_URL}/api/auth/callback`,
-      })) as unknown as Provider
   );
 }
 
