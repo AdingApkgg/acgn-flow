@@ -1,0 +1,12 @@
+# Rathole 服务端配置 - 公网机
+# 接收内网机的连接
+
+[server]
+bind_addr = "0.0.0.0:2333"  # rathole 监听端口
+default_token = "your-secret-token"  # 修改为你的密钥
+
+[server.services.acgn-web]
+bind_addr = "127.0.0.1:3000"  # 本地监听，nginx 反代
+
+[server.services.acgn-artalk]
+bind_addr = "127.0.0.1:8080"  # 本地监听，nginx 反代

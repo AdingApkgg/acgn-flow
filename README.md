@@ -1,36 +1,121 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ACGN Flow
 
-## Getting Started
+ACGN Fans 流式媒体内容分享平台。不存储视频文件，仅通过用户提供的直链加载视频。
 
-First, run the development server:
+## 技术栈
+
+- **框架**: Next.js 15 + TypeScript + Turbopack
+- **样式**: Tailwind CSS + shadcn/ui
+- **状态**: Zustand + TanStack Query
+- **API**: tRPC + Zod
+- **认证**: NextAuth.js
+- **数据库**: PostgreSQL + Prisma
+- **缓存**: Redis + ioredis
+- **播放器**: react-player + hls.js
+
+## 开始开发
+
+### 1. 安装依赖
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. 配置环境变量
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+复制 `.env.example` 到 `.env` 并填写配置：
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cp .env.example .env
+```
 
-## Learn More
+### 3. 初始化数据库
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# 生成 Prisma Client
+pnpm db:generate
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# 推送数据库 schema
+pnpm db:push
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# (可选) 填充初始数据
+pnpm db:seed
+```
 
-## Deploy on Vercel
+### 4. 启动开发服务器
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+pnpm dev
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+访问 http://localhost:3000
+
+## 可用脚本
+
+| 命令 | 说明 |
+|------|------|
+| `pnpm dev` | 启动开发服务器 (Turbopack) |
+| `pnpm build` | 构建生产版本 |
+| `pnpm start` | 启动生产服务器 |
+| `pnpm lint` | 运行 ESLint |
+| `pnpm db:generate` | 生成 Prisma Client |
+| `pnpm db:push` | 推送 schema 到数据库 |
+| `pnpm db:migrate` | 运行数据库迁移 |
+| `pnpm db:studio` | 打开 Prisma Studio |
+| `pnpm db:seed` | 填充初始数据 |
+
+## 容器化部署
+
+### 使用 Podman Compose
+
+```bash
+# 构建并启动所有服务
+podman-compose up -d --build
+
+# 查看日志
+podman-compose logs -f app
+
+# 停止服务
+podman-compose down
+```
+
+### 服务说明
+
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| app | 3000 | Next.js 应用 |
+| postgres | 5432 | PostgreSQL 数据库 |
+| redis | 6379 | Redis 缓存 |
+| nginx | 80/443 | 反向代理 |
+| artalk | 8080 | Artalk 评论系统 |
+
+## 目录结构
+
+```
+anime-flow/
+├── prisma/              # Prisma schema 和迁移
+├── src/
+│   ├── app/             # Next.js App Router 页面
+│   ├── components/      # React 组件
+│   │   ├── layout/      # 布局组件
+│   │   ├── ui/          # shadcn/ui 组件
+│   │   └── video/       # 视频相关组件
+│   ├── lib/             # 工具函数
+│   ├── server/          # 服务端代码
+│   │   └── routers/     # tRPC routers
+│   └── stores/          # Zustand stores
+├── nginx/               # Nginx 配置
+├── uploads/             # 上传文件目录
+├── compose.yaml         # Docker Compose 配置
+└── Dockerfile           # Docker 构建文件
+```
+
+## 默认账户
+
+运行 `pnpm db:seed` 后：
+
+- 管理员: admin@animeflow.com / admin123
+
+## License
+
+MIT
