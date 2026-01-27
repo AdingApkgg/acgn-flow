@@ -17,6 +17,24 @@ const SceneBackground = dynamic(
   { ssr: false }
 );
 
+// 注册 Service Worker
+function ServiceWorkerRegistration() {
+  useEffect(() => {
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((registration) => {
+          console.log("Service Worker registered:", registration.scope);
+        })
+        .catch((error) => {
+          console.error("Service Worker registration failed:", error);
+        });
+    }
+  }, []);
+
+  return null;
+}
+
 // 应用视觉设置 CSS 变量
 function VisualSettingsApplier({ children }: { children: React.ReactNode }) {
   const { opacity, blur, borderRadius } = useVisualSettings();
@@ -72,6 +90,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             disableTransitionOnChange
           >
             <VisualSettingsApplier>
+              <ServiceWorkerRegistration />
               <SceneBackground />
               {children}
               <Toaster richColors position="top-center" />
