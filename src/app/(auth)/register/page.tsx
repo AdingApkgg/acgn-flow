@@ -14,12 +14,14 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { motion } from "framer-motion";
+import { CaptchaInput } from "@/components/ui/captcha-input";
 
 const registerSchema = z.object({
   email: z.string().email("请输入有效的邮箱地址"),
   username: z.string().min(3, "用户名至少3个字符").max(20, "用户名最多20个字符"),
   password: z.string().min(6, "密码至少6个字符"),
   confirmPassword: z.string(),
+  captcha: z.string().min(1, "请输入计算结果"),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "两次密码不一致",
   path: ["confirmPassword"],
@@ -30,6 +32,7 @@ type RegisterForm = z.infer<typeof registerSchema>;
 export default function RegisterPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [captchaKey, setCaptchaKey] = useState(0);
 
   const registerMutation = trpc.user.register.useMutation({
     onSuccess: () => {
@@ -38,6 +41,8 @@ export default function RegisterPage() {
     },
     onError: (error) => {
       toast.error("注册失败", { description: error.message });
+      setCaptchaKey((k) => k + 1);
+      form.setValue("captcha", "");
     },
   });
 
@@ -48,12 +53,29 @@ export default function RegisterPage() {
       username: "",
       password: "",
       confirmPassword: "",
+      captcha: "",
     },
   });
 
   async function onSubmit(data: RegisterForm) {
     setIsLoading(true);
     try {
+      // 验证验证码
+      const captchaRes = await fetch("/api/captcha", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ captcha: data.captcha }),
+      });
+      const captchaResult = await captchaRes.json();
+
+      if (!captchaResult.valid) {
+        toast.error("验证码错误");
+        setCaptchaKey((k) => k + 1);
+        form.setValue("captcha", "");
+        setIsLoading(false);
+        return;
+      }
+
       await registerMutation.mutateAsync({
         email: data.email,
         username: data.username,
@@ -135,6 +157,23 @@ export default function RegisterPage() {
                       <Input type="password" placeholder="******" {...field} />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="captcha"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>验证码</FormLabel>
+                    <FormControl>
+                      <CaptchaInput
+                        key={captchaKey}
+                        value={field.value}
+                        onChange={field.onChange}
+                        error={form.formState.errors.captcha?.message}
+                      />
+                    </FormControl>
                   </FormItem>
                 )}
               />

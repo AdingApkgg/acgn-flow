@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 interface Video {
   id: string;
   title: string;
-  coverUrl: string;
+  coverUrl?: string | null;
   duration?: number | null;
   views: number;
   createdAt: Date;

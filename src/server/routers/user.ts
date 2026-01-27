@@ -42,6 +42,72 @@ export const userRouter = router({
       return { id: user.id, email: user.email, username: user.username };
     }),
 
+  // 获取用户公开资料
+  getProfile: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const user = await ctx.prisma.user.findUnique({
+        where: { id: input.id },
+        select: {
+          id: true,
+          username: true,
+          nickname: true,
+          avatar: true,
+          bio: true,
+          createdAt: true,
+          _count: {
+            select: {
+              videos: { where: { status: "PUBLISHED" } },
+              likes: true,
+              favorites: true,
+            },
+          },
+        },
+      });
+
+      if (!user) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+      }
+
+      return user;
+    }),
+
+  // 获取用户发布的视频
+  getVideos: publicProcedure
+    .input(
+      z.object({
+        userId: z.string(),
+        limit: z.number().min(1).max(50).default(20),
+        cursor: z.string().nullish(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const videos = await ctx.prisma.video.findMany({
+        where: {
+          uploaderId: input.userId,
+          status: "PUBLISHED",
+        },
+        take: input.limit + 1,
+        cursor: input.cursor ? { id: input.cursor } : undefined,
+        orderBy: { createdAt: "desc" },
+        include: {
+          uploader: {
+            select: { id: true, username: true, nickname: true, avatar: true },
+          },
+          category: { select: { id: true, name: true, slug: true } },
+          _count: { select: { likes: true, favorites: true } },
+        },
+      });
+
+      let nextCursor: string | undefined = undefined;
+      if (videos.length > input.limit) {
+        const nextItem = videos.pop();
+        nextCursor = nextItem!.id;
+      }
+
+      return { videos, nextCursor };
+    }),
+
   // 获取当前用户信息
   me: protectedProcedure.query(async ({ ctx }) => {
     const user = await ctx.prisma.user.findUnique({

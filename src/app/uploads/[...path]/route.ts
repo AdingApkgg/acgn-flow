@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFile, stat } from "fs/promises";
-import { join, resolve } from "path";
+import { resolve } from "path";
 import { existsSync } from "fs";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "./uploads";

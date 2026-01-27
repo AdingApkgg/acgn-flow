@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
+import Image from "next/image";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Play, AlertCircle } from "lucide-react";
 
@@ -109,10 +110,12 @@ export function VideoPlayer({
         className="relative aspect-video bg-black rounded-lg overflow-hidden cursor-pointer group"
         onClick={handlePlay}
       >
-        <img
+        <Image
           src={poster}
           alt="Video poster"
-          className="w-full h-full object-cover"
+          fill
+          className="object-cover"
+          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 50vw"
         />
         <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
           <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">

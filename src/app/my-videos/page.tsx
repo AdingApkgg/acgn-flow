@@ -260,7 +260,7 @@ export default function MyVideosPage() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>确定要删除这个视频吗？</AlertDialogTitle>
                               <AlertDialogDescription>
-                                视频 "{video.title}" 将被删除，此操作不可撤销。
+                                视频 &ldquo;{video.title}&rdquo; 将被删除，此操作不可撤销。
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>

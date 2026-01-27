@@ -14,10 +14,12 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { CaptchaInput } from "@/components/ui/captcha-input";
 
 const loginSchema = z.object({
   email: z.string().email("请输入有效的邮箱地址"),
   password: z.string().min(6, "密码至少6个字符"),
+  captcha: z.string().min(1, "请输入计算结果"),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
@@ -28,17 +30,36 @@ export default function LoginPage() {
   const callbackUrl = searchParams.get("callbackUrl") || "/";
   const [isLoading, setIsLoading] = useState(false);
 
+  const [captchaKey, setCaptchaKey] = useState(0);
+
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
       email: "",
       password: "",
+      captcha: "",
     },
   });
 
   async function onSubmit(data: LoginForm) {
     setIsLoading(true);
     try {
+      // 验证验证码
+      const captchaRes = await fetch("/api/captcha", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ captcha: data.captcha }),
+      });
+      const captchaResult = await captchaRes.json();
+
+      if (!captchaResult.valid) {
+        toast.error("验证码错误");
+        setCaptchaKey((k) => k + 1);
+        form.setValue("captcha", "");
+        setIsLoading(false);
+        return;
+      }
+
       const result = await signIn("credentials", {
         email: data.email,
         password: data.password,
@@ -47,6 +68,8 @@ export default function LoginPage() {
 
       if (result?.error) {
         toast.error("登录失败", { description: "邮箱或密码错误" });
+        setCaptchaKey((k) => k + 1);
+        form.setValue("captcha", "");
       } else {
         toast.success("登录成功");
         router.push(callbackUrl);
@@ -108,6 +131,23 @@ export default function LoginPage() {
                       <Input type="password" placeholder="******" {...field} />
                     </FormControl>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="captcha"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>验证码</FormLabel>
+                    <FormControl>
+                      <CaptchaInput
+                        key={captchaKey}
+                        value={field.value}
+                        onChange={field.onChange}
+                        error={form.formState.errors.captcha?.message}
+                      />
+                    </FormControl>
                   </FormItem>
                 )}
               />

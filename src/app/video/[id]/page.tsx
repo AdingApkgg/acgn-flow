@@ -75,6 +75,7 @@ export default function VideoPage({ params }: VideoPageProps) {
   // 增加观看次数
   useEffect(() => {
     incrementViews.mutate({ id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   // 记录观看历史（用户登录时）
@@ -83,9 +84,9 @@ export default function VideoPage({ params }: VideoPageProps) {
     // 确保只在 session 和 video 都加载完成后记录一次
     if (session?.user && video && historyRecordedRef.current !== id) {
       historyRecordedRef.current = id;
-      console.log("Recording history for video:", id);
       recordHistoryMutation.mutate({ videoId: id, progress: 0 });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, session?.user, video]);
 
   // 更新观看进度（每 30 秒更新一次）
@@ -251,7 +252,7 @@ export default function VideoPage({ params }: VideoPageProps) {
                         <AlertDialogHeader>
                           <AlertDialogTitle>确定要删除这个视频吗？</AlertDialogTitle>
                           <AlertDialogDescription>
-                            视频 "{video.title}" 将被删除，此操作不可撤销。
+                            视频 &ldquo;{video.title}&rdquo; 将被删除，此操作不可撤销。
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { VideoCard } from "@/components/video/video-card";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Star, Loader2 } from "lucide-react";
 import { useInView } from "react-intersection-observer";
