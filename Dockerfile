@@ -23,6 +23,8 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV SKIP_ENV_VALIDATION=1
+# Dummy DATABASE_URL for build time (actual URL provided at runtime)
+ENV DATABASE_URL="postgresql://user:pass@localhost:5432/db"
 
 RUN pnpm run build
 
