@@ -58,7 +58,12 @@ export function Header() {
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="w-72">
-            <nav className="flex flex-col gap-4 mt-8">
+            <SheetHeader>
+              <VisuallyHidden>
+                <SheetTitle>导航菜单</SheetTitle>
+              </VisuallyHidden>
+            </SheetHeader>
+            <nav className="flex flex-col gap-4 mt-4">
               <Link href="/" className="text-lg font-semibold">
                 首页
               </Link>

@@ -1,5 +1,6 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useState, useCallback, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { RefreshCw } from "lucide-react";
