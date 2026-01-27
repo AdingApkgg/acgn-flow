@@ -9,7 +9,7 @@ services:
     container_name: acgn-flow-app
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"  # 只监听本地，通过 rathole 转发
+      - "127.0.0.1:1270:3000"  # 只监听本地，通过 rathole 转发
     environment:
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/acgn_flow
       - REDIS_URL=redis://redis:6379
@@ -62,24 +62,10 @@ services:
     networks:
       - acgn-flow-network
 
-  artalk:
-    image: artalk/artalk-go:latest
-    container_name: acgn-flow-artalk
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8080:23366"  # 只监听本地，通过 rathole 转发
-    volumes:
-      - artalk_data:/data
-    environment:
-      - TZ=Asia/Shanghai
-    networks:
-      - acgn-flow-network
-
 volumes:
   postgres_data:
   redis_data:
   uploads:
-  artalk_data:
 
 networks:
   acgn-flow-network:

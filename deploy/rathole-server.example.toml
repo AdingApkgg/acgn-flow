@@ -6,10 +6,6 @@ bind_addr = "0.0.0.0:2333"  # rathole 监听端口
 default_token = "your-secret-token"  # 修改为强密钥，与客户端一致
 heartbeat_interval = 30
 
-# Next.js 应用 - Nginx 反代 127.0.0.1:3000
+# Next.js 应用 - Nginx 反代 127.0.0.1:1270
 [server.services.acgn-web]
-bind_addr = "127.0.0.1:3000"
-
-# Artalk 评论系统 - Nginx 反代 127.0.0.1:8080
-[server.services.acgn-artalk]
-bind_addr = "127.0.0.1:8080"
+bind_addr = "127.0.0.1:1270"
