@@ -1,27 +1,14 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans_SC, Noto_Sans_JP } from "next/font/google";
+import "@fontsource/noto-sans-sc/400.css";
+import "@fontsource/noto-sans-sc/500.css";
+import "@fontsource/noto-sans-sc/700.css";
+import "@fontsource/noto-sans-jp/400.css";
+import "@fontsource/noto-sans-jp/500.css";
+import "@fontsource/noto-sans-jp/700.css";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
-
-// 思源黑体简体中文 - 主要字体
-const notoSansSC = Noto_Sans_SC({
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
-  variable: "--font-noto-sans-sc",
-  display: "swap",
-  preload: true,
-});
-
-// 思源黑体日文 - 日文内容回退
-const notoSansJP = Noto_Sans_JP({
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
-  variable: "--font-noto-sans-jp",
-  display: "swap",
-  preload: false,
-});
 
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 const siteName = process.env.NEXT_PUBLIC_APP_NAME || "ACGN Flow";
@@ -80,6 +67,9 @@ export const metadata: Metadata = {
       "application/rss+xml": "/feed.xml",
     },
   },
+  verification: {
+    google: "Makh0QpTE_cFQ_WZF3qShdl6cTicB36RA97vazztCDg",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -114,7 +104,7 @@ export default function RootLayout({
         <meta name="ai-content-description" content="ACGN Flow - 动画、漫画、游戏、轻小说相关视频内容分享平台" />
         <link rel="author" href="/llms.txt" />
       </head>
-      <body className={`${notoSansSC.variable} ${notoSansJP.variable} font-sans`}>
+      <body className="font-sans">
         <Providers>
           <div className="relative min-h-screen flex flex-col">
             <Header />

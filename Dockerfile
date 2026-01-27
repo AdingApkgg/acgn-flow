@@ -50,9 +50,9 @@ RUN mkdir -p /app/uploads && chown -R nextjs:nodejs /app/uploads
 
 USER nextjs
 
-EXPOSE 3000
+EXPOSE 1270
 
-ENV PORT=3000
+ENV PORT=1270
 ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
