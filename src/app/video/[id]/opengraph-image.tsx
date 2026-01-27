@@ -12,14 +12,24 @@ export const contentType = "image/png";
 export default async function Image({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   
-  const video = await prisma.video.findUnique({
-    where: { id },
-    select: {
-      title: true,
-      coverUrl: true,
-      uploader: { select: { nickname: true, username: true } },
-    },
-  });
+  let video: {
+    title: string;
+    coverUrl: string | null;
+    uploader: { nickname: string | null; username: string };
+  } | null = null;
+
+  try {
+    video = await prisma.video.findUnique({
+      where: { id },
+      select: {
+        title: true,
+        coverUrl: true,
+        uploader: { select: { nickname: true, username: true } },
+      },
+    });
+  } catch {
+    // 数据库不可用时返回默认图片
+  }
 
   if (!video) {
     return new ImageResponse(
