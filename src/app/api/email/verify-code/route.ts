@@ -15,7 +15,7 @@ export async function POST(request: Request) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { valid: false, message: parsed.error.errors[0]?.message || "参数错误" },
+        { valid: false, message: parsed.error.issues[0]?.message || "参数错误" },
         { status: 400 }
       );
     }

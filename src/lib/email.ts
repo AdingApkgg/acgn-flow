@@ -129,7 +129,7 @@ export async function sendVerificationCode(
     };
 
     const config = typeConfig[type];
-    const siteName = process.env.NEXT_PUBLIC_SITE_NAME || "ACGN Flow";
+    const siteName = process.env.NEXT_PUBLIC_APP_NAME || "ACGN Flow";
 
     const html = templates.verificationCode({
       siteName,
