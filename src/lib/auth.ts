@@ -95,38 +95,95 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   providers: staticProviders,
   callbacks: {
-    async signIn({ user, account }) {
-      // OAuth 登录时，如果用户不存在则自动创建
-      if (account?.provider !== "credentials" && user.email) {
-        const existingUser = await prisma.user.findUnique({
-          where: { email: user.email },
-        });
+    async signIn({ user, account, profile }) {
+      // 只处理 OAuth 登录
+      if (account?.provider === "credentials" || !user.email) {
+        return true;
+      }
 
-        if (!existingUser) {
-          // 生成唯一用户名
-          const baseUsername = user.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "user";
-          let username = baseUsername;
-          let counter = 1;
-          while (await prisma.user.findUnique({ where: { username } })) {
-            username = `${baseUsername}${counter}`;
-            counter++;
-          }
+      // 检查是否已有相同 email 的用户
+      const existingUser = await prisma.user.findUnique({
+        where: { email: user.email },
+        include: { accounts: true },
+      });
 
-          await prisma.user.create({
+      if (existingUser) {
+        // 检查是否已经关联了这个 OAuth provider
+        const hasAccount = existingUser.accounts.some(
+          (acc) => acc.provider === account!.provider && acc.providerAccountId === account!.providerAccountId
+        );
+
+        if (!hasAccount) {
+          // 将 OAuth 账号关联到现有用户
+          await prisma.account.create({
             data: {
-              email: user.email,
-              username,
-              nickname: user.name,
-              avatar: user.image,
+              userId: existingUser.id,
+              type: account!.type,
+              provider: account!.provider,
+              providerAccountId: account!.providerAccountId,
+              refresh_token: account!.refresh_token,
+              access_token: account!.access_token,
+              expires_at: account!.expires_at,
+              token_type: account!.token_type,
+              scope: account!.scope,
+              id_token: account!.id_token,
+              session_state: account!.session_state as string | undefined,
             },
           });
         }
+
+        // 如果 adapter 创建了一个重复的用户（没有 username），删除它
+        if (user.id && user.id !== existingUser.id) {
+          try {
+            const duplicateUser = await prisma.user.findUnique({
+              where: { id: user.id },
+            });
+            // 只删除由 adapter 创建的临时用户（没有 username 或刚创建的）
+            if (duplicateUser && !duplicateUser.username) {
+              await prisma.user.delete({ where: { id: user.id } });
+            }
+          } catch {
+            // 忽略删除错误
+          }
+        }
+
+        // 修改 user 对象以使用现有用户的 ID
+        user.id = existingUser.id;
+      } else {
+        // 新用户：生成唯一用户名
+        const baseUsername = user.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "user";
+        let username = baseUsername;
+        let counter = 1;
+        while (await prisma.user.findUnique({ where: { username } })) {
+          username = `${baseUsername}${counter}`;
+          counter++;
+        }
+
+        // 更新由 adapter 创建的用户，添加 username
+        if (user.id) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { username },
+          });
+        }
       }
+
       return true;
     },
     async session({ session, token }) {
       if (token.sub && session.user) {
         session.user.id = token.sub;
+        
+        // 从数据库获取最新的用户信息
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.sub },
+          select: { nickname: true, avatar: true, username: true },
+        });
+        
+        if (dbUser) {
+          session.user.name = dbUser.nickname || dbUser.username;
+          session.user.image = dbUser.avatar;
+        }
       }
       return session;
     },

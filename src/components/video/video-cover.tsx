@@ -13,11 +13,14 @@ export function VideoCover({ coverUrl, title, className = "" }: VideoCoverProps)
   if (!coverUrl) {
     return (
       <div 
-        className={`bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center ${className}`}
+        className={`absolute inset-0 bg-gradient-to-br from-primary/5 via-muted to-primary/10 flex items-center justify-center ${className}`}
       >
-        <div className="text-center text-muted-foreground">
-          <Film className="h-12 w-12 mx-auto mb-2 opacity-50" />
-          <span className="text-xs opacity-70">暂无封面</span>
+        <div className="text-center text-muted-foreground/60">
+          <div className="relative">
+            <div className="absolute inset-0 bg-primary/10 blur-xl rounded-full" />
+            <Film className="h-10 w-10 mx-auto relative" />
+          </div>
+          <span className="text-xs mt-2 block font-medium">暂无封面</span>
         </div>
       </div>
     );
@@ -30,6 +33,7 @@ export function VideoCover({ coverUrl, title, className = "" }: VideoCoverProps)
       fill
       className={`object-cover ${className}`}
       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+      unoptimized
     />
   );
 }

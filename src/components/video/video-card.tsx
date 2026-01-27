@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { Card, CardContent } from "@/components/ui/card";
 import { VideoCover } from "./video-cover";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -9,7 +8,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { Play, Eye, Heart, User } from "lucide-react";
+import { Play, Eye, Heart, User, Clock } from "lucide-react";
 import { formatDuration, formatViews, formatRelativeTime } from "@/lib/format";
 import { motion } from "framer-motion";
 
@@ -36,128 +35,124 @@ interface VideoCardProps {
 }
 
 export function VideoCard({ video, index = 0 }: VideoCardProps) {
+  const uploaderName = video.uploader.nickname || video.uploader.username;
+  
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -4 }}
-      transition={{ duration: 0.3, delay: index * 0.05 }}
+      transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
+      className="group"
     >
-      <Link href={`/video/${video.id}`}>
-        <Card className="group overflow-hidden border-0 bg-transparent hover:bg-accent/50 transition-all duration-300">
-          {/* Thumbnail */}
-          <div className="relative aspect-video overflow-hidden rounded-lg">
-            <VideoCover
-              coverUrl={video.coverUrl}
-              title={video.title}
-              className="transition-transform duration-500 group-hover:scale-110"
-            />
-            
-            {/* Play overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-              <motion.div 
-                className="bg-primary/90 backdrop-blur-sm rounded-full p-4 shadow-lg"
-                initial={{ scale: 0.8, opacity: 0 }}
-                whileHover={{ scale: 1.1 }}
-                animate={{ scale: 1 }}
-              >
-                <Play className="h-8 w-8 text-primary-foreground fill-current" />
-              </motion.div>
-            </div>
-
-            {/* Duration */}
-            {video.duration && (
-              <motion.div 
-                className="absolute bottom-2 right-2 bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium"
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2 }}
-              >
-                {formatDuration(video.duration)}
-              </motion.div>
-            )}
-
+      <Link href={`/video/${video.id}`} className="block">
+        {/* 封面容器 */}
+        <div className="relative aspect-video overflow-hidden rounded-xl bg-muted shadow-sm group-hover:shadow-xl transition-shadow duration-300">
+          <VideoCover
+            coverUrl={video.coverUrl}
+            title={video.title}
+            className="transition-transform duration-500 ease-out group-hover:scale-105"
+          />
+          
+          {/* 渐变遮罩 - 底部信息区域 */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/0 opacity-60 group-hover:opacity-80 transition-opacity duration-300" />
+          
+          {/* 播放按钮 - 居中 */}
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
+            <motion.div 
+              className="bg-white/95 dark:bg-black/80 backdrop-blur-md rounded-full p-3.5 shadow-2xl"
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Play className="h-6 w-6 text-primary fill-primary" />
+            </motion.div>
           </div>
 
-          {/* Info */}
-          <CardContent className="p-3">
-            <div className="flex gap-3">
-              <HoverCard openDelay={300} closeDelay={100}>
-                <HoverCardTrigger asChild>
-                  <motion.div
-                    whileHover={{ scale: 1.1 }}
-                    transition={{ duration: 0.2 }}
-                    onClick={(e) => e.preventDefault()}
-                    className="cursor-pointer"
-                  >
-                    <Avatar className="h-9 w-9 flex-shrink-0 ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
-                      <AvatarImage
-                        src={video.uploader.avatar || undefined}
-                        alt={video.uploader.nickname || video.uploader.username}
-                      />
-                      <AvatarFallback>
-                        {(video.uploader.nickname || video.uploader.username)
-                          .charAt(0)
-                          .toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                  </motion.div>
-                </HoverCardTrigger>
-                <HoverCardContent className="w-64" side="top" align="start">
-                  <div className="flex gap-3">
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage
-                        src={video.uploader.avatar || undefined}
-                        alt={video.uploader.nickname || video.uploader.username}
-                      />
-                      <AvatarFallback>
-                        {(video.uploader.nickname || video.uploader.username)
-                          .charAt(0)
-                          .toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm truncate">
-                        {video.uploader.nickname || video.uploader.username}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        @{video.uploader.username}
-                      </p>
-                      <Link
-                        href={`/user/${video.uploader.id}`}
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-2"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <User className="h-3 w-3" />
-                        查看主页
-                      </Link>
-                    </div>
-                  </div>
-                </HoverCardContent>
-              </HoverCard>
+          {/* 时长标签 */}
+          {video.duration && (
+            <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 bg-black/75 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium">
+              <Clock className="h-3 w-3" />
+              {formatDuration(video.duration)}
+            </div>
+          )}
 
-              <div className="flex-1 min-w-0">
-                <h3 className="font-medium line-clamp-2 text-sm leading-snug group-hover:text-primary transition-colors duration-200">
-                  {video.title}
-                </h3>
-                <p className="text-xs text-muted-foreground mt-1 group-hover:text-foreground/70 transition-colors">
-                  {video.uploader.nickname || video.uploader.username}
-                </p>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                  <span className="flex items-center gap-1">
-                    <Eye className="h-3 w-3" />
-                    {formatViews(video.views)}
-                  </span>
-                  <span className="flex items-center gap-1 group-hover:text-red-400 transition-colors">
-                    <Heart className="h-3 w-3" />
-                    {video._count.likes}
-                  </span>
-                  <span>{formatRelativeTime(video.createdAt)}</span>
+          {/* 统计信息 - 左下角 */}
+          <div className="absolute bottom-2.5 left-2.5 flex items-center gap-2.5 text-white/90 text-xs">
+            <span className="flex items-center gap-1 bg-black/50 backdrop-blur-sm px-1.5 py-0.5 rounded">
+              <Eye className="h-3 w-3" />
+              {formatViews(video.views)}
+            </span>
+            <span className="flex items-center gap-1 bg-black/50 backdrop-blur-sm px-1.5 py-0.5 rounded">
+              <Heart className="h-3 w-3" />
+              {video._count.likes}
+            </span>
+          </div>
+        </div>
+
+        {/* 信息区域 */}
+        <div className="flex gap-3 mt-3 px-0.5">
+          {/* 头像 */}
+          <HoverCard openDelay={400} closeDelay={100}>
+            <HoverCardTrigger asChild>
+              <div
+                onClick={(e) => e.preventDefault()}
+                className="cursor-pointer flex-shrink-0"
+              >
+                <Avatar className="h-9 w-9 ring-2 ring-background shadow-sm transition-transform duration-200 hover:scale-110">
+                  <AvatarImage
+                    src={video.uploader.avatar || undefined}
+                    alt={uploaderName}
+                  />
+                  <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
+                    {uploaderName.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+            </HoverCardTrigger>
+            <HoverCardContent className="w-72" side="top" align="start">
+              <div className="flex gap-3">
+                <Avatar className="h-14 w-14 ring-2 ring-primary/20">
+                  <AvatarImage
+                    src={video.uploader.avatar || undefined}
+                    alt={uploaderName}
+                  />
+                  <AvatarFallback className="bg-primary/10 text-primary text-lg font-medium">
+                    {uploaderName.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold truncate">
+                    {uploaderName}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    @{video.uploader.username}
+                  </p>
+                  <Link
+                    href={`/user/${video.uploader.id}`}
+                    className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline mt-2 font-medium"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <User className="h-3.5 w-3.5" />
+                    查看主页
+                  </Link>
                 </div>
               </div>
+            </HoverCardContent>
+          </HoverCard>
+
+          {/* 标题和作者 */}
+          <div className="flex-1 min-w-0 space-y-1">
+            <h3 className="font-medium line-clamp-2 text-sm leading-snug group-hover:text-primary transition-colors duration-200">
+              {video.title}
+            </h3>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="truncate hover:text-foreground transition-colors">
+                {uploaderName}
+              </span>
+              <span className="text-muted-foreground/50">•</span>
+              <span className="flex-shrink-0">{formatRelativeTime(video.createdAt)}</span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </Link>
     </motion.div>
   );
