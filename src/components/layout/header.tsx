@@ -9,7 +9,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+import { AccountSwitcher } from "@/components/auth/account-switcher";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import {
@@ -49,80 +51,74 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center gap-4">
-        {/* Mobile Menu */}
-        <Sheet>
-          <SheetTrigger asChild className="md:hidden">
-            <Button variant="ghost" size="icon">
-              <Menu className="h-5 w-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-72">
-            <SheetHeader>
-              <VisuallyHidden>
-                <SheetTitle>导航菜单</SheetTitle>
-              </VisuallyHidden>
-            </SheetHeader>
-            <nav className="flex flex-col gap-4 mt-4">
-              <Link href="/" className="text-lg font-semibold">
-                首页
-              </Link>
-              <Link href="/categories" className="text-lg">
-                分类
-              </Link>
-              <Link href="/tags" className="text-lg">
-                标签
-              </Link>
-              <Link href="/comments" className="text-lg">
-                留言
-              </Link>
-            </nav>
-          </SheetContent>
-        </Sheet>
+      <div className="container flex h-16 items-center">
+        {/* Left Section */}
+        <div className="flex items-center gap-4 flex-1">
+          {/* Mobile Menu */}
+          <Sheet>
+            <SheetTrigger asChild className="md:hidden">
+              <Button variant="ghost" size="icon">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72">
+              <SheetHeader>
+                <VisuallyHidden>
+                  <SheetTitle>导航菜单</SheetTitle>
+                </VisuallyHidden>
+              </SheetHeader>
+              <nav className="flex flex-col gap-4 mt-4">
+                <Link href="/" className="text-lg font-semibold">
+                  首页
+                </Link>
+                <Link href="/tags" className="text-lg">
+                  标签
+                </Link>
+                <Link href="/comments" className="text-lg">
+                  留言
+                </Link>
+              </nav>
+            </SheetContent>
+          </Sheet>
 
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-1 font-bold text-xl group">
-          <motion.span 
-            className="text-gradient-anime"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            ACGN
-          </motion.span>
-          <motion.span
-            className="text-foreground group-hover:text-primary transition-colors"
-            initial={{ opacity: 0, x: -5 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            Flow
-          </motion.span>
-        </Link>
+          {/* Logo */}
+          <Link href="/" className="flex items-center gap-1 font-bold text-xl group">
+            <motion.span 
+              className="text-gradient-anime"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              ACGN
+            </motion.span>
+            <motion.span
+              className="text-foreground group-hover:text-primary transition-colors"
+              initial={{ opacity: 0, x: -5 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.1 }}
+            >
+              Flow
+            </motion.span>
+          </Link>
 
-        {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center gap-6 ml-6">
-          <Link
-            href="/categories"
-            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            分类
-          </Link>
-          <Link
-            href="/tags"
-            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            标签
-          </Link>
-          <Link
-            href="/comments"
-            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            留言
-          </Link>
-        </nav>
+          {/* Desktop Nav */}
+          <nav className="hidden md:flex items-center gap-6 ml-6">
+            <Link
+              href="/tags"
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              标签
+            </Link>
+            <Link
+              href="/comments"
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              留言
+            </Link>
+          </nav>
+        </div>
 
-        {/* Search */}
-        <form onSubmit={handleSearch} className="flex-1 max-w-md mx-2 md:mx-4">
+        {/* Center Section - Search */}
+        <form onSubmit={handleSearch} className="w-full max-w-md mx-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -135,8 +131,8 @@ export function Header() {
           </div>
         </form>
 
-        {/* Right Actions */}
-        <div className="flex items-center gap-2">
+        {/* Right Section */}
+        <div className="flex items-center gap-2 flex-1 justify-end">
           {/* Theme Toggle */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -195,14 +191,22 @@ export function Header() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  <div className="flex items-center justify-start gap-2 p-2">
-                    <div className="flex flex-col space-y-1 leading-none">
-                      <p className="font-medium">{session.user.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {session.user.email}
-                      </p>
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={session.user.image || undefined} />
+                        <AvatarFallback>
+                          {session.user.name?.charAt(0).toUpperCase() || "U"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col space-y-1 leading-none min-w-0">
+                        <p className="font-medium truncate">{session.user.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {session.user.email}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <Link href="/profile">
@@ -234,6 +238,8 @@ export function Header() {
                       设置
                     </Link>
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <AccountSwitcher />
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-red-600"

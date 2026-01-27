@@ -66,25 +66,25 @@ const oauthProviders: OAuthProvider[] = [
     id: "github",
     name: "GitHub",
     icon: GitHubIcon,
-    className: "bg-[#24292e] hover:bg-[#24292e]/90 text-white",
+    className: "bg-[#24292f] hover:bg-[#24292f]/90 text-white dark:bg-[#f0f0f0] dark:hover:bg-[#e0e0e0] dark:text-[#24292f]",
   },
   {
     id: "google",
     name: "Google",
     icon: GoogleIcon,
-    className: "bg-white hover:bg-gray-50 text-gray-900 border border-gray-300",
+    className: "bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 dark:bg-[#131314] dark:hover:bg-[#1f1f1f] dark:text-gray-200 dark:border-[#3c4043]",
   },
   {
     id: "discord",
     name: "Discord",
     icon: DiscordIcon,
-    className: "bg-[#5865F2] hover:bg-[#5865F2]/90 text-white",
+    className: "bg-[#5865F2] hover:bg-[#4752c4] text-white",
   },
   {
     id: "steam",
     name: "Steam",
     icon: SteamIcon,
-    className: "bg-[#171a21] hover:bg-[#171a21]/90 text-white",
+    className: "bg-gradient-to-r from-[#1b2838] to-[#2a475e] hover:from-[#2a3f5f] hover:to-[#3a5a7c] text-white",
   },
 ];
 

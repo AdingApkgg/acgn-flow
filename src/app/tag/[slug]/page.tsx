@@ -15,7 +15,8 @@ interface TagPageProps {
 }
 
 export default function TagPage({ params }: TagPageProps) {
-  const { slug } = use(params);
+  const { slug: rawSlug } = use(params);
+  const slug = decodeURIComponent(rawSlug);
   const { ref, inView } = useInView();
 
   const { data: tag, isLoading: tagLoading } = trpc.tag.getBySlug.useQuery({ slug });

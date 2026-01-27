@@ -24,7 +24,7 @@ const statItems = [
 
 export function SiteStats() {
   const { data, isLoading } = trpc.video.getPublicStats.useQuery(undefined, {
-    staleTime: 60 * 1000, // 1 minute
+    staleTime: 15 * 1000, // 15 seconds - 与后端缓存对齐
     refetchOnWindowFocus: false,
   });
 

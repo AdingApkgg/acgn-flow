@@ -108,6 +108,7 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
         description: data.description || undefined,
         coverUrl: data.coverUrl || undefined,
         videoUrl: data.videoUrl,
+        tagIds: selectedTags.map((t) => t.id),
       });
     } finally {
       setIsSubmitting(false);

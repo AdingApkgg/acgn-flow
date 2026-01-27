@@ -3,13 +3,13 @@ import { router, publicProcedure, protectedProcedure, adminProcedure } from "../
 import { TRPCError } from "@trpc/server";
 import { getCache, setCache, deleteCachePattern } from "@/lib/redis";
 
-const VIDEO_CACHE_TTL = 300; // 5 minutes
-const STATS_CACHE_TTL = 60; // 1 minute
+const VIDEO_CACHE_TTL = 60; // 1 minute
+const STATS_CACHE_TTL = 15; // 15 seconds - 短缓存，仅防止并发请求
 
 export const videoRouter = router({
   // 获取网站公开统计数据
   getPublicStats: publicProcedure.query(async ({ ctx }) => {
-    const cacheKey = "public:stats";
+    const cacheKey = "stats:public";
     const cached = await getCache<{
       videoCount: number;
       userCount: number;
@@ -262,10 +262,11 @@ export const videoRouter = router({
         description: z.string().max(5000).optional(),
         coverUrl: z.string().url().optional(),
         videoUrl: z.string().url().optional(),
+        tagIds: z.array(z.string()).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
+      const { id, tagIds, ...data } = input;
 
       const video = await ctx.prisma.video.findUnique({
         where: { id },
@@ -280,10 +281,36 @@ export const videoRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
+      // 更新视频基本信息
       const updated = await ctx.prisma.video.update({
         where: { id },
         data,
       });
+
+      // 更新标签关联
+      if (tagIds !== undefined) {
+        // 删除所有现有标签关联
+        await ctx.prisma.tagOnVideo.deleteMany({
+          where: { videoId: id },
+        });
+
+        // 创建新的标签关联
+        if (tagIds.length > 0) {
+          await ctx.prisma.tagOnVideo.createMany({
+            data: tagIds.map((tagId) => ({
+              videoId: id,
+              tagId,
+            })),
+          });
+        }
+
+        // 清理空标签
+        await ctx.prisma.tag.deleteMany({
+          where: {
+            videos: { none: {} },
+          },
+        });
+      }
 
       await deleteCachePattern(`video:${id}`);
       return updated;

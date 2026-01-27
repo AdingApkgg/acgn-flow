@@ -25,11 +25,6 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/categories" className="hover:text-foreground transition-colors">
-                  分类
-                </Link>
-              </li>
-              <li>
                 <Link href="/tags" className="hover:text-foreground transition-colors">
                   标签
                 </Link>

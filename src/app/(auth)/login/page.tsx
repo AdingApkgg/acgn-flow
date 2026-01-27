@@ -30,6 +30,8 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/";
+  const prefillAccount = searchParams.get("account") || "";
+  const isNewAccount = searchParams.get("new") === "1";
   const [isLoading, setIsLoading] = useState(false);
 
   const [captchaKey, setCaptchaKey] = useState(0);
@@ -37,7 +39,7 @@ function LoginForm() {
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      identifier: "",
+      identifier: prefillAccount,
       password: "",
       captcha: "",
     },
@@ -99,8 +101,16 @@ function LoginForm() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
             >
-              <CardTitle className="text-2xl">登录</CardTitle>
-              <CardDescription>登录您的账户继续</CardDescription>
+              <CardTitle className="text-2xl">
+                {isNewAccount ? "添加账号" : prefillAccount ? "切换账号" : "登录"}
+              </CardTitle>
+              <CardDescription>
+                {isNewAccount 
+                  ? "登录其他账号以添加到账号列表" 
+                  : prefillAccount 
+                  ? "请输入密码以切换账号" 
+                  : "登录您的账户继续"}
+              </CardDescription>
             </motion.div>
           </CardHeader>
           <CardContent>
@@ -170,15 +180,22 @@ function LoginForm() {
           </motion.div>
 
           <motion.div 
-            className="mt-6 text-center text-sm text-muted-foreground"
+            className="mt-6 text-center text-sm text-muted-foreground space-y-2"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4 }}
           >
-            还没有账户？{" "}
-            <Link href="/register" className="text-primary hover:underline">
-              立即注册
-            </Link>
+            <div>
+              <Link href="/forgot-password" className="text-primary hover:underline">
+                忘记密码？
+              </Link>
+            </div>
+            <div>
+              还没有账户？{" "}
+              <Link href="/register" className="text-primary hover:underline">
+                立即注册
+              </Link>
+            </div>
           </motion.div>
         </CardContent>
       </Card>

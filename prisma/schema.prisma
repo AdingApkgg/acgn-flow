@@ -25,6 +25,7 @@ model User {
   location      String?   // 所在地
   socialLinks   Json?     // 社交账号 { twitter?: string, github?: string, ... }
   role          Role      @default(USER)
+  adminScopes   Json?     // 管理员权限范围 ["video:moderate", "user:manage", ...]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

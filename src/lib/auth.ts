@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials";
 import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
 import Discord from "next-auth/providers/discord";
+import SteamProvider from "authjs-steam-provider";
 import type { Provider } from "next-auth/providers";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
@@ -14,8 +15,8 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
-// 动态构建 providers 列表
-const providers: Provider[] = [
+// 静态 providers（不需要 Request 对象）
+const staticProviders: Provider[] = [
   Credentials({
     name: "credentials",
     credentials: {
@@ -55,7 +56,7 @@ const providers: Provider[] = [
 
 // GitHub OAuth
 if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
-  providers.push(
+  staticProviders.push(
     GitHub({
       clientId: process.env.AUTH_GITHUB_ID,
       clientSecret: process.env.AUTH_GITHUB_SECRET,
@@ -65,7 +66,7 @@ if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
 
 // Google OAuth
 if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
-  providers.push(
+  staticProviders.push(
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
@@ -75,7 +76,7 @@ if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
 
 // Discord OAuth
 if (process.env.AUTH_DISCORD_ID && process.env.AUTH_DISCORD_SECRET) {
-  providers.push(
+  staticProviders.push(
     Discord({
       clientId: process.env.AUTH_DISCORD_ID,
       clientSecret: process.env.AUTH_DISCORD_SECRET,
@@ -83,68 +84,28 @@ if (process.env.AUTH_DISCORD_ID && process.env.AUTH_DISCORD_SECRET) {
   );
 }
 
-// Steam OpenID (自定义实现)
+// Steam OpenID - 使用函数式 provider（需要 Request 对象）
 if (process.env.AUTH_STEAM_KEY) {
-  providers.push({
-    id: "steam",
-    name: "Steam",
-    type: "oauth",
-    authorization: {
-      url: "https://steamcommunity.com/openid/login",
-      params: {
-        "openid.ns": "http://specs.openid.net/auth/2.0",
-        "openid.mode": "checkid_setup",
-        "openid.return_to": `${process.env.AUTH_URL}/api/auth/callback/steam`,
-        "openid.realm": process.env.AUTH_URL,
-        "openid.identity": "http://specs.openid.net/auth/2.0/identifier_select",
-        "openid.claimed_id": "http://specs.openid.net/auth/2.0/identifier_select",
-      },
-    },
-    token: {
-      async request({ params }: { params: Record<string, unknown> }) {
-        // Steam 使用 OpenID，不需要 token 交换
-        const claimedId = params["openid.claimed_id"] as string;
-        const steamId = claimedId?.split("/").pop();
-        return { tokens: { access_token: steamId } };
-      },
-    },
-    userinfo: {
-      async request({ tokens }: { tokens: { access_token?: string } }) {
-        const steamId = tokens.access_token;
-        const res = await fetch(
-          `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${process.env.AUTH_STEAM_KEY}&steamids=${steamId}`
-        );
-        const data = await res.json();
-        const player = data.response?.players?.[0];
-        return {
-          id: steamId,
-          name: player?.personaname,
-          image: player?.avatarfull,
-          email: null,
-        };
-      },
-    },
-    profile(profile) {
-      return {
-        id: profile.id,
-        name: profile.name,
-        email: profile.email,
-        image: profile.image,
-      };
-    },
-  });
+  staticProviders.push(
+    ((req: Request) =>
+      SteamProvider(req, {
+        clientSecret: process.env.AUTH_STEAM_KEY!,
+        callbackUrl: `${process.env.AUTH_URL}/api/auth/callback`,
+      })) as unknown as Provider
+  );
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 天
   },
   pages: {
     signIn: "/login",
     error: "/login",
   },
-  providers,
+  providers: staticProviders,
   callbacks: {
     async signIn({ user, account }) {
       // OAuth 登录时，如果用户不存在则自动创建

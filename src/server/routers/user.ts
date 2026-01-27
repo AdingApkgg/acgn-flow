@@ -256,6 +256,112 @@ export const userRouter = router({
       return { success: true };
     }),
 
+  // 重置密码（忘记密码）
+  resetPassword: publicProcedure
+    .input(
+      z.object({
+        email: z.string().email(),
+        newPassword: z.string().min(6, "密码至少6个字符"),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const user = await ctx.prisma.user.findUnique({
+        where: { email: input.email },
+      });
+
+      if (!user) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "该邮箱未注册",
+        });
+      }
+
+      const hashedPassword = await bcrypt.hash(input.newPassword, 12);
+      await ctx.prisma.user.update({
+        where: { email: input.email },
+        data: { password: hashedPassword },
+      });
+
+      return { success: true };
+    }),
+
+  // 注销账号（删除账号，视频转移给站长）
+  deleteAccount: protectedProcedure
+    .input(
+      z.object({
+        password: z.string().min(1, "请输入密码确认"),
+        confirmText: z.literal("DELETE", { message: "请输入 DELETE 确认" }),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+
+      // 获取当前用户
+      const user = await ctx.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, password: true, role: true },
+      });
+
+      if (!user) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+      }
+
+      // 站长不能注销自己的账号
+      if (user.role === "OWNER") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "站长账号不能注销，请先转让站长权限",
+        });
+      }
+
+      // 验证密码
+      if (user.password) {
+        const isValid = await bcrypt.compare(input.password, user.password);
+        if (!isValid) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "密码错误",
+          });
+        }
+      }
+
+      // 获取站长账号
+      const owner = await ctx.prisma.user.findFirst({
+        where: { role: "OWNER" },
+        select: { id: true },
+      });
+
+      if (!owner) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "系统错误：未找到站长账号",
+        });
+      }
+
+      // 使用事务处理
+      await ctx.prisma.$transaction(async (tx) => {
+        // 1. 将用户的视频转移给站长
+        await tx.video.updateMany({
+          where: { uploaderId: userId },
+          data: { uploaderId: owner.id },
+        });
+
+        // 2. 将用户的播放列表转移给站长
+        await tx.playlist.updateMany({
+          where: { userId: userId },
+          data: { userId: owner.id },
+        });
+
+        // 3. 删除用户（其他关联数据会通过 onDelete: Cascade 自动删除）
+        // 包括：收藏、观看历史、点赞、踩、困惑、OAuth账号、会话
+        await tx.user.delete({
+          where: { id: userId },
+        });
+      });
+
+      return { success: true };
+    }),
+
   // 获取已上传的头像列表（用于选择）
   getAvatarGallery: protectedProcedure.query(async ({ ctx }) => {
     const avatars = new Set<string>();
