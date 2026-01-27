@@ -2,6 +2,20 @@ import { z } from "zod";
 import { router, publicProcedure, adminProcedure } from "../trpc";
 
 export const tagRouter = router({
+  // 根据 slug 获取标签
+  getBySlug: publicProcedure
+    .input(z.object({ slug: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const tag = await ctx.prisma.tag.findUnique({
+        where: { slug: input.slug },
+        include: {
+          _count: { select: { videos: true } },
+        },
+      });
+
+      return tag;
+    }),
+
   // 获取所有标签
   list: publicProcedure
     .input(

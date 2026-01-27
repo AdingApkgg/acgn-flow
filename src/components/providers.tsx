@@ -8,6 +8,13 @@ import superjson from "superjson";
 import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
+import dynamic from "next/dynamic";
+
+// 动态导入 Three.js 背景以避免 SSR 问题
+const SceneBackground = dynamic(
+  () => import("@/components/three/scene-background").then((mod) => mod.SceneBackground),
+  { ssr: false }
+);
 
 function getBaseUrl() {
   if (typeof window !== "undefined") return "";
@@ -49,6 +56,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             enableSystem
             disableTransitionOnChange
           >
+            <SceneBackground />
             {children}
             <Toaster richColors position="top-center" />
           </ThemeProvider>

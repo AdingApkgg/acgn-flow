@@ -25,9 +25,11 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { Settings, Key, LogOut, Loader2, AlertTriangle } from "lucide-react";
+import { Settings, Key, LogOut, Loader2, AlertTriangle, Sparkles, Circle, Waves, EyeOff } from "lucide-react";
 import { motion } from "framer-motion";
 import { PageWrapper } from "@/components/motion";
+import { useBackgroundStore, type BackgroundType } from "@/components/three/scene-background";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 const passwordSchema = z
   .object({
@@ -46,6 +48,7 @@ export default function SettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const { backgroundType, setBackgroundType } = useBackgroundStore();
 
   const { data: user, isLoading: userLoading } = trpc.user.me.useQuery(
     undefined,
@@ -230,6 +233,58 @@ export default function SettingsPage() {
                     </Button>
                   </form>
                 </Form>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* 视觉设置 */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+          >
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Sparkles className="h-5 w-5" />
+                  视觉效果
+                </CardTitle>
+                <CardDescription>自定义背景动画效果</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium mb-3">背景动画</p>
+                    <ToggleGroup
+                      type="single"
+                      value={backgroundType}
+                      onValueChange={(value) => {
+                        if (value) setBackgroundType(value as BackgroundType);
+                      }}
+                      className="justify-start flex-wrap"
+                    >
+                      <ToggleGroupItem value="particles" aria-label="粒子效果" className="gap-2">
+                        <Sparkles className="h-4 w-4" />
+                        粒子
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="shapes" aria-label="悬浮形状" className="gap-2">
+                        <Circle className="h-4 w-4" />
+                        悬浮
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="wave" aria-label="波浪效果" className="gap-2">
+                        <Waves className="h-4 w-4" />
+                        波浪
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="none" aria-label="关闭" className="gap-2">
+                        <EyeOff className="h-4 w-4" />
+                        关闭
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    选择适合您的背景动画效果，关闭可提升设备性能
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </motion.div>
