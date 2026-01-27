@@ -8,14 +8,7 @@ import superjson from "superjson";
 import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
-import dynamic from "next/dynamic";
-import { useVisualSettings } from "@/components/three/scene-background";
-
-// 动态导入 Three.js 背景以避免 SSR 问题
-const SceneBackground = dynamic(
-  () => import("@/components/three/scene-background").then((mod) => mod.SceneBackground),
-  { ssr: false }
-);
+import { useVisualSettings } from "@/components/visual-settings";
 
 // 注册 Service Worker
 function ServiceWorkerRegistration() {
@@ -91,7 +84,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
           >
             <VisualSettingsApplier>
               <ServiceWorkerRegistration />
-              <SceneBackground />
               {children}
               <Toaster richColors position="top-center" />
             </VisualSettingsApplier>

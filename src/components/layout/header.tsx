@@ -23,6 +23,7 @@ import {
   Heart,
   History,
   Video,
+  Shield,
 } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -199,6 +200,12 @@ export function Header() {
                     <Link href="/history">
                       <History className="mr-2 h-4 w-4" />
                       观看历史
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/admin">
+                      <Shield className="mr-2 h-4 w-4" />
+                      管理面板
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />

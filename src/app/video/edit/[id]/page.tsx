@@ -29,16 +29,19 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Loader2, ArrowLeft, X, Plus } from "lucide-react";
+import { Loader2, ArrowLeft, X, Plus, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { PageWrapper } from "@/components/motion";
+import { VideoPlayer } from "@/components/video/video-player";
 
 const editSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(100, "标题最多100个字符"),
   description: z.string().max(5000, "简介最多5000个字符").optional().or(z.literal("")),
   coverUrl: z.string().url("请输入有效的封面URL").optional().or(z.literal("")),
   videoUrl: z.string().url("请输入有效的视频URL"),
+  subtitleUrl: z.string().url("请输入有效的字幕URL").optional().or(z.literal("")),
+  danmakuUrl: z.string().url("请输入有效的弹幕URL").optional().or(z.literal("")),
 });
 
 type EditForm = z.infer<typeof editSchema>;
@@ -53,6 +56,9 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedTags, setSelectedTags] = useState<{ id: string; name: string }[]>([]);
+  const [newTagInput, setNewTagInput] = useState("");
+  const [newTags, setNewTags] = useState<string[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
 
   const { data: video, isLoading: videoLoading } = trpc.video.getForEdit.useQuery(
     { id },
@@ -78,6 +84,8 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
       description: "",
       coverUrl: "",
       videoUrl: "",
+      subtitleUrl: "",
+      danmakuUrl: "",
     },
   });
 
@@ -88,6 +96,8 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
         description: video.description || "",
         coverUrl: video.coverUrl || "",
         videoUrl: video.videoUrl,
+        subtitleUrl: video.subtitleUrl || "",
+        danmakuUrl: video.danmakuUrl || "",
       });
       setSelectedTags(video.tags.map((t) => ({ id: t.tag.id, name: t.tag.name })));
     }
@@ -108,12 +118,27 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
         description: data.description || undefined,
         coverUrl: data.coverUrl || undefined,
         videoUrl: data.videoUrl,
+        subtitleUrl: data.subtitleUrl || undefined,
+        danmakuUrl: data.danmakuUrl || undefined,
         tagIds: selectedTags.map((t) => t.id),
+        tagNames: newTags,
       });
     } finally {
       setIsSubmitting(false);
     }
   }
+
+  const handleAddNewTag = () => {
+    const tag = newTagInput.trim();
+    if (tag && !newTags.includes(tag) && !selectedTags.some((t) => t.name === tag)) {
+      setNewTags([...newTags, tag]);
+      setNewTagInput("");
+    }
+  };
+
+  const handleRemoveNewTag = (tag: string) => {
+    setNewTags(newTags.filter((t) => t !== tag));
+  };
 
   const toggleTag = (tag: { id: string; name: string }) => {
     setSelectedTags((prev) => {
@@ -214,9 +239,20 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>视频链接 *</FormLabel>
-                        <FormControl>
-                          <Input placeholder="https://..." {...field} />
-                        </FormControl>
+                        <div className="flex gap-2">
+                          <FormControl>
+                            <Input placeholder="https://..." {...field} />
+                          </FormControl>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() => setShowPreview(!showPreview)}
+                            disabled={!field.value}
+                          >
+                            {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </Button>
+                        </div>
                         <FormDescription>
                           支持直链、HLS 等格式
                         </FormDescription>
@@ -224,6 +260,20 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
                       </FormItem>
                     )}
                   />
+
+                  {/* 视频预览 */}
+                  {showPreview && form.watch("videoUrl") && (
+                    <div className="space-y-2">
+                      <FormLabel>视频预览</FormLabel>
+                      <VideoPlayer
+                        url={form.watch("videoUrl")}
+                        poster={form.watch("coverUrl") || undefined}
+                        autoStart={false}
+                        subtitles={form.watch("subtitleUrl") ? [{ url: form.watch("subtitleUrl")!, name: "字幕", default: true }] : []}
+                        danmakuUrl={form.watch("danmakuUrl") || undefined}
+                      />
+                    </div>
+                  )}
 
                   <FormField
                     control={form.control}
@@ -239,15 +289,51 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
                     )}
                   />
 
+                  <FormField
+                    control={form.control}
+                    name="subtitleUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>字幕链接</FormLabel>
+                        <FormControl>
+                          <Input placeholder="https://...subtitle.vtt (可选)" {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          支持 VTT、SRT、ASS 格式
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="danmakuUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>弹幕链接</FormLabel>
+                        <FormControl>
+                          <Input placeholder="https://...danmaku.xml (可选)" {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          支持 B站 XML 或 JSON 格式
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
                   {/* 标签选择 */}
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <FormLabel>标签</FormLabel>
-                    {selectedTags.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-2">
+                    
+                    {/* 已选标签 */}
+                    {(selectedTags.length > 0 || newTags.length > 0) && (
+                      <div className="flex flex-wrap gap-2">
                         {selectedTags.map((tag) => (
                           <Badge
                             key={tag.id}
-                            variant="secondary"
+                            variant="default"
                             className="cursor-pointer"
                             onClick={() => toggleTag(tag)}
                           >
@@ -255,24 +341,56 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
                             <X className="h-3 w-3 ml-1" />
                           </Badge>
                         ))}
+                        {newTags.map((tag) => (
+                          <Badge
+                            key={tag}
+                            variant="secondary"
+                            className="cursor-pointer"
+                            onClick={() => handleRemoveNewTag(tag)}
+                          >
+                            {tag} (新)
+                            <X className="h-3 w-3 ml-1" />
+                          </Badge>
+                        ))}
                       </div>
                     )}
-                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 border rounded-md">
-                      {allTags?.map((tag) => {
-                        const isSelected = selectedTags.some((t) => t.id === tag.id);
-                        return (
-                          <Badge
-                            key={tag.id}
-                            variant={isSelected ? "default" : "outline"}
-                            className="cursor-pointer"
-                            onClick={() => toggleTag({ id: tag.id, name: tag.name })}
-                          >
-                            {isSelected ? null : <Plus className="h-3 w-3 mr-1" />}
-                            {tag.name}
-                          </Badge>
-                        );
-                      })}
+
+                    {/* 添加新标签 */}
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="输入新标签"
+                        value={newTagInput}
+                        onChange={(e) => setNewTagInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddNewTag();
+                          }
+                        }}
+                      />
+                      <Button type="button" variant="outline" onClick={handleAddNewTag}>
+                        <Plus className="h-4 w-4" />
+                      </Button>
                     </div>
+
+                    {/* 已有标签列表 */}
+                    {allTags && allTags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 border rounded-md">
+                        {allTags.map((tag) => {
+                          const isSelected = selectedTags.some((t) => t.id === tag.id);
+                          return (
+                            <Badge
+                              key={tag.id}
+                              variant={isSelected ? "default" : "outline"}
+                              className="cursor-pointer text-xs"
+                              onClick={() => toggleTag({ id: tag.id, name: tag.name })}
+                            >
+                              {tag.name}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-4">

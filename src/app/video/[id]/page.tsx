@@ -230,6 +230,8 @@ export default function VideoPage({ params }: VideoPageProps) {
               url={video.videoUrl}
               poster={video.coverUrl}
               onProgress={handleProgress}
+              subtitles={video.subtitleUrl ? [{ url: video.subtitleUrl, name: "字幕", default: true }] : []}
+              danmakuUrl={video.danmakuUrl || undefined}
             />
 
           <div>
@@ -409,12 +411,96 @@ export default function VideoPage({ params }: VideoPageProps) {
           />
         </div>
 
-        <div className="lg:col-span-1 mt-6 lg:mt-0">
-          <h3 className="font-medium mb-4">相关推荐</h3>
-          <p className="text-sm text-muted-foreground">暂无推荐</p>
-        </div>
+        {/* 推荐视频侧边栏 */}
+        <RecommendedVideos videoId={id} />
       </div>
     </div>
     </>
+  );
+}
+
+// 推荐视频组件
+function RecommendedVideos({ videoId }: { videoId: string }) {
+  const { data: recommendations, isLoading } = trpc.video.getRecommendations.useQuery(
+    { videoId, limit: 10 },
+    { enabled: !!videoId }
+  );
+
+  if (isLoading) {
+    return (
+      <div className="lg:col-span-1 mt-6 lg:mt-0 space-y-4">
+        <h3 className="font-medium">相关推荐</h3>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="flex gap-3">
+            <Skeleton className="w-40 h-24 rounded-lg shrink-0" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-3 w-2/3" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (!recommendations || recommendations.length === 0) {
+    return (
+      <div className="lg:col-span-1 mt-6 lg:mt-0">
+        <h3 className="font-medium mb-4">相关推荐</h3>
+        <p className="text-sm text-muted-foreground">暂无相关推荐</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="lg:col-span-1 mt-6 lg:mt-0 space-y-4">
+      <h3 className="font-medium">相关推荐</h3>
+      <div className="space-y-3">
+        {recommendations.map((video) => (
+          <Link
+            key={video.id}
+            href={`/video/${video.id}`}
+            className="flex gap-3 group"
+          >
+            {/* 封面 */}
+            <div className="relative w-40 h-24 rounded-lg overflow-hidden bg-muted shrink-0">
+              {video.coverUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={video.coverUrl}
+                  alt={video.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                  <Eye className="h-8 w-8" />
+                </div>
+              )}
+              {video.duration && (
+                <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/80 text-white text-xs rounded">
+                  {Math.floor(video.duration / 60)}:{String(video.duration % 60).padStart(2, "0")}
+                </div>
+              )}
+            </div>
+
+            {/* 信息 */}
+            <div className="flex-1 min-w-0">
+              <h4 className="text-sm font-medium line-clamp-2 group-hover:text-primary transition-colors">
+                {video.title}
+              </h4>
+              <p className="text-xs text-muted-foreground mt-1">
+                {video.uploader.nickname || video.uploader.username}
+              </p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                <span>{formatViews(video.views)} 次播放</span>
+                <span>·</span>
+                <span>{formatRelativeTime(video.createdAt)}</span>
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
   );
 }

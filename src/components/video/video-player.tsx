@@ -2,8 +2,17 @@
 
 import { useRef, useEffect, useState, useCallback } from "react";
 import Image from "next/image";
+import Artplayer from "artplayer";
+import artplayerPluginDanmuku from "artplayer-plugin-danmuku";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Play, AlertCircle } from "lucide-react";
+
+// 字幕配置接口
+interface SubtitleTrack {
+  url: string;
+  name: string;
+  default?: boolean;
+}
 
 interface VideoPlayerProps {
   url: string;
@@ -11,6 +20,9 @@ interface VideoPlayerProps {
   onProgress?: (progress: { played: number; playedSeconds: number }) => void;
   onEnded?: () => void;
   initialProgress?: number;
+  subtitles?: SubtitleTrack[];
+  danmakuUrl?: string;
+  autoStart?: boolean; // 是否直接开始播放（跳过封面预览）
 }
 
 export function VideoPlayer({
@@ -19,72 +31,226 @@ export function VideoPlayer({
   onProgress,
   onEnded,
   initialProgress = 0,
+  subtitles = [],
+  danmakuUrl,
+  autoStart = true, // 默认自动播放
 }: VideoPlayerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const artRef = useRef<Artplayer | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [hasError, setHasError] = useState(false);
-  const [showPlayer, setShowPlayer] = useState(!poster);
+  const [showPlayer, setShowPlayer] = useState(autoStart || !poster);
+  const onProgressRef = useRef(onProgress);
+  const onEndedRef = useRef(onEnded);
 
+  // 保持回调引用最新
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
+    onProgressRef.current = onProgress;
+    onEndedRef.current = onEnded;
+  }, [onProgress, onEnded]);
 
-    const handleLoadedMetadata = () => {
+  // 初始化 ArtPlayer
+  useEffect(() => {
+    if (!showPlayer || !containerRef.current) return;
+
+    // 销毁之前的实例
+    if (artRef.current) {
+      artRef.current.destroy();
+      artRef.current = null;
+    }
+
+    // 构建插件列表
+    const plugins: Artplayer["option"]["plugins"] = [];
+
+    // 弹幕插件
+    if (danmakuUrl) {
+      const isJsonFormat = danmakuUrl.endsWith(".json");
+      
+      // JSON 格式需要自定义解析
+      const fetchJsonDanmaku = async () => {
+        try {
+          const response = await fetch(danmakuUrl);
+          const data = await response.json();
+          
+          // 支持多种 JSON 结构
+          let list = data;
+          if (!Array.isArray(data)) {
+            list = data.danmaku || data.danmakus || data.comments || data.data || [];
+          }
+          
+          if (!Array.isArray(list)) return [];
+          
+          return list.map((item: { text?: string; content?: string; message?: string; time?: number; color?: string; mode?: number }) => ({
+            text: item.text || item.content || item.message || "",
+            time: item.time || 0,
+            color: item.color || "#FFFFFF",
+            mode: (item.mode ?? 0) as 0 | 1 | 2,
+          }));
+        } catch (error) {
+          console.error("Failed to fetch danmaku:", error);
+          return [];
+        }
+      };
+
+      plugins.push(
+        artplayerPluginDanmuku({
+          // JSON 用函数解析，XML 直接传 URL 让插件处理
+          danmuku: isJsonFormat ? fetchJsonDanmaku : danmakuUrl,
+          speed: 5,
+          opacity: 1,
+          fontSize: 25,
+          color: "#FFFFFF",
+          mode: 0,
+          margin: [10, "25%"],
+          antiOverlap: true,
+          synchronousPlayback: false,
+          heatmap: true,
+        })
+      );
+    }
+
+    const art = new Artplayer({
+      container: containerRef.current,
+      url: url,
+      poster: poster || "",
+      volume: 0.7,
+      isLive: false,
+      muted: false,
+      autoplay: true, // 自动播放
+      pip: true,
+      autoSize: false,
+      autoMini: false,
+      screenshot: true,
+      setting: true,
+      loop: false,
+      flip: true,
+      playbackRate: true,
+      aspectRatio: true,
+      fullscreen: true,
+      fullscreenWeb: true,
+      subtitleOffset: true,
+      miniProgressBar: true,
+      mutex: true,
+      backdrop: true,
+      playsInline: true,
+      autoPlayback: true,
+      airplay: true,
+      theme: "#a855f7", // 主题色 - 紫色
+      lang: "zh-cn",
+      moreVideoAttr: {
+        crossOrigin: "anonymous",
+      },
+      plugins: plugins,
+      // 字幕配置（仅在有字幕时添加）
+      ...(subtitles.length > 0
+        ? {
+            subtitle: {
+              url: subtitles.find((s) => s.default)?.url || subtitles[0]?.url || "",
+              type: "vtt",
+              style: {
+                color: "#fff",
+                fontSize: "20px",
+                textShadow: "0 2px 4px rgba(0, 0, 0, 0.8)",
+              },
+              encoding: "utf-8",
+            },
+          }
+        : {}),
+      // 设置菜单
+      settings: [
+        // 播放速度
+        {
+          html: "播放速度",
+          width: 150,
+          tooltip: "1x",
+          selector: [
+            { html: "0.5x", value: 0.5 },
+            { html: "0.75x", value: 0.75 },
+            { html: "1x", value: 1, default: true },
+            { html: "1.25x", value: 1.25 },
+            { html: "1.5x", value: 1.5 },
+            { html: "2x", value: 2 },
+          ],
+          onSelect(item) {
+            art.playbackRate = item.value as number;
+            return item.html as string;
+          },
+        },
+        // 字幕切换（如果有多个字幕）
+        ...(subtitles.length > 1
+          ? [
+              {
+                html: "字幕",
+                width: 200,
+                tooltip: subtitles.find((s) => s.default)?.name || subtitles[0]?.name || "无",
+                selector: [
+                  { html: "关闭", value: "" },
+                  ...subtitles.map((sub) => ({
+                    html: sub.name,
+                    value: sub.url,
+                    default: sub.default,
+                  })),
+                ],
+                onSelect(item: { html?: string; value?: unknown }) {
+                  const value = item.value as string | undefined;
+                  if (value) {
+                    art.subtitle.switch(value);
+                  } else {
+                    art.subtitle.show = false;
+                  }
+                  return (item.html || "") as string;
+                },
+              },
+            ]
+          : []),
+      ],
+      // 控制栏配置（pip: true 已内置画中画按钮）
+      controls: [],
+      // 快捷键
+      hotkey: true,
+    });
+
+    artRef.current = art;
+
+    // 事件监听
+    art.on("ready", () => {
       setIsReady(true);
+      setHasError(false);
+      
+      // 设置初始进度
       if (initialProgress > 0) {
-        video.currentTime = initialProgress;
+        art.currentTime = initialProgress;
       }
-    };
+    });
 
-    const handleError = () => {
+    art.on("error", () => {
       setHasError(true);
-    };
+    });
 
-    const handleEnded = () => {
-      onEnded?.();
-    };
+    art.on("video:ended", () => {
+      onEndedRef.current?.();
+    });
 
-    video.addEventListener("loadedmetadata", handleLoadedMetadata);
-    video.addEventListener("error", handleError);
-    video.addEventListener("ended", handleEnded);
+    art.on("video:timeupdate", () => {
+      if (onProgressRef.current && art.duration) {
+        onProgressRef.current({
+          played: art.currentTime / art.duration,
+          playedSeconds: art.currentTime,
+        });
+      }
+    });
 
     return () => {
-      video.removeEventListener("loadedmetadata", handleLoadedMetadata);
-      video.removeEventListener("error", handleError);
-      video.removeEventListener("ended", handleEnded);
+      if (artRef.current) {
+        artRef.current.destroy();
+        artRef.current = null;
+      }
     };
-  }, [initialProgress, onEnded, showPlayer]);
+  }, [showPlayer, url, poster, initialProgress, subtitles, danmakuUrl]);
 
-  const handleTimeUpdate = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || !onProgress) return;
-
-    const played = video.duration ? video.currentTime / video.duration : 0;
-    onProgress({
-      played,
-      playedSeconds: video.currentTime,
-    });
-  }, [onProgress]);
-
-  const handlePlay = () => {
+  const handlePlay = useCallback(() => {
     setShowPlayer(true);
-  };
-
-  // 当显示播放器后自动播放
-  useEffect(() => {
-    const video = videoRef.current;
-    if (showPlayer && video && poster) {
-      // 延迟执行以确保视频元素已完全渲染
-      const timer = setTimeout(() => {
-        if (video && document.contains(video)) {
-          video.play().catch(() => {
-            // 自动播放失败，忽略（用户需要手动点击播放）
-          });
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [showPlayer, poster]);
+  }, []);
 
   if (hasError) {
     return (
@@ -116,6 +282,7 @@ export function VideoPlayer({
           fill
           className="object-cover"
           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 50vw"
+          unoptimized
         />
         <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
           <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -128,19 +295,21 @@ export function VideoPlayer({
 
   return (
     <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-      {!isReady && <Skeleton className="absolute inset-0" />}
-      <video
-        ref={videoRef}
-        src={url}
-        poster={poster || undefined}
-        controls
-        playsInline
-        preload="metadata"
-        className="w-full h-full"
-        onTimeUpdate={handleTimeUpdate}
+      {/* 加载骨架屏 - 使用 CSS 过渡淡出 */}
+      <div 
+        className={`absolute inset-0 z-10 transition-opacity duration-500 ${
+          isReady ? "opacity-0 pointer-events-none" : "opacity-100"
+        }`}
       >
-        您的浏览器不支持视频播放
-      </video>
+        <Skeleton className="w-full h-full" />
+      </div>
+      {/* 播放器容器 - 使用 CSS 过渡淡入 */}
+      <div 
+        ref={containerRef} 
+        className={`w-full h-full transition-opacity duration-300 ${
+          isReady ? "opacity-100" : "opacity-0"
+        }`}
+      />
     </div>
   );
 }

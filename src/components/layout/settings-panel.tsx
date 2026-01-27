@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { useVisualSettings, type BackgroundType } from "@/components/three/scene-background";
+import { useVisualSettings } from "@/components/visual-settings";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -14,24 +14,17 @@ import {
   Sun,
   Moon,
   Monitor,
-  Sparkles,
-  Circle,
-  Waves,
-  EyeOff,
   Check,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Separator } from "@/components/ui/separator";
 
 export function SettingsPanel() {
   const { theme, setTheme } = useTheme();
   const {
-    backgroundType,
     opacity,
     blur,
     borderRadius,
-    setBackgroundType,
     setOpacity,
     setBlur,
     setBorderRadius,
@@ -41,13 +34,6 @@ export function SettingsPanel() {
     { value: "system", label: "跟随系统", icon: Monitor },
     { value: "light", label: "浅色", icon: Sun },
     { value: "dark", label: "深色", icon: Moon },
-  ] as const;
-
-  const backgroundOptions = [
-    { value: "particles", label: "粒子", icon: Sparkles },
-    { value: "shapes", label: "悬浮", icon: Circle },
-    { value: "wave", label: "波浪", icon: Waves },
-    { value: "none", label: "关闭", icon: EyeOff },
   ] as const;
 
   return (
@@ -84,34 +70,6 @@ export function SettingsPanel() {
                 </Button>
               ))}
             </div>
-          </div>
-
-          <Separator />
-
-          {/* 背景动画 */}
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">背景动画</Label>
-            <ToggleGroup
-              type="single"
-              value={backgroundType}
-              onValueChange={(value) => {
-                if (value) setBackgroundType(value as BackgroundType);
-              }}
-              className="justify-start"
-            >
-              {backgroundOptions.map((option) => (
-                <ToggleGroupItem
-                  key={option.value}
-                  value={option.value}
-                  aria-label={option.label}
-                  className="gap-1 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-                  size="sm"
-                >
-                  <option.icon className="h-3.5 w-3.5" />
-                  <span className="text-xs">{option.label}</span>
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
           </div>
 
           <Separator />

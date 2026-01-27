@@ -13,16 +13,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Upload, X, Plus } from "lucide-react";
+import { Loader2, Upload, X, Plus, Eye, EyeOff } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { VideoPlayer } from "@/components/video/video-player";
 
 const uploadSchema = z.object({
   title: z.string().min(1, "请输入标题").max(100, "标题最多100个字符"),
   description: z.string().max(5000, "简介最多5000个字符").optional().or(z.literal("")),
   coverUrl: z.string().url("请输入有效的封面URL").optional().or(z.literal("")),
   videoUrl: z.string().url("请输入有效的视频URL"),
+  subtitleUrl: z.string().url("请输入有效的字幕URL").optional().or(z.literal("")),
+  danmakuUrl: z.string().url("请输入有效的弹幕URL").optional().or(z.literal("")),
 });
 
 type UploadForm = z.infer<typeof uploadSchema>;
@@ -34,6 +37,7 @@ export default function UploadPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState("");
   const [newTags, setNewTags] = useState<string[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
 
   const { data: allTags } = trpc.tag.list.useQuery({ limit: 100 });
   
@@ -54,6 +58,8 @@ export default function UploadPage() {
       description: "",
       coverUrl: "",
       videoUrl: "",
+      subtitleUrl: "",
+      danmakuUrl: "",
     },
   });
 
@@ -85,6 +91,8 @@ export default function UploadPage() {
         description: data.description,
         coverUrl: data.coverUrl || "",
         videoUrl: data.videoUrl,
+        subtitleUrl: data.subtitleUrl || "",
+        danmakuUrl: data.danmakuUrl || "",
         tagIds: selectedTags,
         tagNames: newTags,
       });
@@ -152,12 +160,23 @@ export default function UploadPage() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>视频链接 *</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="https://example.com/video.mp4"
-                        {...field}
-                      />
-                    </FormControl>
+                    <div className="flex gap-2">
+                      <FormControl>
+                        <Input
+                          placeholder="https://example.com/video.mp4"
+                          {...field}
+                        />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setShowPreview(!showPreview)}
+                        disabled={!field.value}
+                      >
+                        {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
                     <FormDescription>
                       支持 .mp4, .webm, .m3u8 格式
                     </FormDescription>
@@ -165,6 +184,20 @@ export default function UploadPage() {
                   </FormItem>
                 )}
               />
+
+              {/* 视频预览 */}
+              {showPreview && form.watch("videoUrl") && (
+                <div className="space-y-2">
+                  <FormLabel>视频预览</FormLabel>
+                  <VideoPlayer
+                    url={form.watch("videoUrl")}
+                    poster={form.watch("coverUrl") || undefined}
+                    autoStart={false}
+                    subtitles={form.watch("subtitleUrl") ? [{ url: form.watch("subtitleUrl")!, name: "字幕", default: true }] : []}
+                    danmakuUrl={form.watch("danmakuUrl") || undefined}
+                  />
+                </div>
+              )}
 
               <FormField
                 control={form.control}
@@ -180,6 +213,46 @@ export default function UploadPage() {
                     </FormControl>
                     <FormDescription>
                       不填则显示为默认封面
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="subtitleUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>字幕链接 (可选)</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="https://example.com/subtitle.vtt"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      支持 VTT、SRT、ASS 格式字幕文件
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="danmakuUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>弹幕链接 (可选)</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="https://example.com/danmaku.xml"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      支持 B站 XML 格式或 JSON 格式弹幕文件
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

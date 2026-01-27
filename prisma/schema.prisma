@@ -116,6 +116,8 @@ model Video {
   description String?     @db.Text
   coverUrl    String?     // 可选，不填则显示默认封面
   videoUrl    String
+  subtitleUrl String?     // 字幕文件 URL（VTT/SRT/ASS）
+  danmakuUrl  String?     // 弹幕文件 URL（XML/JSON）
   duration    Int?
   views       Int         @default(0)
   status      VideoStatus @default(PENDING)

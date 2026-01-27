@@ -49,16 +49,33 @@ export const videoRouter = router({
         tagId: z.string().optional(),
         search: z.string().optional(),
         sortBy: z.enum(["latest", "views", "likes"]).default("latest"),
+        timeRange: z.enum(["all", "today", "week", "month"]).default("all"),
       })
     )
     .query(async ({ ctx, input }) => {
-      const { limit, cursor, tagId, search, sortBy } = input;
+      const { limit, cursor, tagId, search, sortBy, timeRange } = input;
 
       const orderBy = {
         latest: { createdAt: "desc" as const },
         views: { views: "desc" as const },
         likes: { createdAt: "desc" as const }, // 简化处理
       }[sortBy];
+
+      // 计算时间范围
+      const getTimeFilter = () => {
+        const now = new Date();
+        switch (timeRange) {
+          case "today":
+            return new Date(now.setHours(0, 0, 0, 0));
+          case "week":
+            return new Date(now.setDate(now.getDate() - 7));
+          case "month":
+            return new Date(now.setMonth(now.getMonth() - 1));
+          default:
+            return undefined;
+        }
+      };
+      const timeFilter = getTimeFilter();
 
       const videos = await ctx.prisma.video.findMany({
         take: limit + 1,
@@ -73,6 +90,9 @@ export const videoRouter = router({
               { title: { contains: search, mode: "insensitive" } },
               { description: { contains: search, mode: "insensitive" } },
             ],
+          }),
+          ...(timeFilter && {
+            createdAt: { gte: timeFilter },
           }),
         },
         orderBy,
@@ -201,13 +221,15 @@ export const videoRouter = router({
         description: z.string().max(5000).optional(),
         coverUrl: z.string().url().optional().or(z.literal("")),
         videoUrl: z.string().url(),
+        subtitleUrl: z.string().url().optional().or(z.literal("")),
+        danmakuUrl: z.string().url().optional().or(z.literal("")),
         duration: z.number().optional(),
         tagIds: z.array(z.string()).optional(),
         tagNames: z.array(z.string()).optional(), // 新建标签名称
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { tagIds, tagNames, coverUrl, ...data } = input;
+      const { tagIds, tagNames, coverUrl, subtitleUrl, danmakuUrl, ...data } = input;
 
       // 处理新标签
       const allTagIds: string[] = [...(tagIds || [])];
@@ -243,6 +265,8 @@ export const videoRouter = router({
           duration: data.duration,
           status: "PUBLISHED", // 直接发布，无需审核
           ...(coverUrl ? { coverUrl } : {}),
+          ...(subtitleUrl ? { subtitleUrl } : {}),
+          ...(danmakuUrl ? { danmakuUrl } : {}),
           uploader: { connect: { id: ctx.session.user.id } },
           ...(allTagIds.length > 0 
             ? { tags: { create: allTagIds.map((tagId) => ({ tag: { connect: { id: tagId } } })) } }
@@ -260,13 +284,16 @@ export const videoRouter = router({
         id: z.string(),
         title: z.string().min(1).max(100).optional(),
         description: z.string().max(5000).optional(),
-        coverUrl: z.string().url().optional(),
+        coverUrl: z.string().url().optional().or(z.literal("")),
         videoUrl: z.string().url().optional(),
+        subtitleUrl: z.string().url().optional().or(z.literal("")),
+        danmakuUrl: z.string().url().optional().or(z.literal("")),
         tagIds: z.array(z.string()).optional(),
+        tagNames: z.array(z.string()).optional(), // 新建标签名称
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, tagIds, ...data } = input;
+      const { id, tagIds, tagNames, ...data } = input;
 
       const video = await ctx.prisma.video.findUnique({
         where: { id },
@@ -288,16 +315,42 @@ export const videoRouter = router({
       });
 
       // 更新标签关联
-      if (tagIds !== undefined) {
+      if (tagIds !== undefined || tagNames !== undefined) {
+        // 处理新标签
+        const allTagIds: string[] = [...(tagIds || [])];
+        if (tagNames && tagNames.length > 0) {
+          for (const tagName of tagNames) {
+            const slug = tagName
+              .toLowerCase()
+              .replace(/\s+/g, "-")
+              .replace(/[^a-z0-9\u4e00-\u9fa5-]/g, "");
+            
+            const existingTag = await ctx.prisma.tag.findFirst({
+              where: { OR: [{ name: tagName }, { slug }] },
+            });
+            
+            if (existingTag) {
+              if (!allTagIds.includes(existingTag.id)) {
+                allTagIds.push(existingTag.id);
+              }
+            } else {
+              const newTag = await ctx.prisma.tag.create({
+                data: { name: tagName, slug: slug || `tag-${Date.now()}` },
+              });
+              allTagIds.push(newTag.id);
+            }
+          }
+        }
+
         // 删除所有现有标签关联
         await ctx.prisma.tagOnVideo.deleteMany({
           where: { videoId: id },
         });
 
         // 创建新的标签关联
-        if (tagIds.length > 0) {
+        if (allTagIds.length > 0) {
           await ctx.prisma.tagOnVideo.createMany({
-            data: tagIds.map((tagId) => ({
+            data: allTagIds.map((tagId) => ({
               videoId: id,
               tagId,
             })),
@@ -687,4 +740,92 @@ export const videoRouter = router({
     });
     return { success: true };
   }),
+
+  // 获取推荐视频
+  getRecommendations: publicProcedure
+    .input(
+      z.object({
+        videoId: z.string(),
+        limit: z.number().min(1).max(20).default(10),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { videoId, limit } = input;
+
+      // 获取当前视频信息（包括标签和上传者）
+      const currentVideo = await ctx.prisma.video.findUnique({
+        where: { id: videoId },
+        include: {
+          tags: { select: { tagId: true } },
+        },
+      });
+
+      if (!currentVideo) {
+        return [];
+      }
+
+      const tagIds = currentVideo.tags.map((t) => t.tagId);
+
+      // 推荐算法：
+      // 1. 优先推荐具有相同标签的视频
+      // 2. 其次推荐同一上传者的视频
+      // 3. 按热门度（播放量）排序
+      // 4. 排除当前视频
+
+      const recommendations = await ctx.prisma.video.findMany({
+        where: {
+          id: { not: videoId },
+          status: "PUBLISHED",
+          OR: [
+            // 有相同标签的视频
+            ...(tagIds.length > 0
+              ? [{ tags: { some: { tagId: { in: tagIds } } } }]
+              : []),
+            // 同一上传者的视频
+            { uploaderId: currentVideo.uploaderId },
+          ],
+        },
+        orderBy: [
+          { views: "desc" },
+          { createdAt: "desc" },
+        ],
+        take: limit * 2, // 多取一些用于去重和排序
+        include: {
+          uploader: {
+            select: { id: true, username: true, nickname: true, avatar: true },
+          },
+          tags: {
+            include: { tag: { select: { id: true, name: true, slug: true } } },
+          },
+          _count: { select: { likes: true, favorites: true } },
+        },
+      });
+
+      // 计算相关性分数并排序
+      const scoredVideos = recommendations.map((video) => {
+        let score = 0;
+
+        // 标签匹配加分（每个匹配的标签 +10 分）
+        const videoTagIds = video.tags.map((t) => t.tagId);
+        const matchingTags = tagIds.filter((id) => videoTagIds.includes(id));
+        score += matchingTags.length * 10;
+
+        // 同一上传者加分 (+5 分)
+        if (video.uploaderId === currentVideo.uploaderId) {
+          score += 5;
+        }
+
+        // 热门度加分（播放量的对数）
+        score += Math.log10(video.views + 1);
+
+        return { ...video, _score: score };
+      });
+
+      // 按分数排序并取前 limit 个
+      scoredVideos.sort((a, b) => b._score - a._score);
+      
+      // 移除 _score 字段并返回
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      return scoredVideos.slice(0, limit).map(({ _score, ...video }) => video);
+    }),
 });
