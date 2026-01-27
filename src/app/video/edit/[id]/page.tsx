@@ -26,13 +26,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -46,7 +39,6 @@ const editSchema = z.object({
   description: z.string().max(5000, "简介最多5000个字符").optional().or(z.literal("")),
   coverUrl: z.string().url("请输入有效的封面URL").optional().or(z.literal("")),
   videoUrl: z.string().url("请输入有效的视频URL"),
-  categoryId: z.string().optional().or(z.literal("")),
 });
 
 type EditForm = z.infer<typeof editSchema>;
@@ -67,7 +59,6 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
     { enabled: !!session }
   );
 
-  const { data: categories } = trpc.category.list.useQuery();
   const { data: allTags } = trpc.tag.list.useQuery({});
 
   const updateMutation = trpc.video.update.useMutation({
@@ -87,7 +78,6 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
       description: "",
       coverUrl: "",
       videoUrl: "",
-      categoryId: "",
     },
   });
 
@@ -98,7 +88,6 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
         description: video.description || "",
         coverUrl: video.coverUrl || "",
         videoUrl: video.videoUrl,
-        categoryId: video.categoryId || "",
       });
       setSelectedTags(video.tags.map((t) => ({ id: t.tag.id, name: t.tag.name })));
     }
@@ -119,7 +108,6 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
         description: data.description || undefined,
         coverUrl: data.coverUrl || undefined,
         videoUrl: data.videoUrl,
-        categoryId: data.categoryId || null,
       });
     } finally {
       setIsSubmitting(false);
@@ -245,35 +233,6 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
                         <FormControl>
                           <Input placeholder="https://... (可选)" {...field} />
                         </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="categoryId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>分类</FormLabel>
-                        <Select
-                          value={field.value || "none"}
-                          onValueChange={(val) => field.onChange(val === "none" ? "" : val)}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="选择分类" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">无分类</SelectItem>
-                            {categories?.map((category) => (
-                              <SelectItem key={category.id} value={category.id}>
-                                {category.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}

@@ -26,6 +26,7 @@ src/generated
 Thumbs.db
 
 # Logs
+logs
 *.log
 npm-debug.log*
 pnpm-debug.log*

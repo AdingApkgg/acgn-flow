@@ -217,9 +217,6 @@ export default function MyVideosPage() {
                           <Badge variant={statusMap[video.status as keyof typeof statusMap]?.variant || "outline"}>
                             {statusMap[video.status as keyof typeof statusMap]?.label || video.status}
                           </Badge>
-                          {video.category && (
-                            <span>{video.category.name}</span>
-                          )}
                         </div>
                         <div className="flex items-center gap-3 sm:gap-4 mt-2 text-xs sm:text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">

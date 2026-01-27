@@ -18,9 +18,6 @@ interface VideoJsonLdProps {
       username: string;
       nickname: string | null;
     };
-    category: {
-      name: string;
-    } | null;
     tags: Array<{
       tag: {
         name: string;
@@ -53,9 +50,6 @@ export function VideoJsonLd({ video }: VideoJsonLdProps) {
     },
     ...(video.duration && {
       duration: `PT${Math.floor(video.duration / 60)}M${video.duration % 60}S`,
-    }),
-    ...(video.category && {
-      genre: video.category.name,
     }),
     keywords: video.tags.map((t) => t.tag.name).join(", "),
   };

@@ -12,14 +12,13 @@ export const videoRouter = router({
       z.object({
         limit: z.number().min(1).max(50).default(20),
         cursor: z.string().optional(),
-        categoryId: z.string().optional(),
         tagId: z.string().optional(),
         search: z.string().optional(),
         sortBy: z.enum(["latest", "views", "likes"]).default("latest"),
       })
     )
     .query(async ({ ctx, input }) => {
-      const { limit, cursor, categoryId, tagId, search, sortBy } = input;
+      const { limit, cursor, tagId, search, sortBy } = input;
 
       const orderBy = {
         latest: { createdAt: "desc" as const },
@@ -32,7 +31,6 @@ export const videoRouter = router({
         cursor: cursor ? { id: cursor } : undefined,
         where: {
           status: "PUBLISHED",
-          ...(categoryId && { categoryId }),
           ...(tagId && {
             tags: { some: { tagId } },
           }),
@@ -48,7 +46,6 @@ export const videoRouter = router({
           uploader: {
             select: { id: true, username: true, nickname: true, avatar: true },
           },
-          category: { select: { id: true, name: true, slug: true } },
           _count: { select: { likes: true, favorites: true } },
         },
       });
@@ -76,7 +73,6 @@ export const videoRouter = router({
           uploader: {
             select: { id: true, username: true, nickname: true, avatar: true },
           },
-          category: { select: { id: true, name: true, slug: true } },
           tags: {
             include: { tag: { select: { id: true, name: true, slug: true } } },
           },
@@ -111,7 +107,6 @@ export const videoRouter = router({
         cursor: input.cursor ? { id: input.cursor } : undefined,
         orderBy: { createdAt: "desc" },
         include: {
-          category: { select: { id: true, name: true, slug: true } },
           tags: {
             include: { tag: { select: { id: true, name: true, slug: true } } },
           },
@@ -135,7 +130,6 @@ export const videoRouter = router({
       const video = await ctx.prisma.video.findUnique({
         where: { id: input.id },
         include: {
-          category: { select: { id: true, name: true, slug: true } },
           tags: {
             include: { tag: { select: { id: true, name: true, slug: true } } },
           },
@@ -174,36 +168,12 @@ export const videoRouter = router({
         coverUrl: z.string().url().optional().or(z.literal("")),
         videoUrl: z.string().url(),
         duration: z.number().optional(),
-        categoryId: z.string().optional(),
-        categoryName: z.string().optional(), // 新建分类名称
         tagIds: z.array(z.string()).optional(),
         tagNames: z.array(z.string()).optional(), // 新建标签名称
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { tagIds, tagNames, categoryName, categoryId, coverUrl, ...data } = input;
-
-      // 如果提供了新分类名称，创建新分类
-      let finalCategoryId = categoryId;
-      if (categoryName && !categoryId) {
-        const slug = categoryName
-          .toLowerCase()
-          .replace(/\s+/g, "-")
-          .replace(/[^a-z0-9\u4e00-\u9fa5-]/g, "");
-        
-        const existingCategory = await ctx.prisma.category.findFirst({
-          where: { OR: [{ name: categoryName }, { slug }] },
-        });
-        
-        if (existingCategory) {
-          finalCategoryId = existingCategory.id;
-        } else {
-          const newCategory = await ctx.prisma.category.create({
-            data: { name: categoryName, slug: slug || `cat-${Date.now()}` },
-          });
-          finalCategoryId = newCategory.id;
-        }
-      }
+      const { tagIds, tagNames, coverUrl, ...data } = input;
 
       // 处理新标签
       const allTagIds: string[] = [...(tagIds || [])];
@@ -239,7 +209,6 @@ export const videoRouter = router({
           duration: data.duration,
           status: "PUBLISHED", // 直接发布，无需审核
           ...(coverUrl ? { coverUrl } : {}),
-          ...(finalCategoryId ? { category: { connect: { id: finalCategoryId } } } : {}),
           uploader: { connect: { id: ctx.session.user.id } },
           ...(allTagIds.length > 0 
             ? { tags: { create: allTagIds.map((tagId) => ({ tag: { connect: { id: tagId } } })) } }
@@ -259,7 +228,6 @@ export const videoRouter = router({
         description: z.string().max(5000).optional(),
         coverUrl: z.string().url().optional(),
         videoUrl: z.string().url().optional(),
-        categoryId: z.string().nullish(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -287,13 +255,13 @@ export const videoRouter = router({
       return updated;
     }),
 
-  // 删除视频
+  // 删除视频（真删除）
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const video = await ctx.prisma.video.findUnique({
         where: { id: input.id },
-        select: { uploaderId: true },
+        select: { uploaderId: true, tags: { select: { tagId: true } } },
       });
 
       if (!video) {
@@ -304,10 +272,20 @@ export const videoRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
 
-      await ctx.prisma.video.update({
-        where: { id: input.id },
-        data: { status: "DELETED" },
-      });
+      const tagIds = video.tags.map((t) => t.tagId);
+
+      // 真删除视频（关联记录会通过 CASCADE 自动删除）
+      await ctx.prisma.video.delete({ where: { id: input.id } });
+
+      // 清理空标签（没有关联任何视频的标签）
+      if (tagIds.length > 0) {
+        await ctx.prisma.tag.deleteMany({
+          where: {
+            id: { in: tagIds },
+            videos: { none: {} },
+          },
+        });
+      }
 
       await deleteCachePattern(`video:${input.id}`);
       return { success: true };
@@ -548,7 +526,6 @@ export const videoRouter = router({
               uploader: {
                 select: { id: true, username: true, nickname: true, avatar: true },
               },
-              category: { select: { id: true, name: true, slug: true } },
               _count: { select: { likes: true, favorites: true } },
             },
           },
@@ -592,7 +569,6 @@ export const videoRouter = router({
               uploader: {
                 select: { id: true, username: true, nickname: true, avatar: true },
               },
-              category: { select: { id: true, name: true, slug: true } },
               _count: { select: { likes: true, favorites: true } },
             },
           },

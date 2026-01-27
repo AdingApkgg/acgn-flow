@@ -16,12 +16,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 1,
     },
     {
-      url: `${baseUrl}/categories`,
-      lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 0.8,
-    },
-    {
       url: `${baseUrl}/tags`,
       lastModified: new Date(),
       changeFrequency: "weekly",
@@ -58,18 +52,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.9,
     }));
 
-    // 获取所有分类
-    const categories = await prisma.category.findMany({
-      select: { slug: true, createdAt: true },
-    });
-
-    const categoryPages: MetadataRoute.Sitemap = categories.map((category) => ({
-      url: `${baseUrl}/category/${category.slug}`,
-      lastModified: category.createdAt,
-      changeFrequency: "weekly" as const,
-      priority: 0.7,
-    }));
-
     // 获取所有标签
     const tags = await prisma.tag.findMany({
       select: { slug: true },
@@ -101,7 +83,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.5,
     }));
 
-    return [...staticPages, ...videoPages, ...categoryPages, ...tagPages, ...userPages];
+    return [...staticPages, ...videoPages, ...tagPages, ...userPages];
   } catch {
     // 数据库不可用时只返回静态页面
     console.warn("Sitemap: Database unavailable, returning static pages only");

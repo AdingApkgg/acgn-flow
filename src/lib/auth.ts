@@ -10,7 +10,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1), // 可以是邮箱或用户名
   password: z.string().min(6),
 });
 
@@ -19,17 +19,23 @@ const providers: Provider[] = [
   Credentials({
     name: "credentials",
     credentials: {
-      email: { label: "Email", type: "email" },
-      password: { label: "Password", type: "password" },
+      identifier: { label: "邮箱或用户名", type: "text" },
+      password: { label: "密码", type: "password" },
     },
     async authorize(credentials) {
       const parsed = loginSchema.safeParse(credentials);
       if (!parsed.success) return null;
 
-      const { email, password } = parsed.data;
+      const { identifier, password } = parsed.data;
 
-      const user = await prisma.user.findUnique({
-        where: { email },
+      // 支持邮箱或用户名登录
+      const user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: identifier },
+            { username: identifier },
+          ],
+        },
       });
 
       if (!user || !user.password) return null;

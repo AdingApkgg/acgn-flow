@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, publicProcedure, protectedProcedure } from "../trpc";
+import { router, publicProcedure, protectedProcedure, ownerProcedure, adminProcedure } from "../trpc";
 import bcrypt from "bcryptjs";
 import { TRPCError } from "@trpc/server";
 
@@ -99,7 +99,6 @@ export const userRouter = router({
           uploader: {
             select: { id: true, username: true, nickname: true, avatar: true },
           },
-          category: { select: { id: true, name: true, slug: true } },
           _count: { select: { likes: true, favorites: true } },
         },
       });
@@ -170,6 +169,57 @@ export const userRouter = router({
       });
 
       return { success: true, user };
+    }),
+
+  // 更新账户信息（用户名、邮箱）
+  updateAccount: protectedProcedure
+    .input(
+      z.object({
+        username: z.string().min(3, "用户名至少3个字符").max(20, "用户名最多20个字符").regex(/^[a-zA-Z0-9_]+$/, "用户名只能包含字母、数字和下划线").optional(),
+        email: z.string().email("请输入有效的邮箱地址").optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const updates: { username?: string; email?: string } = {};
+
+      // 检查用户名是否已存在
+      if (input.username) {
+        const existingUsername = await ctx.prisma.user.findFirst({
+          where: {
+            username: input.username,
+            NOT: { id: ctx.session.user.id },
+          },
+        });
+        if (existingUsername) {
+          throw new TRPCError({ code: "CONFLICT", message: "用户名已被使用" });
+        }
+        updates.username = input.username;
+      }
+
+      // 检查邮箱是否已存在
+      if (input.email) {
+        const existingEmail = await ctx.prisma.user.findFirst({
+          where: {
+            email: input.email,
+            NOT: { id: ctx.session.user.id },
+          },
+        });
+        if (existingEmail) {
+          throw new TRPCError({ code: "CONFLICT", message: "邮箱已被使用" });
+        }
+        updates.email = input.email;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return { success: true };
+      }
+
+      await ctx.prisma.user.update({
+        where: { id: ctx.session.user.id },
+        data: updates,
+      });
+
+      return { success: true };
     }),
 
   // 修改密码
@@ -276,5 +326,117 @@ export const userRouter = router({
       });
 
       return { success: true, avatar: user.avatar };
+    }),
+
+  // 获取所有用户列表（管理员）
+  listUsers: adminProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(50),
+        cursor: z.string().nullish(),
+        search: z.string().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const users = await ctx.prisma.user.findMany({
+        take: input.limit + 1,
+        cursor: input.cursor ? { id: input.cursor } : undefined,
+        where: input.search
+          ? {
+              OR: [
+                { username: { contains: input.search, mode: "insensitive" } },
+                { nickname: { contains: input.search, mode: "insensitive" } },
+                { email: { contains: input.search, mode: "insensitive" } },
+              ],
+            }
+          : undefined,
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          nickname: true,
+          avatar: true,
+          role: true,
+          createdAt: true,
+          _count: { select: { videos: true } },
+        },
+      });
+
+      let nextCursor: string | undefined = undefined;
+      if (users.length > input.limit) {
+        const nextItem = users.pop();
+        nextCursor = nextItem!.id;
+      }
+
+      return { users, nextCursor };
+    }),
+
+  // 设置用户角色（仅站长）
+  setUserRole: ownerProcedure
+    .input(
+      z.object({
+        userId: z.string(),
+        role: z.enum(["USER", "ADMIN"]), // 站长只能设置为 USER 或 ADMIN
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // 不能修改自己的角色
+      if (input.userId === ctx.session.user.id) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "不能修改自己的角色" });
+      }
+
+      // 不能修改其他站长的角色
+      const targetUser = await ctx.prisma.user.findUnique({
+        where: { id: input.userId },
+        select: { role: true },
+      });
+
+      if (!targetUser) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+      }
+
+      if (targetUser.role === "OWNER") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "不能修改站长的角色" });
+      }
+
+      const user = await ctx.prisma.user.update({
+        where: { id: input.userId },
+        data: { role: input.role },
+        select: { id: true, username: true, role: true },
+      });
+
+      return { success: true, user };
+    }),
+
+  // 转让站长权限（仅站长）
+  transferOwnership: ownerProcedure
+    .input(z.object({ userId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.userId === ctx.session.user.id) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "不能转让给自己" });
+      }
+
+      const targetUser = await ctx.prisma.user.findUnique({
+        where: { id: input.userId },
+      });
+
+      if (!targetUser) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+      }
+
+      // 事务：将目标用户设为站长，将自己降为管理员
+      await ctx.prisma.$transaction([
+        ctx.prisma.user.update({
+          where: { id: input.userId },
+          data: { role: "OWNER" },
+        }),
+        ctx.prisma.user.update({
+          where: { id: ctx.session.user.id },
+          data: { role: "ADMIN" },
+        }),
+      ]);
+
+      return { success: true };
     }),
 });

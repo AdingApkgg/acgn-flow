@@ -16,11 +16,6 @@ interface Video {
     nickname?: string | null;
     avatar?: string | null;
   };
-  category?: {
-    id: string;
-    name: string;
-    slug: string;
-  } | null;
   _count: {
     likes: number;
     favorites: number;

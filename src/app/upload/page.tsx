@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Loader2, Upload, X, Plus } from "lucide-react";
@@ -24,8 +23,6 @@ const uploadSchema = z.object({
   description: z.string().max(5000, "简介最多5000个字符").optional().or(z.literal("")),
   coverUrl: z.string().url("请输入有效的封面URL").optional().or(z.literal("")),
   videoUrl: z.string().url("请输入有效的视频URL"),
-  categoryId: z.string().optional().or(z.literal("")),
-  newCategoryName: z.string().optional().or(z.literal("")),
 });
 
 type UploadForm = z.infer<typeof uploadSchema>;
@@ -37,9 +34,7 @@ export default function UploadPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState("");
   const [newTags, setNewTags] = useState<string[]>([]);
-  const [useNewCategory, setUseNewCategory] = useState(false);
 
-  const { data: categories } = trpc.category.list.useQuery();
   const { data: allTags } = trpc.tag.list.useQuery({ limit: 100 });
   
   const createMutation = trpc.video.create.useMutation({
@@ -59,8 +54,6 @@ export default function UploadPage() {
       description: "",
       coverUrl: "",
       videoUrl: "",
-      categoryId: "",
-      newCategoryName: "",
     },
   });
 
@@ -92,8 +85,6 @@ export default function UploadPage() {
         description: data.description,
         coverUrl: data.coverUrl || "",
         videoUrl: data.videoUrl,
-        categoryId: useNewCategory ? undefined : data.categoryId,
-        categoryName: useNewCategory ? data.newCategoryName : undefined,
         tagIds: selectedTags,
         tagNames: newTags,
       });
@@ -194,71 +185,6 @@ export default function UploadPage() {
                   </FormItem>
                 )}
               />
-
-              {/* 分类选择 */}
-              <div className="space-y-3">
-                <FormLabel>分类</FormLabel>
-                <div className="flex items-center gap-2 mb-2">
-                  <Button
-                    type="button"
-                    variant={!useNewCategory ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setUseNewCategory(false)}
-                  >
-                    选择已有
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={useNewCategory ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setUseNewCategory(true)}
-                  >
-                    创建新分类
-                  </Button>
-                </div>
-                
-                {!useNewCategory ? (
-                  <FormField
-                    control={form.control}
-                    name="categoryId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value || ""}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="选择分类" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {categories?.map((category) => (
-                              <SelectItem key={category.id} value={category.id}>
-                                {category.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                ) : (
-                  <FormField
-                    control={form.control}
-                    name="newCategoryName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input placeholder="输入新分类名称" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-              </div>
 
               {/* 标签选择 */}
               <div className="space-y-3">

@@ -45,6 +45,7 @@ model User {
 enum Role {
   USER
   ADMIN
+  OWNER  // 站长，拥有最高权限
 }
 
 model Account {
@@ -97,8 +98,6 @@ model Video {
   views       Int         @default(0)
   status      VideoStatus @default(PENDING)
   
-  categoryId  String?
-  category    Category?   @relation(fields: [categoryId], references: [id])
   tags        TagOnVideo[]
   
   uploaderId  String
@@ -115,7 +114,6 @@ model Video {
   playlistItems PlaylistItem[]
 
   @@index([uploaderId])
-  @@index([categoryId])
   @@index([status])
   @@index([createdAt])
 }
@@ -127,19 +125,6 @@ enum VideoStatus {
   DELETED
 }
 
-model Category {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  slug        String   @unique
-  description String?
-  icon        String?
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-
-  videos Video[]
-
-  @@index([slug])
-}
 
 model Tag {
   id        String       @id @default(cuid())

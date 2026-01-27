@@ -219,9 +219,6 @@ export default function VideoPage({ params }: VideoPageProps) {
       <BreadcrumbJsonLd
         items={[
           { name: "首页", url: baseUrl },
-          ...(video.category
-            ? [{ name: video.category.name, url: `${baseUrl}/category/${video.category.slug}` }]
-            : []),
           { name: video.title, url: `${baseUrl}/video/${video.id}` },
         ]}
       />
@@ -382,17 +379,6 @@ export default function VideoPage({ params }: VideoPageProps) {
           <Separator />
 
           <div className="space-y-4">
-            {video.category && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">分类:</span>
-                <Badge variant="secondary">
-                  <Link href={`/category/${video.category.slug}`}>
-                    {video.category.name}
-                  </Link>
-                </Badge>
-              </div>
-            )}
-
             {video.tags.length > 0 && (
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm text-muted-foreground">标签:</span>

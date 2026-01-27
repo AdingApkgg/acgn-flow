@@ -28,11 +28,6 @@ interface VideoCardProps {
       nickname?: string | null;
       avatar?: string | null;
     };
-    category?: {
-      id: string;
-      name: string;
-      slug: string;
-    } | null;
     _count: {
       likes: number;
       favorites: number;
@@ -83,21 +78,6 @@ export function VideoCard({ video, index = 0 }: VideoCardProps) {
               </motion.div>
             )}
 
-            {/* Category */}
-            {video.category && (
-              <motion.div
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.1 }}
-              >
-                <Badge
-                  variant="secondary"
-                  className="absolute top-2 left-2 text-xs backdrop-blur-sm"
-                >
-                  {video.category.name}
-                </Badge>
-              </motion.div>
-            )}
           </div>
 
           {/* Info */}

@@ -19,7 +19,7 @@ import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const loginSchema = z.object({
-  email: z.string().email("请输入有效的邮箱地址"),
+  identifier: z.string().min(1, "请输入邮箱或用户名"),
   password: z.string().min(6, "密码至少6个字符"),
   captcha: z.string().min(1, "请输入计算结果"),
 });
@@ -37,7 +37,7 @@ function LoginForm() {
   const form = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      identifier: "",
       password: "",
       captcha: "",
     },
@@ -63,13 +63,13 @@ function LoginForm() {
       }
 
       const result = await signIn("credentials", {
-        email: data.email,
+        identifier: data.identifier,
         password: data.password,
         redirect: false,
       });
 
       if (result?.error) {
-        toast.error("登录失败", { description: "邮箱或密码错误" });
+        toast.error("登录失败", { description: "账号或密码错误" });
         setCaptchaKey((k) => k + 1);
         form.setValue("captcha", "");
       } else {
@@ -108,14 +108,14 @@ function LoginForm() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
                 control={form.control}
-                name="email"
+                name="identifier"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>邮箱</FormLabel>
+                    <FormLabel>邮箱或用户名</FormLabel>
                     <FormControl>
                       <Input
-                        type="email"
-                        placeholder="your@email.com"
+                        type="text"
+                        placeholder="邮箱或用户名"
                         {...field}
                       />
                     </FormControl>

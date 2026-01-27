@@ -24,7 +24,6 @@ export async function GET() {
       take: 50,
       include: {
         uploader: { select: { username: true, nickname: true } },
-        category: { select: { name: true } },
       },
     });
 
@@ -38,7 +37,6 @@ export async function GET() {
       <description>${escapeXml(video.description || "")}</description>
       <pubDate>${new Date(video.createdAt).toUTCString()}</pubDate>
       <author>${escapeXml(video.uploader.nickname || video.uploader.username)}</author>
-      ${video.category ? `<category>${escapeXml(video.category.name)}</category>` : ""}
       ${video.coverUrl ? `<enclosure url="${escapeXml(video.coverUrl)}" type="image/jpeg" />` : ""}
     </item>`
       )
