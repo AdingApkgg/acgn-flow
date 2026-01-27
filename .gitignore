@@ -49,3 +49,6 @@ deploy/rathole-server.toml
 # Misc
 *.tsbuildinfo
 next-env.d.ts
+
+# Google Search Console
+public/google*.html
