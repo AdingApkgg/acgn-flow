@@ -14,15 +14,15 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { motion } from "framer-motion";
-import { CaptchaInput } from "@/components/ui/captcha-input";
+import { EmailCodeInput } from "@/components/ui/email-code-input";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 
 const registerSchema = z.object({
   email: z.string().email("请输入有效的邮箱地址"),
-  username: z.string().min(3, "用户名至少3个字符").max(20, "用户名最多20个字符"),
+  username: z.string().min(3, "用户名至少3个字符").max(20, "用户名最多20个字符").regex(/^[a-zA-Z0-9_]+$/, "用户名只能包含字母、数字和下划线"),
   password: z.string().min(6, "密码至少6个字符"),
   confirmPassword: z.string(),
-  captcha: z.string().min(1, "请输入计算结果"),
+  emailCode: z.string().length(6, "请输入6位验证码"),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "两次密码不一致",
   path: ["confirmPassword"],
@@ -33,7 +33,6 @@ type RegisterForm = z.infer<typeof registerSchema>;
 export default function RegisterPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
-  const [captchaKey, setCaptchaKey] = useState(0);
 
   const registerMutation = trpc.user.register.useMutation({
     onSuccess: () => {
@@ -42,8 +41,6 @@ export default function RegisterPage() {
     },
     onError: (error) => {
       toast.error("注册失败", { description: error.message });
-      setCaptchaKey((k) => k + 1);
-      form.setValue("captcha", "");
     },
   });
 
@@ -54,25 +51,29 @@ export default function RegisterPage() {
       username: "",
       password: "",
       confirmPassword: "",
-      captcha: "",
+      emailCode: "",
     },
   });
+
+  const email = form.watch("email");
 
   async function onSubmit(data: RegisterForm) {
     setIsLoading(true);
     try {
-      // 验证验证码
-      const captchaRes = await fetch("/api/captcha", {
+      // 验证邮箱验证码
+      const verifyRes = await fetch("/api/email/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ captcha: data.captcha }),
+        body: JSON.stringify({ 
+          email: data.email, 
+          code: data.emailCode,
+          type: "REGISTER",
+        }),
       });
-      const captchaResult = await captchaRes.json();
+      const verifyResult = await verifyRes.json();
 
-      if (!captchaResult.valid) {
-        toast.error("验证码错误");
-        setCaptchaKey((k) => k + 1);
-        form.setValue("captcha", "");
+      if (!verifyResult.valid) {
+        toast.error(verifyResult.message || "验证码错误");
         setIsLoading(false);
         return;
       }
@@ -163,16 +164,17 @@ export default function RegisterPage() {
               />
               <FormField
                 control={form.control}
-                name="captcha"
+                name="emailCode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>验证码</FormLabel>
+                    <FormLabel>邮箱验证码</FormLabel>
                     <FormControl>
-                      <CaptchaInput
-                        key={captchaKey}
+                      <EmailCodeInput
+                        email={email}
+                        type="REGISTER"
                         value={field.value}
                         onChange={field.onChange}
-                        error={form.formState.errors.captcha?.message}
+                        error={form.formState.errors.emailCode?.message}
                       />
                     </FormControl>
                   </FormItem>
