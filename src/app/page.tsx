@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { PageWrapper, FadeIn } from "@/components/motion";
 import { AlertTriangle, X } from "lucide-react";
 import { WebsiteJsonLd, OrganizationJsonLd } from "@/components/seo/json-ld";
+import { SiteStats } from "@/components/stats/site-stats";
 
 type SortBy = "latest" | "views" | "likes";
 
@@ -70,6 +71,11 @@ export default function HomePage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* 网站统计 */}
+        <section className="mb-8">
+          <SiteStats />
+        </section>
 
         <section className="mb-8">
           <FadeIn className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">

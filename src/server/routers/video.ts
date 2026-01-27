@@ -4,8 +4,42 @@ import { TRPCError } from "@trpc/server";
 import { getCache, setCache, deleteCachePattern } from "@/lib/redis";
 
 const VIDEO_CACHE_TTL = 300; // 5 minutes
+const STATS_CACHE_TTL = 60; // 1 minute
 
 export const videoRouter = router({
+  // 获取网站公开统计数据
+  getPublicStats: publicProcedure.query(async ({ ctx }) => {
+    const cacheKey = "public:stats";
+    const cached = await getCache<{
+      videoCount: number;
+      userCount: number;
+      tagCount: number;
+      totalViews: number;
+    }>(cacheKey);
+
+    if (cached) return cached;
+
+    const [videoCount, userCount, tagCount, viewsResult] = await Promise.all([
+      ctx.prisma.video.count({ where: { status: "PUBLISHED" } }),
+      ctx.prisma.user.count(),
+      ctx.prisma.tag.count(),
+      ctx.prisma.video.aggregate({
+        where: { status: "PUBLISHED" },
+        _sum: { views: true },
+      }),
+    ]);
+
+    const stats = {
+      videoCount,
+      userCount,
+      tagCount,
+      totalViews: viewsResult._sum.views || 0,
+    };
+
+    await setCache(cacheKey, stats, STATS_CACHE_TTL);
+    return stats;
+  }),
+
   // 获取视频列表
   list: publicProcedure
     .input(
