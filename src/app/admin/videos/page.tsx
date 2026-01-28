@@ -26,7 +26,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -112,10 +111,7 @@ export default function AdminVideosPage() {
 
   return (
     <div className="space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+      <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Video className="h-6 w-6" />
           视频管理
@@ -123,7 +119,7 @@ export default function AdminVideosPage() {
         <p className="text-muted-foreground mt-1">
           审核和管理网站视频内容
         </p>
-      </motion.div>
+      </div>
 
       {/* 搜索和筛选 */}
       <Card>
@@ -186,12 +182,9 @@ export default function AdminVideosPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {videos.map((video, index) => (
-                <motion.div
+              {videos.map((video) => (
+                <div
                   key={video.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.03 }}
                   className="flex gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors"
                 >
                   {/* 封面 */}
@@ -301,7 +294,7 @@ export default function AdminVideosPage() {
                       )}
                     </div>
                   </div>
-                </motion.div>
+                </div>
               ))}
 
               {hasNextPage && (

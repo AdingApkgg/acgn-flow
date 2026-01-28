@@ -31,8 +31,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { Loader2, ArrowLeft, X, Plus, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { PageWrapper } from "@/components/motion";
 import { VideoPlayer } from "@/components/video/video-player";
 
 const editSchema = z.object({
@@ -173,26 +171,17 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
   }
 
   return (
-    <PageWrapper>
-      <div className="container py-6 max-w-3xl">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-4 mb-6"
-        >
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/my-videos">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <h1 className="text-2xl font-bold">编辑视频</h1>
-        </motion.div>
+    <div className="container py-6 max-w-3xl">
+      <div className="flex items-center gap-4 mb-6">
+        <Button variant="ghost" size="icon" asChild>
+          <Link href="/my-videos">
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+        </Button>
+        <h1 className="text-2xl font-bold">编辑视频</h1>
+      </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
+      <div>
           <Card>
             <CardHeader>
               <CardTitle>视频信息</CardTitle>
@@ -408,8 +397,7 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
               </Form>
             </CardContent>
           </Card>
-        </motion.div>
       </div>
-    </PageWrapper>
+    </div>
   );
 }

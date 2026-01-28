@@ -10,8 +10,6 @@ import { Separator } from "@/components/ui/separator";
 import { Calendar, Video, Heart, Star, Loader2, MapPin, Globe, ExternalLink, Mail } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useInView } from "react-intersection-observer";
-import { motion } from "framer-motion";
-import { PageWrapper, staggerContainer, staggerItem } from "@/components/motion";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatRelativeTime } from "@/lib/format";
 import Link from "next/link";
@@ -191,14 +189,9 @@ export default function UserPage({ params }: UserPageProps) {
   const videos = data?.pages.flatMap((page) => page.videos) ?? [];
 
   return (
-    <PageWrapper>
-      <div className="container py-6">
-        {/* 用户信息头部 */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col sm:flex-row items-start gap-6 mb-8"
-        >
+    <div className="container py-6">
+      {/* 用户信息头部 */}
+      <div className="flex flex-col sm:flex-row items-start gap-6 mb-8">
           <Avatar className="h-24 w-24 ring-4 ring-primary/20">
             <AvatarImage src={user.avatar || undefined} />
             <AvatarFallback className="text-2xl">
@@ -280,18 +273,14 @@ export default function UserPage({ params }: UserPageProps) {
               </span>
             </div>
           </div>
-        </motion.div>
+      </div>
 
         <Separator className="my-6" />
 
         {/* 用户视频列表 */}
-        <motion.h2
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-xl font-semibold mb-6"
-        >
+        <h2 className="text-xl font-semibold mb-6">
           发布的视频
-        </motion.h2>
+        </h2>
 
         {videosLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -307,18 +296,13 @@ export default function UserPage({ params }: UserPageProps) {
           />
         ) : (
           <>
-            <motion.div
-              variants={staggerContainer}
-              initial="initial"
-              animate="animate"
-              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
-            >
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {videos.map((video, index) => (
-                <motion.div key={video.id} variants={staggerItem}>
+                <div key={video.id}>
                   <VideoCard video={video} index={index} />
-                </motion.div>
+                </div>
               ))}
-            </motion.div>
+            </div>
 
             <div ref={ref} className="flex justify-center py-8">
               {isFetchingNextPage && (
@@ -327,7 +311,6 @@ export default function UserPage({ params }: UserPageProps) {
             </div>
           </>
         )}
-      </div>
-    </PageWrapper>
+    </div>
   );
 }

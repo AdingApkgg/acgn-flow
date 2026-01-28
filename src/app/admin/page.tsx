@@ -5,7 +5,6 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { motion } from "framer-motion";
 import {
   Users,
   Video,
@@ -72,11 +71,7 @@ function StatCard({
   index: number;
 }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.05 }}
-    >
+    <div>
       <Card className="hover:shadow-md transition-shadow">
         <CardContent className="p-4">
           <div className="flex items-center gap-3">
@@ -84,14 +79,7 @@ function StatCard({
               <Icon className={`h-5 w-5 ${color}`} />
             </div>
             <div className="flex-1 min-w-0">
-              <motion.div
-                className="text-2xl font-bold"
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: "spring", delay: index * 0.05 + 0.2 }}
-              >
-                {formatNumber(value)}
-              </motion.div>
+              <div className="text-2xl font-bold">{formatNumber(value)}</div>
               <div className="text-sm text-muted-foreground">{label}</div>
               {subtitle && (
                 <div className="text-xs text-muted-foreground mt-0.5">{subtitle}</div>
@@ -100,7 +88,7 @@ function StatCard({
           </div>
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   );
 }
 
@@ -135,10 +123,7 @@ export default function AdminDashboardPage() {
   return (
     <div className="space-y-8">
       {/* 页面标题 */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+      <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <BarChart3 className="h-6 w-6" />
           数据总览
@@ -146,7 +131,7 @@ export default function AdminDashboardPage() {
         <p className="text-muted-foreground mt-1">
           查看网站的运营数据和增长趋势。好的网站理应是开放的，您有权利知道这个网站的一切。
         </p>
-      </motion.div>
+      </div>
 
       {/* 加和数据 */}
       <section>

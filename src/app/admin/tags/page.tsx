@@ -25,7 +25,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
 import Link from "next/link";
 import { Tag, Search, Edit2, Trash2, Loader2, Video } from "lucide-react";
 
@@ -112,10 +111,7 @@ export default function AdminTagsPage() {
 
   return (
     <div className="space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+      <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Tag className="h-6 w-6" />
           标签管理
@@ -123,7 +119,7 @@ export default function AdminTagsPage() {
         <p className="text-muted-foreground mt-1">
           管理网站的视频标签
         </p>
-      </motion.div>
+      </div>
 
       {/* 搜索 */}
       <Card>
@@ -164,12 +160,9 @@ export default function AdminTagsPage() {
           ) : (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {tags.map((tag, index) => (
-                  <motion.div
+                {tags.map((tag) => (
+                  <div
                     key={tag.id}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: index * 0.02 }}
                     className="p-4 rounded-lg border hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-start justify-between">
@@ -207,7 +200,7 @@ export default function AdminTagsPage() {
                         </Button>
                       </div>
                     </div>
-                  </motion.div>
+                  </div>
                 ))}
               </div>
 

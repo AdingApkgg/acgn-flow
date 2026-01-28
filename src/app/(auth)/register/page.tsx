@@ -13,7 +13,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { motion } from "framer-motion";
 import { EmailCodeInput } from "@/components/ui/email-code-input";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 
@@ -90,22 +89,13 @@ export default function RegisterPage() {
 
   return (
     <div className="container flex items-center justify-center min-h-[calc(100vh-200px)] py-8">
-      <motion.div
-        initial={{ opacity: 0, y: 30, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-full max-w-md"
-      >
+      <div className="w-full max-w-md">
         <Card>
           <CardHeader className="text-center">
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-            >
+            <div>
               <CardTitle className="text-2xl">注册</CardTitle>
               <CardDescription>创建一个新账户</CardDescription>
-            </motion.div>
+            </div>
           </CardHeader>
           <CardContent>
           <Form {...form}>
@@ -187,29 +177,19 @@ export default function RegisterPage() {
             </form>
           </Form>
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="mt-6"
-          >
+          <div className="mt-6">
             <OAuthButtons callbackUrl="/" />
-          </motion.div>
+          </div>
 
-          <motion.div 
-            className="mt-6 text-center text-sm text-muted-foreground"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-          >
+          <div className="mt-6 text-center text-sm text-muted-foreground">
             已有账户？{" "}
             <Link href="/login" className="text-primary hover:underline">
               立即登录
             </Link>
-          </motion.div>
+          </div>
         </CardContent>
       </Card>
-      </motion.div>
+      </div>
     </div>
   );
 }

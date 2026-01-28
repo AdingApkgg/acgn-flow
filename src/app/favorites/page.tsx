@@ -8,8 +8,6 @@ import { VideoCard } from "@/components/video/video-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Star, Loader2 } from "lucide-react";
 import { useInView } from "react-intersection-observer";
-import { motion } from "framer-motion";
-import { PageWrapper, staggerContainer, staggerItem } from "@/components/motion";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export default function FavoritesPage() {
@@ -63,50 +61,39 @@ export default function FavoritesPage() {
   const favorites = data?.pages.flatMap((page) => page.favorites) ?? [];
 
   return (
-    <PageWrapper>
-      <div className="container py-6">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-3 mb-6"
-        >
-          <Star className="h-8 w-8 text-yellow-500" />
-          <h1 className="text-2xl font-bold">我的收藏</h1>
-        </motion.div>
-
-        {favorites.length === 0 ? (
-          <EmptyState
-            icon={Star}
-            title="还没有收藏任何视频"
-            description="发现喜欢的视频后，点击收藏按钮即可添加到这里"
-            action={{
-              label: "去发现视频",
-              onClick: () => router.push("/"),
-            }}
-          />
-        ) : (
-          <>
-            <motion.div
-              variants={staggerContainer}
-              initial="initial"
-              animate="animate"
-              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"
-            >
-              {favorites.map((video) => (
-                <motion.div key={video.id} variants={staggerItem}>
-                  <VideoCard video={video} />
-                </motion.div>
-              ))}
-            </motion.div>
-
-            <div ref={ref} className="flex justify-center py-8">
-              {isFetchingNextPage && (
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              )}
-            </div>
-          </>
-        )}
+    <div className="container py-6">
+      <div className="flex items-center gap-3 mb-6">
+        <Star className="h-8 w-8 text-yellow-500" />
+        <h1 className="text-2xl font-bold">我的收藏</h1>
       </div>
-    </PageWrapper>
+
+      {favorites.length === 0 ? (
+        <EmptyState
+          icon={Star}
+          title="还没有收藏任何视频"
+          description="发现喜欢的视频后，点击收藏按钮即可添加到这里"
+          action={{
+            label: "去发现视频",
+            onClick: () => router.push("/"),
+          }}
+        />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {favorites.map((video) => (
+              <div key={video.id}>
+                <VideoCard video={video} />
+              </div>
+            ))}
+          </div>
+
+          <div ref={ref} className="flex justify-center py-8">
+            {isFetchingNextPage && (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

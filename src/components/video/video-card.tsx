@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/hover-card";
 import { Play, Eye, Heart, User, Clock } from "lucide-react";
 import { formatDuration, formatViews, formatRelativeTime } from "@/lib/format";
-import { motion } from "framer-motion";
 
 interface VideoCardProps {
   video: {
@@ -38,12 +37,7 @@ export function VideoCard({ video, index = 0 }: VideoCardProps) {
   const uploaderName = video.uploader.nickname || video.uploader.username;
   
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
-      className="group"
-    >
+    <div className="group">
       <Link href={`/video/${video.id}`} className="block">
         {/* 封面容器 */}
         <div className="relative aspect-video overflow-hidden rounded-xl bg-muted shadow-sm group-hover:shadow-xl transition-shadow duration-300">
@@ -58,13 +52,9 @@ export function VideoCard({ video, index = 0 }: VideoCardProps) {
           
           {/* 播放按钮 - 居中 */}
           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
-            <motion.div 
-              className="bg-white/95 dark:bg-black/80 backdrop-blur-md rounded-full p-3.5 shadow-2xl"
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
-            >
+            <div className="bg-white/95 dark:bg-black/80 backdrop-blur-md rounded-full p-3.5 shadow-2xl transition-transform duration-200 ease-out group-hover:scale-110 active:scale-95">
               <Play className="h-6 w-6 text-primary fill-primary" />
-            </motion.div>
+            </div>
           </div>
 
           {/* 时长标签 */}
@@ -158,6 +148,6 @@ export function VideoCard({ video, index = 0 }: VideoCardProps) {
           </div>
         </div>
       </Link>
-    </motion.div>
+    </div>
   );
 }

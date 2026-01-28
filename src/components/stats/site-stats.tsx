@@ -1,9 +1,8 @@
 "use client";
 
 import { trpc } from "@/lib/trpc";
-import { motion } from "framer-motion";
 import { Play, Users, Tag, Eye } from "lucide-react";
-import { SkeletonPulse, staggerContainer, cardStaggerItem } from "@/components/motion";
+import { Skeleton } from "@/components/ui/skeleton";
 
 function formatNumber(num: number): string {
   if (num >= 1000000) {
@@ -36,10 +35,10 @@ export function SiteStats() {
             key={item.key}
             className="bg-card border rounded-xl p-4 flex items-center gap-3"
           >
-            <SkeletonPulse className="h-10 w-10 rounded-lg" />
+            <Skeleton className="h-10 w-10 rounded-lg" />
             <div className="space-y-2">
-              <SkeletonPulse className="h-6 w-12" />
-              <SkeletonPulse className="h-4 w-8" />
+              <Skeleton className="h-6 w-12" />
+              <Skeleton className="h-4 w-8" />
             </div>
           </div>
         ))}
@@ -50,48 +49,28 @@ export function SiteStats() {
   if (!data) return null;
 
   return (
-    <motion.div 
-      className="grid grid-cols-2 sm:grid-cols-4 gap-4"
-      initial="hidden"
-      animate="visible"
-      variants={staggerContainer}
-    >
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
       {statItems.map((item) => {
         const Icon = item.icon;
         const value = data[item.key];
 
         return (
-          <motion.div
+          <div
             key={item.key}
-            variants={cardStaggerItem}
-            whileHover={{ 
-              y: -4, 
-              boxShadow: "0 10px 30px -10px rgba(0, 0, 0, 0.15)",
-              transition: { duration: 0.2 }
-            }}
-            className="bg-card border rounded-xl p-4 flex items-center gap-3 cursor-default"
+            className="bg-card border rounded-xl p-4 flex items-center gap-3 cursor-default transition-transform duration-200 hover:-translate-y-1 hover:shadow-lg"
           >
-            <motion.div 
-              className={`p-2.5 rounded-lg ${item.bgColor} ${item.color}`}
-              whileHover={{ scale: 1.1, rotate: 5 }}
-              transition={{ type: "spring", stiffness: 400 }}
-            >
+            <div className={`p-2.5 rounded-lg ${item.bgColor} ${item.color} transition-transform duration-200 hover:scale-105`}>
               <Icon className="h-5 w-5" />
-            </motion.div>
+            </div>
             <div>
-              <motion.div
-                className="text-xl font-bold tabular-nums"
-                initial={{ opacity: 0, scale: 0.5 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              >
+              <div className="text-xl font-bold tabular-nums">
                 {formatNumber(value)}
-              </motion.div>
+              </div>
               <div className="text-xs text-muted-foreground">{item.label}</div>
             </div>
-          </motion.div>
+          </div>
         );
       })}
-    </motion.div>
+    </div>
   );
 }

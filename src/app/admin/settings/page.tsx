@@ -2,7 +2,6 @@
 
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { motion } from "framer-motion";
 import { Settings, Construction } from "lucide-react";
 
 export default function AdminSettingsPage() {
@@ -18,10 +17,7 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+      <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Settings className="h-6 w-6" />
           系统设置
@@ -29,7 +25,7 @@ export default function AdminSettingsPage() {
         <p className="text-muted-foreground mt-1">
           配置网站的系统参数
         </p>
-      </motion.div>
+      </div>
 
       <Card>
         <CardHeader>

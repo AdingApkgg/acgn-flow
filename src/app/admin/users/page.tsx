@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
 import { Users, Search, Shield, Settings, Loader2 } from "lucide-react";
 import { ADMIN_SCOPES } from "@/lib/constants";
 
@@ -145,10 +144,7 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+      <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Users className="h-6 w-6" />
           用户管理
@@ -156,7 +152,7 @@ export default function AdminUsersPage() {
         <p className="text-muted-foreground mt-1">
           管理网站用户和权限分配
         </p>
-      </motion.div>
+      </div>
 
       {/* 搜索和筛选 */}
       <Card>
@@ -218,12 +214,9 @@ export default function AdminUsersPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {users.map((user, index) => (
-                <motion.div
+              {users.map((user) => (
+                <div
                   key={user.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.03 }}
                   className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors"
                 >
                   <Avatar className="h-10 w-10">
@@ -252,7 +245,7 @@ export default function AdminUsersPage() {
                       <Settings className="h-4 w-4" />
                     </Button>
                   )}
-                </motion.div>
+                </div>
               ))}
 
               {hasNextPage && (

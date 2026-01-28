@@ -16,7 +16,6 @@ import { toast } from "sonner";
 import { Loader2, Upload, X, Plus, Eye, EyeOff } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import Link from "next/link";
-import { motion } from "framer-motion";
 import { VideoPlayer } from "@/components/video/video-player";
 
 const uploadSchema = z.object({
@@ -122,11 +121,7 @@ export default function UploadPage() {
   }
 
   return (
-    <motion.div 
-      className="container py-6 max-w-2xl"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-    >
+    <div className="container py-6 max-w-2xl">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -355,6 +350,6 @@ export default function UploadPage() {
           </Form>
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   );
 }

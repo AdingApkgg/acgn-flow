@@ -46,8 +46,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { motion } from "framer-motion";
-import { PageWrapper } from "@/components/motion";
 
 // OAuth Provider 配置
 const oauthProviders = [
@@ -488,24 +486,15 @@ export default function ProfilePage() {
   }
 
   return (
-    <PageWrapper>
-      <div className="container py-6 max-w-2xl">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-3 mb-6"
-        >
-          <User className="h-8 w-8" />
-          <h1 className="text-2xl font-bold">个人信息</h1>
-        </motion.div>
+    <div className="container py-6 max-w-2xl">
+      <div className="flex items-center gap-3 mb-6">
+        <User className="h-8 w-8" />
+        <h1 className="text-2xl font-bold">个人信息</h1>
+      </div>
 
         <div className="space-y-6">
           {/* 个人资料 */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
+          <div>
             <Card>
               <CardHeader>
                 <CardTitle>个人资料</CardTitle>
@@ -937,14 +926,10 @@ export default function ProfilePage() {
                 </Form>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
 
           {/* 账号信息 */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-          >
+          <div>
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -996,14 +981,10 @@ export default function ProfilePage() {
                 </Form>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
 
           {/* 账号绑定 */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.25 }}
-          >
+          <div>
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -1079,14 +1060,10 @@ export default function ProfilePage() {
                 </p>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
 
           {/* 修改密码 */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.35 }}
-          >
+          <div>
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -1145,16 +1122,12 @@ export default function ProfilePage() {
                 </Form>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
 
           <Separator />
 
           {/* 危险操作 */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-          >
+          <div>
             <Card className="border-destructive/50">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2 text-destructive">
@@ -1268,7 +1241,7 @@ export default function ProfilePage() {
                 )}
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
         </div>
       </div>
 
@@ -1293,6 +1266,6 @@ export default function ProfilePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </PageWrapper>
+    </div>
   );
 }

@@ -36,8 +36,6 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useInView } from "react-intersection-observer";
-import { motion } from "framer-motion";
-import { PageWrapper, staggerContainer, staggerItem } from "@/components/motion";
 import { formatViews, formatRelativeTime } from "@/lib/format";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -123,67 +121,56 @@ export default function MyVideosPage() {
   const videos = data?.pages.flatMap((page) => page.videos) ?? [];
 
   return (
-    <PageWrapper>
-      <div className="container py-6">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between mb-6"
-        >
-          <div className="flex items-center gap-3">
-            <Video className="h-8 w-8 text-primary" />
-            <h1 className="text-2xl font-bold">我的视频</h1>
-          </div>
+    <div className="container py-6">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <Video className="h-8 w-8 text-primary" />
+          <h1 className="text-2xl font-bold">我的视频</h1>
+        </div>
 
-          <div className="flex items-center gap-4">
-            <Select
-              value={statusFilter}
-              onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}
-            >
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">全部</SelectItem>
-                <SelectItem value="PUBLISHED">已发布</SelectItem>
-                <SelectItem value="PENDING">待审核</SelectItem>
-                <SelectItem value="REJECTED">已拒绝</SelectItem>
-              </SelectContent>
-            </Select>
+        <div className="flex items-center gap-4">
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}
+          >
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">全部</SelectItem>
+              <SelectItem value="PUBLISHED">已发布</SelectItem>
+              <SelectItem value="PENDING">待审核</SelectItem>
+              <SelectItem value="REJECTED">已拒绝</SelectItem>
+            </SelectContent>
+          </Select>
 
-            <Button asChild>
-              <Link href="/upload">
-                <Plus className="h-4 w-4 mr-2" />
-                上传视频
-              </Link>
-            </Button>
-          </div>
-        </motion.div>
+          <Button asChild>
+            <Link href="/upload">
+              <Plus className="h-4 w-4 mr-2" />
+              上传视频
+            </Link>
+          </Button>
+        </div>
+      </div>
 
-        {videos.length === 0 ? (
-          <EmptyState
-            icon={Video}
-            title="还没有上传任何视频"
-            description="分享你喜欢的 ACGN 内容，与大家一起交流"
-            action={{
-              label: "上传第一个视频",
-              onClick: () => router.push("/upload"),
-            }}
-          />
-        ) : (
-          <>
-            <motion.div
-              variants={staggerContainer}
-              initial="initial"
-              animate="animate"
-              className="space-y-4"
-            >
-              {videos.map((video) => (
-                <motion.div
-                  key={video.id}
-                  variants={staggerItem}
-                  className="flex flex-col sm:flex-row gap-3 sm:gap-4 p-3 sm:p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                >
+      {videos.length === 0 ? (
+        <EmptyState
+          icon={Video}
+          title="还没有上传任何视频"
+          description="分享你喜欢的 ACGN 内容，与大家一起交流"
+          action={{
+            label: "上传第一个视频",
+            onClick: () => router.push("/upload"),
+          }}
+        />
+      ) : (
+        <>
+          <div className="space-y-4">
+            {videos.map((video) => (
+              <div
+                key={video.id}
+                className="flex flex-col sm:flex-row gap-3 sm:gap-4 p-3 sm:p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+              >
                   {/* 封面 */}
                   <Link
                     href={`/video/${video.id}`}
@@ -278,18 +265,17 @@ export default function MyVideosPage() {
                       </div>
                     </div>
                   </div>
-                </motion.div>
+              </div>
               ))}
-            </motion.div>
+          </div>
 
-            <div ref={ref} className="flex justify-center py-8">
-              {isFetchingNextPage && (
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </PageWrapper>
+          <div ref={ref} className="flex justify-center py-8">
+            {isFetchingNextPage && (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

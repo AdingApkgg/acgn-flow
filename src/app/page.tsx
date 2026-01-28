@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import { useInView } from "react-intersection-observer";
-import { motion, AnimatePresence } from "framer-motion";
-import { PageWrapper, FadeIn } from "@/components/motion";
 import { AlertTriangle, X, Clock, TrendingUp, Heart, Sparkles, Calendar, Filter, RotateCcw } from "lucide-react";
 import { WebsiteJsonLd, OrganizationJsonLd } from "@/components/seo/json-ld";
 import { SiteStats } from "@/components/stats/site-stats";
@@ -73,36 +71,29 @@ export default function HomePage() {
   };
 
   return (
-    <PageWrapper>
+    <div>
       {/* SEO 结构化数据 */}
       <WebsiteJsonLd />
       <OrganizationJsonLd />
 
       <div className="container py-6">
         {/* 公告横幅 */}
-        <AnimatePresence>
-          {showAnnouncement && (
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-              className="mb-6 relative"
-            >
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 flex items-center gap-3">
-                <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0" />
-                <p className="text-sm text-yellow-600 dark:text-yellow-400 flex-1">
-                  本站目前处于开发阶段，对你的数据无 SLA 保证！
-                </p>
-                <button
-                  onClick={() => setShowAnnouncement(false)}
-                  className="text-yellow-500 hover:text-yellow-600 dark:hover:text-yellow-300 transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {showAnnouncement && (
+          <div className="mb-6 relative">
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0" />
+              <p className="text-sm text-yellow-600 dark:text-yellow-400 flex-1">
+                本站目前处于开发阶段，对你的数据无 SLA 保证！
+              </p>
+              <button
+                onClick={() => setShowAnnouncement(false)}
+                className="text-yellow-500 hover:text-yellow-600 dark:hover:text-yellow-300 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 网站统计 */}
         <section className="mb-8">
@@ -111,76 +102,57 @@ export default function HomePage() {
 
         <section className="mb-8">
           {/* 标题和筛选区域 */}
-          <FadeIn className="space-y-4 mb-6">
+          <div className="space-y-4 mb-6">
             {/* 第一行：标题和排序 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <motion.h1 
-                className="text-xl sm:text-2xl font-bold flex items-center gap-2"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.4 }}
-              >
+              <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
                 <Sparkles className="h-6 w-6 text-primary" />
                 发现视频
-              </motion.h1>
+              </h1>
               
               {/* 排序按钮组 */}
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.4, delay: 0.1 }}
-                className="flex items-center gap-2"
-              >
+              <div className="flex items-center gap-2">
                 <div className="flex bg-muted rounded-lg p-1 gap-0.5 sm:gap-0">
                   {sortOptions.map((option) => {
                     const Icon = option.icon;
                     const isActive = sortBy === option.value;
                     return (
-                      <motion.button
+                      <button
                         key={option.value}
                         onClick={() => setSortBy(option.value)}
-                        className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
+                        className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98] ${
                           isActive 
                             ? "bg-background text-foreground shadow-sm" 
                             : "text-muted-foreground hover:text-foreground"
                         }`}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
                       >
                         <Icon className="h-4 w-4" />
                         <span className="hidden sm:inline">{option.label}</span>
-                      </motion.button>
+                      </button>
                     );
                   })}
                 </div>
-              </motion.div>
+              </div>
             </div>
 
             {/* 第二行：时间范围和标签筛选 */}
-            <motion.div 
-              className="flex flex-wrap items-center gap-2 sm:gap-3"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.15 }}
-            >
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               {/* 时间范围 */}
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <div className="flex gap-1">
                   {timeOptions.map((option) => (
-                    <motion.button
+                    <button
                       key={option.value}
                       onClick={() => setTimeRange(option.value)}
-                      className={`px-2 py-1 rounded-md text-[10px] sm:text-xs font-medium transition-all ${
+                      className={`px-2 py-1 rounded-md text-[10px] sm:text-xs font-medium transition-all hover:scale-105 active:scale-95 ${
                         timeRange === option.value
                           ? "bg-primary text-primary-foreground"
                           : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
                       }`}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
                     >
                       {option.label}
-                    </motion.button>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -194,11 +166,9 @@ export default function HomePage() {
                   <Filter className="h-4 w-4 text-muted-foreground" />
                   <div className="flex gap-1.5 flex-wrap">
                     {tagsData.slice(0, 6).map((tag, index) => (
-                      <motion.div
+                      <div
                         key={tag.id}
-                        className={index >= 4 ? "hidden sm:inline-flex" : undefined}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
+                        className={`transition-transform hover:scale-105 active:scale-95 ${index >= 4 ? "hidden sm:inline-flex" : ""}`}
                       >
                         <Badge
                           variant={selectedTag === tag.id ? "default" : "outline"}
@@ -207,7 +177,7 @@ export default function HomePage() {
                         >
                           {tag.name}
                         </Badge>
-                      </motion.div>
+                      </div>
                     ))}
                     <Link href="/tags">
                       <Badge variant="ghost" className="cursor-pointer text-xs hover:bg-muted">
@@ -219,99 +189,65 @@ export default function HomePage() {
               )}
 
               {/* 重置筛选 */}
-              <AnimatePresence>
-                {hasFilters && (
-                  <motion.button
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    onClick={resetFilters}
-                    className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <RotateCcw className="h-3 w-3" />
-                    重置
-                  </motion.button>
-                )}
-              </AnimatePresence>
-            </motion.div>
+              {hasFilters && (
+                <button
+                  onClick={resetFilters}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  重置
+                </button>
+              )}
+            </div>
 
             {/* 当前筛选状态 */}
-            <AnimatePresence>
-              {selectedTag && tagsData && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="flex items-center gap-2 text-sm text-muted-foreground"
-                >
-                  <span>正在筛选：</span>
-                  <Badge variant="secondary" className="gap-1">
-                    {tagsData.find(t => t.id === selectedTag)?.name}
-                    <button onClick={() => setSelectedTag(null)}>
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </FadeIn>
+            {selectedTag && tagsData && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>正在筛选：</span>
+                <Badge variant="secondary" className="gap-1">
+                  {tagsData.find(t => t.id === selectedTag)?.name}
+                  <button onClick={() => setSelectedTag(null)}>
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              </div>
+            )}
+          </div>
 
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={`${sortBy}-${timeRange}-${selectedTag}`}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-            >
-              <VideoGrid videos={videos} isLoading={isLoading} />
-              
-              {/* 无结果提示 */}
-              {!isLoading && videos.length === 0 && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="text-center py-16"
-                >
-                  <div className="text-muted-foreground mb-4">
-                    <Filter className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-lg font-medium">没有找到符合条件的视频</p>
-                    <p className="text-sm mt-1">尝试调整筛选条件</p>
-                  </div>
-                  {hasFilters && (
-                    <Button variant="outline" onClick={resetFilters} className="mt-4">
-                      <RotateCcw className="h-4 w-4 mr-2" />
-                      重置筛选
-                    </Button>
-                  )}
-                </motion.div>
-              )}
-            </motion.div>
-          </AnimatePresence>
+          <div key={`${sortBy}-${timeRange}-${selectedTag}`}>
+            <VideoGrid videos={videos} isLoading={isLoading} />
+            
+            {/* 无结果提示 */}
+            {!isLoading && videos.length === 0 && (
+              <div className="text-center py-16">
+                <div className="text-muted-foreground mb-4">
+                  <Filter className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p className="text-lg font-medium">没有找到符合条件的视频</p>
+                  <p className="text-sm mt-1">尝试调整筛选条件</p>
+                </div>
+                {hasFilters && (
+                  <Button variant="outline" onClick={resetFilters} className="mt-4">
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    重置筛选
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
 
           {hasNextPage && (
-            <motion.div 
-              ref={ref} 
-              className="flex justify-center py-8"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-            >
+            <div ref={ref} className="flex justify-center py-8">
               {isFetchingNextPage ? (
-                <motion.div 
-                  className="rounded-full h-8 w-8 border-b-2 border-primary"
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                />
+                <div className="rounded-full h-8 w-8 border-b-2 border-primary animate-spin" />
               ) : (
                 <Button variant="outline" onClick={() => fetchNextPage()}>
                   加载更多
                 </Button>
               )}
-            </motion.div>
+            </div>
           )}
         </section>
       </div>
-    </PageWrapper>
+    </div>
   );
 }

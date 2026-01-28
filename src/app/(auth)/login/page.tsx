@@ -13,7 +13,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { motion } from "framer-motion";
 import { CaptchaInput } from "@/components/ui/captcha-input";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -88,19 +87,10 @@ function LoginForm() {
 
   return (
     <div className="container flex items-center justify-center min-h-[calc(100vh-200px)] py-8">
-      <motion.div
-        initial={{ opacity: 0, y: 30, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-full max-w-md"
-      >
+      <div className="w-full max-w-md">
         <Card>
           <CardHeader className="text-center">
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-            >
+            <div>
               <CardTitle className="text-2xl">
                 {isNewAccount ? "添加账号" : prefillAccount ? "切换账号" : "登录"}
               </CardTitle>
@@ -111,7 +101,7 @@ function LoginForm() {
                   ? "请输入密码以切换账号" 
                   : "登录您的账户继续"}
               </CardDescription>
-            </motion.div>
+            </div>
           </CardHeader>
           <CardContent>
           <Form {...form}>
@@ -170,21 +160,11 @@ function LoginForm() {
             </form>
           </Form>
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="mt-6"
-          >
+          <div className="mt-6">
             <OAuthButtons callbackUrl={callbackUrl} />
-          </motion.div>
+          </div>
 
-          <motion.div 
-            className="mt-6 text-center text-sm text-muted-foreground space-y-2"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-          >
+          <div className="mt-6 text-center text-sm text-muted-foreground space-y-2">
             <div>
               <Link href="/forgot-password" className="text-primary hover:underline">
                 忘记密码？
@@ -196,10 +176,10 @@ function LoginForm() {
                 立即注册
               </Link>
             </div>
-          </motion.div>
+          </div>
         </CardContent>
       </Card>
-      </motion.div>
+      </div>
     </div>
   );
 }

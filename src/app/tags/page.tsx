@@ -4,8 +4,6 @@ import Link from "next/link";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { motion } from "framer-motion";
-import { PageWrapper, staggerContainer, staggerItem } from "@/components/motion";
 
 export default function TagsPage() {
   const { data: popularTags, isLoading: loadingPopular } =
@@ -29,90 +27,58 @@ export default function TagsPage() {
   }
 
   return (
-    <PageWrapper>
-      <div className="container py-6">
-        <motion.h1 
-          className="text-2xl font-bold mb-6"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          标签
-        </motion.h1>
+    <div className="container py-6">
+      <h1 className="text-2xl font-bold mb-6">标签</h1>
 
-        {popularTags && popularTags.length > 0 && (
-          <motion.section 
-            className="mb-8"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <h2 className="text-xl font-bold mb-4">热门标签</h2>
-            <motion.div 
-              className="flex flex-wrap gap-2"
-              variants={staggerContainer}
-              initial="hidden"
-              animate="visible"
-            >
-              {popularTags.map((tag) => (
-                <motion.div
-                  key={tag.id}
-                  variants={staggerItem}
-                  whileHover={{ scale: 1.05, y: -2 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <Link href={`/tag/${tag.slug}`}>
-                    <Badge
-                      variant="default"
-                      className="text-sm py-1.5 px-3 cursor-pointer hover:opacity-80 transition-opacity"
-                    >
-                      {tag.name}
-                      <span className="ml-1 opacity-70">({tag._count.videos})</span>
-                    </Badge>
-                  </Link>
-                </motion.div>
-              ))}
-            </motion.div>
-          </motion.section>
+      {popularTags && popularTags.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-xl font-bold mb-4">热门标签</h2>
+          <div className="flex flex-wrap gap-2">
+            {popularTags.map((tag) => (
+              <div
+                key={tag.id}
+                className="transition-transform hover:scale-105 active:scale-95"
+              >
+                <Link href={`/tag/${tag.slug}`}>
+                  <Badge
+                    variant="default"
+                    className="text-sm py-1.5 px-3 cursor-pointer hover:opacity-80 transition-opacity"
+                  >
+                    {tag.name}
+                    <span className="ml-1 opacity-70">({tag._count.videos})</span>
+                  </Badge>
+                </Link>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section>
+        <h2 className="text-xl font-bold mb-4">所有标签</h2>
+        {allTags && allTags.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {allTags.map((tag) => (
+              <div
+                key={tag.id}
+                className="transition-transform hover:scale-105 active:scale-95"
+              >
+                <Link href={`/tag/${tag.slug}`}>
+                  <Badge
+                    variant="outline"
+                    className="text-sm py-1.5 px-3 cursor-pointer hover:bg-accent transition-colors"
+                  >
+                    {tag.name}
+                    <span className="ml-1 opacity-70">({tag._count.videos})</span>
+                  </Badge>
+                </Link>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted-foreground">暂无标签</p>
         )}
-
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-        >
-          <h2 className="text-xl font-bold mb-4">所有标签</h2>
-          {allTags && allTags.length > 0 ? (
-            <motion.div 
-              className="flex flex-wrap gap-2"
-              variants={staggerContainer}
-              initial="hidden"
-              animate="visible"
-            >
-              {allTags.map((tag, index) => (
-                <motion.div
-                  key={tag.id}
-                  variants={staggerItem}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  custom={index}
-                >
-                  <Link href={`/tag/${tag.slug}`}>
-                    <Badge
-                      variant="outline"
-                      className="text-sm py-1.5 px-3 cursor-pointer hover:bg-accent transition-colors"
-                    >
-                      {tag.name}
-                      <span className="ml-1 opacity-70">({tag._count.videos})</span>
-                    </Badge>
-                  </Link>
-                </motion.div>
-              ))}
-            </motion.div>
-          ) : (
-            <p className="text-muted-foreground">暂无标签</p>
-          )}
-        </motion.section>
-      </div>
-    </PageWrapper>
+      </section>
+    </div>
   );
 }

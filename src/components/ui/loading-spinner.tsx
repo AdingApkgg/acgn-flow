@@ -2,7 +2,6 @@
 
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
-import { motion } from "framer-motion";
 
 interface LoadingSpinnerProps {
   size?: "sm" | "md" | "lg";
@@ -24,26 +23,15 @@ export function LoadingSpinner({
   fullPage = false,
 }: LoadingSpinnerProps) {
   const content = (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
+    <div
       className={cn(
         "flex flex-col items-center justify-center gap-3",
         className
       )}
     >
       <Loader2 className={cn("animate-spin text-primary", sizeClasses[size])} />
-      {text && (
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="text-sm text-muted-foreground"
-        >
-          {text}
-        </motion.p>
-      )}
-    </motion.div>
+      {text && <p className="text-sm text-muted-foreground">{text}</p>}
+    </div>
   );
 
   if (fullPage) {

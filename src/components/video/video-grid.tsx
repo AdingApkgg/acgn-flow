@@ -2,7 +2,6 @@
 
 import { VideoCard } from "./video-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { motion } from "framer-motion";
 
 interface Video {
   id: string;
@@ -40,7 +39,7 @@ export function VideoGrid({ videos, isLoading, columns = 4 }: VideoGridProps) {
     return (
       <div className={`grid ${gridColumns[columns]} gap-3 sm:gap-4 lg:gap-5`}>
         {Array.from({ length: 8 }).map((_, i) => (
-          <VideoCardSkeleton key={i} index={i} />
+          <VideoCardSkeleton key={i} />
         ))}
       </div>
     );
@@ -63,14 +62,9 @@ export function VideoGrid({ videos, isLoading, columns = 4 }: VideoGridProps) {
   );
 }
 
-function VideoCardSkeleton({ index = 0 }: { index?: number }) {
+function VideoCardSkeleton() {
   return (
-    <motion.div 
-      className="space-y-3"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.05 }}
-    >
+    <div className="space-y-3">
       {/* 封面骨架 */}
       <div className="relative aspect-video rounded-xl overflow-hidden">
         <Skeleton className="absolute inset-0" />
@@ -93,6 +87,6 @@ function VideoCardSkeleton({ index = 0 }: { index?: number }) {
           <Skeleton className="h-3 w-1/2" />
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

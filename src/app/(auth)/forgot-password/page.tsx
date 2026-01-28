@@ -13,7 +13,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { toast } from "sonner";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { motion } from "framer-motion";
 import { EmailCodeInput } from "@/components/ui/email-code-input";
 
 const resetPasswordSchema = z.object({
@@ -86,22 +85,13 @@ export default function ForgotPasswordPage() {
 
   return (
     <div className="container flex items-center justify-center min-h-[calc(100vh-200px)] py-8">
-      <motion.div
-        initial={{ opacity: 0, y: 30, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-full max-w-md"
-      >
+      <div className="w-full max-w-md">
         <Card>
           <CardHeader className="text-center">
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-            >
+            <div>
               <CardTitle className="text-2xl">重置密码</CardTitle>
               <CardDescription>通过邮箱验证码重置您的密码</CardDescription>
-            </motion.div>
+            </div>
           </CardHeader>
           <CardContent>
           <Form {...form}>
@@ -170,12 +160,7 @@ export default function ForgotPasswordPage() {
             </form>
           </Form>
 
-          <motion.div 
-            className="mt-6 text-center"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-          >
+          <div className="mt-6 text-center">
             <Link 
               href="/login" 
               className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
@@ -183,10 +168,10 @@ export default function ForgotPasswordPage() {
               <ArrowLeft className="mr-1 h-4 w-4" />
               返回登录
             </Link>
-          </motion.div>
+          </div>
         </CardContent>
       </Card>
-      </motion.div>
+      </div>
     </div>
   );
 }

@@ -7,8 +7,6 @@ import { Button } from "@/components/ui/button";
 import { useInView } from "react-intersection-observer";
 import Link from "next/link";
 import { Tag } from "lucide-react";
-import { motion } from "framer-motion";
-import { PageWrapper } from "@/components/motion";
 
 interface TagPageProps {
   params: Promise<{ slug: string }>;
@@ -45,38 +43,31 @@ export default function TagPage({ params }: TagPageProps) {
 
   if (!tag && !tagLoading) {
     return (
-      <PageWrapper>
-        <div className="container py-12 text-center">
-          <h1 className="text-2xl font-bold">标签不存在</h1>
-          <p className="text-muted-foreground mt-2">找不到标签 &ldquo;{slug}&rdquo;</p>
-          <Button asChild className="mt-4">
-            <Link href="/tags">查看所有标签</Link>
-          </Button>
-        </div>
-      </PageWrapper>
+      <div className="container py-12 text-center">
+        <h1 className="text-2xl font-bold">标签不存在</h1>
+        <p className="text-muted-foreground mt-2">找不到标签 &ldquo;{slug}&rdquo;</p>
+        <Button asChild className="mt-4">
+          <Link href="/tags">查看所有标签</Link>
+        </Button>
+      </div>
     );
   }
 
   return (
-    <PageWrapper>
-      <div className="container py-6">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Tag className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">#{tag?.name}</h1>
-              <p className="text-sm text-muted-foreground">
-                共 {tag?._count?.videos ?? 0} 个视频
-              </p>
-            </div>
+    <div className="container py-6">
+      <div className="mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-primary/10">
+            <Tag className="h-6 w-6 text-primary" />
           </div>
-        </motion.div>
+          <div>
+            <h1 className="text-2xl font-bold">#{tag?.name}</h1>
+            <p className="text-sm text-muted-foreground">
+              共 {tag?._count?.videos ?? 0} 个视频
+            </p>
+          </div>
+        </div>
+      </div>
 
         <VideoGrid videos={videos} isLoading={isLoading || tagLoading} />
 
@@ -92,19 +83,14 @@ export default function TagPage({ params }: TagPageProps) {
           </div>
         )}
 
-        {!isLoading && videos.length === 0 && tag && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center py-12"
-          >
-            <p className="text-muted-foreground">该标签下暂无视频</p>
-            <Button asChild variant="outline" className="mt-4">
-              <Link href="/">浏览全部视频</Link>
-            </Button>
-          </motion.div>
-        )}
-      </div>
-    </PageWrapper>
+      {!isLoading && videos.length === 0 && tag && (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">该标签下暂无视频</p>
+          <Button asChild variant="outline" className="mt-4">
+            <Link href="/">浏览全部视频</Link>
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
