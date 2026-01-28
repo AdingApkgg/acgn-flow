@@ -38,7 +38,7 @@ const gridColumns = {
 export function VideoGrid({ videos, isLoading, columns = 4 }: VideoGridProps) {
   if (isLoading) {
     return (
-      <div className={`grid ${gridColumns[columns]} gap-5`}>
+      <div className={`grid ${gridColumns[columns]} gap-3 sm:gap-4 lg:gap-5`}>
         {Array.from({ length: 8 }).map((_, i) => (
           <VideoCardSkeleton key={i} index={i} />
         ))}
@@ -55,7 +55,7 @@ export function VideoGrid({ videos, isLoading, columns = 4 }: VideoGridProps) {
   }
 
   return (
-    <div className={`grid ${gridColumns[columns]} gap-5`}>
+    <div className={`grid ${gridColumns[columns]} gap-3 sm:gap-4 lg:gap-5`}>
       {videos.map((video, index) => (
         <VideoCard key={video.id} video={video} index={index} />
       ))}
@@ -85,8 +85,8 @@ function VideoCardSkeleton({ index = 0 }: { index?: number }) {
         </div>
       </div>
       {/* 信息骨架 */}
-      <div className="flex gap-3 px-0.5">
-        <Skeleton className="h-9 w-9 rounded-full flex-shrink-0" />
+      <div className="flex gap-2 sm:gap-3 px-0.5">
+        <Skeleton className="h-8 w-8 sm:h-9 sm:w-9 rounded-full flex-shrink-0" />
         <div className="flex-1 space-y-2">
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-3/4" />

@@ -89,7 +89,7 @@ export function VideoCard({ video, index = 0 }: VideoCardProps) {
         </div>
 
         {/* 信息区域 */}
-        <div className="flex gap-3 mt-3 px-0.5">
+        <div className="flex gap-2 sm:gap-3 mt-3 px-0.5">
           {/* 头像 */}
           <HoverCard openDelay={400} closeDelay={100}>
             <HoverCardTrigger asChild>
@@ -97,18 +97,22 @@ export function VideoCard({ video, index = 0 }: VideoCardProps) {
                 onClick={(e) => e.preventDefault()}
                 className="cursor-pointer flex-shrink-0"
               >
-                <Avatar className="h-9 w-9 ring-2 ring-background shadow-sm transition-transform duration-200 hover:scale-110">
+                <Avatar className="h-8 w-8 sm:h-9 sm:w-9 ring-2 ring-background shadow-sm transition-transform duration-200 hover:scale-110">
                   <AvatarImage
                     src={video.uploader.avatar || undefined}
                     alt={uploaderName}
                   />
-                  <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs sm:text-sm font-medium">
                     {uploaderName.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
               </div>
             </HoverCardTrigger>
-            <HoverCardContent className="w-72" side="top" align="start">
+            <HoverCardContent
+              className="w-[calc(100vw-2rem)] max-w-72 sm:w-72"
+              side="top"
+              align="start"
+            >
               <div className="flex gap-3">
                 <Avatar className="h-14 w-14 ring-2 ring-primary/20">
                   <AvatarImage
@@ -141,10 +145,10 @@ export function VideoCard({ video, index = 0 }: VideoCardProps) {
 
           {/* 标题和作者 */}
           <div className="flex-1 min-w-0 space-y-1">
-            <h3 className="font-medium line-clamp-2 text-sm leading-snug group-hover:text-primary transition-colors duration-200">
+            <h3 className="font-medium line-clamp-2 text-xs sm:text-sm leading-snug group-hover:text-primary transition-colors duration-200">
               {video.title}
             </h3>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-[10px] sm:text-xs text-muted-foreground">
               <span className="truncate hover:text-foreground transition-colors">
                 {uploaderName}
               </span>

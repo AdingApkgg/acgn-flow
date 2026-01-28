@@ -236,7 +236,7 @@ export default function VideoPage({ params }: VideoPageProps) {
 
           <div>
             <div className="flex items-start justify-between gap-2">
-              <h1 className="text-xl font-bold">{video.title}</h1>
+              <h1 className="text-lg sm:text-xl font-bold">{video.title}</h1>
               
               {isOwner && (
                 <DropdownMenu>
@@ -287,7 +287,7 @@ export default function VideoPage({ params }: VideoPageProps) {
               )}
             </div>
 
-            <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-3 sm:gap-4 mt-2 text-xs sm:text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Eye className="h-4 w-4" />
                 {formatViews(video.views)} 次观看
@@ -299,7 +299,7 @@ export default function VideoPage({ params }: VideoPageProps) {
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
             <Link
               href={`/user/${video.uploader.id}`}
               className="flex items-center gap-3 hover:opacity-80"
@@ -432,7 +432,7 @@ function RecommendedVideos({ videoId }: { videoId: string }) {
         <h3 className="font-medium">相关推荐</h3>
         {[1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="flex gap-3">
-            <Skeleton className="w-40 h-24 rounded-lg shrink-0" />
+            <Skeleton className="w-32 h-20 sm:w-40 sm:h-24 rounded-lg shrink-0" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-3 w-2/3" />
@@ -464,7 +464,7 @@ function RecommendedVideos({ videoId }: { videoId: string }) {
             className="flex gap-3 group"
           >
             {/* 封面 */}
-            <div className="relative w-40 h-24 rounded-lg overflow-hidden bg-muted shrink-0">
+            <div className="relative w-32 h-20 sm:w-40 sm:h-24 rounded-lg overflow-hidden bg-muted shrink-0">
               {video.coverUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -486,13 +486,13 @@ function RecommendedVideos({ videoId }: { videoId: string }) {
 
             {/* 信息 */}
             <div className="flex-1 min-w-0">
-              <h4 className="text-sm font-medium line-clamp-2 group-hover:text-primary transition-colors">
+              <h4 className="text-xs sm:text-sm font-medium line-clamp-2 group-hover:text-primary transition-colors">
                 {video.title}
               </h4>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
                 {video.uploader.nickname || video.uploader.username}
               </p>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+              <div className="flex items-center gap-2 text-[10px] sm:text-xs text-muted-foreground mt-1">
                 <span>{formatViews(video.views)} 次播放</span>
                 <span>·</span>
                 <span>{formatRelativeTime(video.createdAt)}</span>

@@ -24,6 +24,8 @@ import {
   History,
   Video,
   Shield,
+  LogIn,
+  UserPlus,
 } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -35,12 +37,14 @@ import { SettingsPanel } from "./settings-panel";
 export function Header() {
   const { data: session, status } = useSession();
   const [searchQuery, setSearchQuery] = useState("");
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
   const router = useRouter();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
       router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      setShowMobileSearch(false);
     }
   };
 
@@ -112,9 +116,9 @@ export function Header() {
           </nav>
         </div>
 
-        {/* Center Section - Search */}
-        <form onSubmit={handleSearch} className="w-full max-w-md mx-4">
-          <div className="relative">
+        {/* Center Section - Search (Desktop) */}
+        <form onSubmit={handleSearch} className="hidden md:flex w-full max-w-md mx-4">
+          <div className="relative w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
@@ -127,9 +131,20 @@ export function Header() {
         </form>
 
         {/* Right Section */}
-        <div className="flex items-center gap-2 flex-1 justify-end">
+        <div className="flex items-center gap-1 sm:gap-2 flex-1 justify-end">
           {/* Settings Panel */}
           <SettingsPanel />
+
+          {/* Mobile Search Toggle */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={() => setShowMobileSearch((prev) => !prev)}
+            aria-label="搜索"
+          >
+            <Search className="h-5 w-5" />
+          </Button>
 
           {status === "loading" ? (
             <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
@@ -224,15 +239,37 @@ export function Header() {
           ) : (
             <div className="flex items-center gap-1 sm:gap-2">
               <Button variant="ghost" size="sm" asChild className="px-2 sm:px-4">
-                <Link href="/login">登录</Link>
+                <Link href="/login">
+                  <LogIn className="h-4 w-4 sm:hidden" />
+                  <span className="hidden sm:inline">登录</span>
+                </Link>
               </Button>
               <Button size="sm" asChild className="px-2 sm:px-4">
-                <Link href="/register">注册</Link>
+                <Link href="/register">
+                  <UserPlus className="h-4 w-4 sm:hidden" />
+                  <span className="hidden sm:inline">注册</span>
+                </Link>
               </Button>
             </div>
           )}
         </div>
       </div>
+      {showMobileSearch ? (
+        <div className="border-t bg-background/95 md:hidden">
+          <form onSubmit={handleSearch} className="container py-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="搜索..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 w-full text-sm"
+              />
+            </div>
+          </form>
+        </div>
+      ) : null}
     </header>
   );
 }

@@ -131,7 +131,7 @@ export default function HomePage() {
                 transition={{ duration: 0.4, delay: 0.1 }}
                 className="flex items-center gap-2"
               >
-                <div className="flex bg-muted rounded-lg p-1">
+                <div className="flex bg-muted rounded-lg p-1 gap-0.5 sm:gap-0">
                   {sortOptions.map((option) => {
                     const Icon = option.icon;
                     const isActive = sortBy === option.value;
@@ -139,7 +139,7 @@ export default function HomePage() {
                       <motion.button
                         key={option.value}
                         onClick={() => setSortBy(option.value)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                        className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
                           isActive 
                             ? "bg-background text-foreground shadow-sm" 
                             : "text-muted-foreground hover:text-foreground"
@@ -158,7 +158,7 @@ export default function HomePage() {
 
             {/* 第二行：时间范围和标签筛选 */}
             <motion.div 
-              className="flex flex-wrap items-center gap-3"
+              className="flex flex-wrap items-center gap-2 sm:gap-3"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.15 }}
@@ -171,7 +171,7 @@ export default function HomePage() {
                     <motion.button
                       key={option.value}
                       onClick={() => setTimeRange(option.value)}
-                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                      className={`px-2 py-1 rounded-md text-[10px] sm:text-xs font-medium transition-all ${
                         timeRange === option.value
                           ? "bg-primary text-primary-foreground"
                           : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
@@ -193,9 +193,10 @@ export default function HomePage() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <Filter className="h-4 w-4 text-muted-foreground" />
                   <div className="flex gap-1.5 flex-wrap">
-                    {tagsData.slice(0, 6).map((tag) => (
+                    {tagsData.slice(0, 6).map((tag, index) => (
                       <motion.div
                         key={tag.id}
+                        className={index >= 4 ? "hidden sm:inline-flex" : undefined}
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                       >

@@ -83,9 +83,16 @@ export function VideoPlayer({
     // 构建插件列表
     const plugins: Artplayer["option"]["plugins"] = [];
 
-    // 弹幕插件
+    // 弹幕插件（性能优化版）
     if (danmakuUrl) {
       const isJsonFormat = danmakuUrl.endsWith(".json");
+      
+      // 弹幕密度控制 - 每秒最大弹幕数
+      const MAX_DANMAKU_PER_SECOND = 15;
+      // 同屏最大弹幕数
+      const MAX_VISIBLE_DANMAKU = 50;
+      // 追踪同屏弹幕数量
+      let visibleCount = 0;
       
       // JSON 格式需要自定义解析
       const fetchJsonDanmaku = async () => {
@@ -113,6 +120,18 @@ export function VideoPlayer({
         }
       };
 
+      // 弹幕密度过滤器 - 限制每秒弹幕数量
+      const danmakuTimeMap = new Map<number, number>();
+      const densityFilter = (danmu: { time?: number }) => {
+        const timeKey = Math.floor(danmu.time || 0);
+        const count = danmakuTimeMap.get(timeKey) || 0;
+        if (count >= MAX_DANMAKU_PER_SECOND) {
+          return false;
+        }
+        danmakuTimeMap.set(timeKey, count + 1);
+        return true;
+      };
+
       plugins.push(
         artplayerPluginDanmuku({
           // JSON 用函数解析，XML 直接传 URL 让插件处理
@@ -125,7 +144,27 @@ export function VideoPlayer({
           margin: [10, "25%"],
           antiOverlap: true,
           synchronousPlayback: false,
-          heatmap: true,
+          // 弹幕加载时过滤 - 限制每秒弹幕密度
+          filter: densityFilter,
+          // 弹幕显示前过滤 - 限制同屏弹幕数量
+          beforeVisible: () => {
+            if (visibleCount >= MAX_VISIBLE_DANMAKU) {
+              return false;
+            }
+            visibleCount++;
+            // 弹幕显示时间约等于 speed 秒，之后自动减少计数
+            setTimeout(() => {
+              visibleCount = Math.max(0, visibleCount - 1);
+            }, 5000);
+            return true;
+          },
+          // 热力图优化配置 - 降低采样精度以提升性能
+          heatmap: {
+            sampling: 50, // 降低采样精度（默认约 width/100）
+            smoothing: 0.3, // 平滑系数
+            flattening: 0.2, // 扁平化系数
+            opacity: 0.2,
+          },
         })
       );
     }
