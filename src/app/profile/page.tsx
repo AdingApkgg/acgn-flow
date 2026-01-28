@@ -1243,8 +1243,7 @@ export default function ProfilePage() {
             </Card>
           </div>
         </div>
-      </div>
-
+      
       {/* 解绑确认对话框 */}
       <AlertDialog open={!!unlinkingProvider} onOpenChange={() => setUnlinkingProvider(null)}>
         <AlertDialogContent>

@@ -6,6 +6,7 @@ import Artplayer from "artplayer";
 import artplayerPluginDanmuku from "artplayer-plugin-danmuku";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Play, AlertCircle } from "lucide-react";
+import { motion, AnimatePresence } from "@/components/motion";
 
 // 字幕配置接口
 interface SubtitleTrack {
@@ -321,27 +322,51 @@ export function VideoPlayer({
 
   if (hasError) {
     return (
-      <div className="aspect-video bg-muted flex flex-col items-center justify-center rounded-lg gap-2">
-        <AlertCircle className="h-10 w-10 text-muted-foreground" />
-        <p className="text-muted-foreground">视频加载失败</p>
-        <a
+      <motion.div 
+        className="aspect-video bg-muted flex flex-col items-center justify-center rounded-lg gap-2"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
+        <motion.div
+          initial={{ scale: 0.8 }}
+          animate={{ scale: 1 }}
+          transition={{ type: "spring", stiffness: 200, damping: 15 }}
+        >
+          <AlertCircle className="h-10 w-10 text-muted-foreground" />
+        </motion.div>
+        <motion.p 
+          className="text-muted-foreground"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          视频加载失败
+        </motion.p>
+        <motion.a
           href={url}
           target="_blank"
           rel="noopener noreferrer"
           className="text-sm text-primary hover:underline"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          whileHover={{ scale: 1.05 }}
         >
           尝试直接打开
-        </a>
-      </div>
+        </motion.a>
+      </motion.div>
     );
   }
 
   // 显示封面预览模式
   if (!showPlayer && poster) {
     return (
-      <div
+      <motion.div
         className="relative aspect-video bg-black rounded-lg overflow-hidden cursor-pointer group"
         onClick={handlePlay}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        whileHover="hover"
       >
         <Image
           src={poster}
@@ -351,31 +376,49 @@ export function VideoPlayer({
           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 50vw"
           unoptimized
         />
-        <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
-          <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+        <motion.div 
+          className="absolute inset-0 bg-black/30 flex items-center justify-center"
+          variants={{
+            hover: { backgroundColor: "rgba(0,0,0,0.5)" }
+          }}
+        >
+          <motion.div 
+            className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center"
+            variants={{
+              hover: { scale: 1.15 }
+            }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 400, damping: 17 }}
+          >
             <Play className="w-8 h-8 text-black ml-1" />
-          </div>
-        </div>
-      </div>
+          </motion.div>
+        </motion.div>
+      </motion.div>
     );
   }
 
   return (
     <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-      {/* 加载骨架屏 - 使用 CSS 过渡淡出 */}
-      <div 
-        className={`absolute inset-0 z-10 transition-opacity duration-500 ${
-          isReady ? "opacity-0 pointer-events-none" : "opacity-100"
-        }`}
-      >
-        <Skeleton className="w-full h-full" />
-      </div>
-      {/* 播放器容器 - 使用 CSS 过渡淡入 */}
-      <div 
+      {/* 加载骨架屏 - 使用动画淡出 */}
+      <AnimatePresence>
+        {!isReady && (
+          <motion.div 
+            className="absolute inset-0 z-10"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <Skeleton className="w-full h-full" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* 播放器容器 - 使用动画淡入 */}
+      <motion.div 
         ref={containerRef} 
-        className={`w-full h-full transition-opacity duration-300 ${
-          isReady ? "opacity-100" : "opacity-0"
-        }`}
+        className="w-full h-full"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: isReady ? 1 : 0 }}
+        transition={{ duration: 0.3 }}
       />
     </div>
   );

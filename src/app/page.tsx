@@ -10,6 +10,7 @@ import { AlertTriangle, X, Clock, TrendingUp, Heart, Sparkles, Calendar, Filter,
 import { WebsiteJsonLd, OrganizationJsonLd } from "@/components/seo/json-ld";
 import { SiteStats } from "@/components/stats/site-stats";
 import Link from "next/link";
+import { PageWrapper, FadeIn, motion, AnimatePresence } from "@/components/motion";
 
 type SortBy = "latest" | "views" | "likes";
 type TimeRange = "all" | "today" | "week" | "month";
@@ -71,44 +72,66 @@ export default function HomePage() {
   };
 
   return (
-    <div>
+    <PageWrapper>
       {/* SEO 结构化数据 */}
       <WebsiteJsonLd />
       <OrganizationJsonLd />
 
       <div className="container py-6">
         {/* 公告横幅 */}
-        {showAnnouncement && (
-          <div className="mb-6 relative">
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0" />
-              <p className="text-sm text-yellow-600 dark:text-yellow-400 flex-1">
-                本站目前处于开发阶段，对你的数据无 SLA 保证！
-              </p>
-              <button
-                onClick={() => setShowAnnouncement(false)}
-                className="text-yellow-500 hover:text-yellow-600 dark:hover:text-yellow-300 transition-colors"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
+        <AnimatePresence>
+          {showAnnouncement && (
+            <motion.div 
+              className="mb-6 relative"
+              initial={{ opacity: 0, y: -20, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: "auto" }}
+              exit={{ opacity: 0, y: -20, height: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0" />
+                <p className="text-sm text-yellow-600 dark:text-yellow-400 flex-1">
+                  本站目前处于开发阶段，对你的数据无 SLA 保证！
+                </p>
+                <motion.button
+                  onClick={() => setShowAnnouncement(false)}
+                  className="text-yellow-500 hover:text-yellow-600 dark:hover:text-yellow-300 transition-colors"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                >
+                  <X className="h-4 w-4" />
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* 网站统计 */}
-        <section className="mb-8">
-          <SiteStats />
-        </section>
+        <FadeIn delay={0.1}>
+          <section className="mb-8">
+            <SiteStats />
+          </section>
+        </FadeIn>
 
         <section className="mb-8">
           {/* 标题和筛选区域 */}
-          <div className="space-y-4 mb-6">
+          <FadeIn delay={0.2} className="space-y-4 mb-6">
             {/* 第一行：标题和排序 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
-                <Sparkles className="h-6 w-6 text-primary" />
+              <motion.h1 
+                className="text-xl sm:text-2xl font-bold flex items-center gap-2"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.3 }}
+              >
+                <motion.span
+                  animate={{ rotate: [0, 15, -15, 0] }}
+                  transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+                >
+                  <Sparkles className="h-6 w-6 text-primary" />
+                </motion.span>
                 发现视频
-              </h1>
+              </motion.h1>
               
               {/* 排序按钮组 */}
               <div className="flex items-center gap-2">
@@ -117,18 +140,20 @@ export default function HomePage() {
                     const Icon = option.icon;
                     const isActive = sortBy === option.value;
                     return (
-                      <button
+                      <motion.button
                         key={option.value}
                         onClick={() => setSortBy(option.value)}
-                        className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98] ${
+                        className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${
                           isActive 
                             ? "bg-background text-foreground shadow-sm" 
                             : "text-muted-foreground hover:text-foreground"
                         }`}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
                       >
                         <Icon className="h-4 w-4" />
                         <span className="hidden sm:inline">{option.label}</span>
-                      </button>
+                      </motion.button>
                     );
                   })}
                 </div>
@@ -142,17 +167,19 @@ export default function HomePage() {
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <div className="flex gap-1">
                   {timeOptions.map((option) => (
-                    <button
+                    <motion.button
                       key={option.value}
                       onClick={() => setTimeRange(option.value)}
-                      className={`px-2 py-1 rounded-md text-[10px] sm:text-xs font-medium transition-all hover:scale-105 active:scale-95 ${
+                      className={`px-2 py-1 rounded-md text-[10px] sm:text-xs font-medium transition-colors ${
                         timeRange === option.value
                           ? "bg-primary text-primary-foreground"
                           : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
                       }`}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                     >
                       {option.label}
-                    </button>
+                    </motion.button>
                   ))}
                 </div>
               </div>
@@ -212,7 +239,7 @@ export default function HomePage() {
                 </Badge>
               </div>
             )}
-          </div>
+          </FadeIn>
 
           <div key={`${sortBy}-${timeRange}-${selectedTag}`}>
             <VideoGrid videos={videos} isLoading={isLoading} />
@@ -248,6 +275,6 @@ export default function HomePage() {
           )}
         </section>
       </div>
-    </div>
+    </PageWrapper>
   );
 }

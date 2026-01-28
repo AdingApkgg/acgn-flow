@@ -16,6 +16,7 @@ import { Loader2 } from "lucide-react";
 import { CaptchaInput } from "@/components/ui/captcha-input";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Skeleton } from "@/components/ui/skeleton";
+import { motion } from "@/components/motion";
 
 const loginSchema = z.object({
   identifier: z.string().min(1, "请输入邮箱或用户名"),
@@ -87,7 +88,12 @@ function LoginForm() {
 
   return (
     <div className="container flex items-center justify-center min-h-[calc(100vh-200px)] py-8">
-      <div className="w-full max-w-md">
+      <motion.div 
+        className="w-full max-w-md"
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+      >
         <Card>
           <CardHeader className="text-center">
             <div>
@@ -179,7 +185,7 @@ function LoginForm() {
           </div>
         </CardContent>
       </Card>
-      </div>
+      </motion.div>
     </div>
   );
 }

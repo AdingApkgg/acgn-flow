@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/hover-card";
 import { Play, Eye, Heart, User, Clock } from "lucide-react";
 import { formatDuration, formatViews, formatRelativeTime } from "@/lib/format";
+import { motion } from "@/components/motion";
 
 interface VideoCardProps {
   video: {
@@ -37,7 +38,17 @@ export function VideoCard({ video, index = 0 }: VideoCardProps) {
   const uploaderName = video.uploader.nickname || video.uploader.username;
   
   return (
-    <div className="group">
+    <motion.div 
+      className="group"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ 
+        duration: 0.4, 
+        delay: index * 0.05,
+        ease: "easeOut"
+      }}
+      whileHover={{ y: -4 }}
+    >
       <Link href={`/video/${video.id}`} className="block">
         {/* 封面容器 */}
         <div className="relative aspect-video overflow-hidden rounded-xl bg-muted shadow-sm group-hover:shadow-xl transition-shadow duration-300">
@@ -148,6 +159,6 @@ export function VideoCard({ video, index = 0 }: VideoCardProps) {
           </div>
         </div>
       </Link>
-    </div>
+    </motion.div>
   );
 }
