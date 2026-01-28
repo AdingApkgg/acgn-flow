@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useVisualSettings } from "@/components/visual-settings";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 
 export function SettingsPanel() {
+  const [mounted, setMounted] = useState(false);
   const { theme, setTheme } = useTheme();
   const {
     opacity,
@@ -29,6 +31,11 @@ export function SettingsPanel() {
     setBlur,
     setBorderRadius,
   } = useVisualSettings();
+
+  // Avoid hydration mismatch by only rendering theme-dependent UI after mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const themeOptions = [
     { value: "system", label: "跟随系统", icon: Monitor },
@@ -54,21 +61,22 @@ export function SettingsPanel() {
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">主题</Label>
             <div className="flex gap-1">
-              {themeOptions.map((option) => (
-                <Button
-                  key={option.value}
-                  variant={theme === option.value ? "default" : "outline"}
-                  size="sm"
-                  className="flex-1 gap-1.5"
-                  onClick={() => setTheme(option.value)}
-                >
-                  <option.icon className="h-3.5 w-3.5" />
-                  <span className="text-xs">{option.label}</span>
-                  {theme === option.value && (
-                    <Check className="h-3 w-3 ml-auto" />
-                  )}
-                </Button>
-              ))}
+              {themeOptions.map((option) => {
+                const isActive = mounted && theme === option.value;
+                return (
+                  <Button
+                    key={option.value}
+                    variant={isActive ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1 gap-1.5"
+                    onClick={() => setTheme(option.value)}
+                  >
+                    <option.icon className="h-3.5 w-3.5" />
+                    <span className="text-xs">{option.label}</span>
+                    {isActive && <Check className="h-3 w-3 ml-auto" />}
+                  </Button>
+                );
+              })}
             </div>
           </div>
 
