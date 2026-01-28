@@ -32,7 +32,6 @@ import { useRouter } from "next/navigation";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { SettingsPanel } from "./settings-panel";
-import { motion } from "@/components/motion";
 
 export function Header() {
   const { data: session, status } = useSession();
@@ -88,22 +87,12 @@ export function Header() {
 
           {/* Logo */}
           <Link href="/" className="flex items-center gap-1 font-bold text-xl group">
-            <motion.span 
-              className="text-gradient-anime"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 400, damping: 17 }}
-            >
+            <span className="text-gradient-anime transition-transform duration-200 hover:scale-105 active:scale-95">
               ACGN
-            </motion.span>
-            <motion.span 
-              className="text-foreground group-hover:text-primary transition-colors"
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1 }}
-            >
+            </span>
+            <span className="text-foreground group-hover:text-primary transition-colors">
               Flow
-            </motion.span>
+            </span>
           </Link>
 
           {/* Desktop Nav */}

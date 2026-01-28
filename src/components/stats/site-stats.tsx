@@ -3,16 +3,17 @@
 import { trpc } from "@/lib/trpc";
 import { Play, Users, Tag, Eye } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { motion, CountUp } from "@/components/motion";
+import { CountUp } from "@/components/motion";
 
 function formatNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + "M";
+  const rounded = Math.round(num);
+  if (rounded >= 1000000) {
+    return (rounded / 1000000).toFixed(1) + "M";
   }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + "K";
+  if (rounded >= 1000) {
+    return (rounded / 1000).toFixed(1) + "K";
   }
-  return num.toString();
+  return rounded.toString();
 }
 
 const statItems = [
@@ -56,28 +57,23 @@ export function SiteStats() {
         const value = data[item.key];
 
         return (
-          <motion.div
+          <div
             key={item.key}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: index * 0.1 }}
-            whileHover={{ y: -4, scale: 1.02 }}
-            className="bg-card border rounded-xl p-4 flex items-center gap-3 cursor-default shadow-sm hover:shadow-lg transition-shadow"
+            className="bg-card border rounded-xl p-4 flex items-center gap-3 cursor-default shadow-sm hover:shadow-lg hover:-translate-y-1 hover:scale-[1.02] transition-all duration-200"
+            style={{ animationDelay: `${index * 100}ms` }}
           >
-            <motion.div 
-              className={`p-2.5 rounded-lg ${item.bgColor} ${item.color}`}
-              whileHover={{ scale: 1.1, rotate: 5 }}
-              transition={{ type: "spring", stiffness: 400, damping: 17 }}
+            <div 
+              className={`p-2.5 rounded-lg ${item.bgColor} ${item.color} transition-transform duration-200 hover:scale-110 hover:rotate-3`}
             >
               <Icon className="h-5 w-5" />
-            </motion.div>
+            </div>
             <div>
               <div className="text-xl font-bold tabular-nums">
                 <CountUp value={value} duration={1.5} formatter={formatNumber} />
               </div>
               <div className="text-xs text-muted-foreground">{item.label}</div>
             </div>
-          </motion.div>
+          </div>
         );
       })}
     </div>

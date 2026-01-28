@@ -10,7 +10,7 @@ import { AlertTriangle, X, Clock, TrendingUp, Heart, Sparkles, Calendar, Filter,
 import { WebsiteJsonLd, OrganizationJsonLd } from "@/components/seo/json-ld";
 import { SiteStats } from "@/components/stats/site-stats";
 import Link from "next/link";
-import { PageWrapper, FadeIn, motion, AnimatePresence } from "@/components/motion";
+import { PageWrapper, FadeIn, motion } from "@/components/motion";
 
 type SortBy = "latest" | "views" | "likes";
 type TimeRange = "all" | "today" | "week" | "month";
@@ -78,33 +78,25 @@ export default function HomePage() {
       <OrganizationJsonLd />
 
       <div className="container py-6">
-        {/* 公告横幅 */}
-        <AnimatePresence>
-          {showAnnouncement && (
-            <motion.div 
-              className="mb-6 relative"
-              initial={{ opacity: 0, y: -20, height: 0 }}
-              animate={{ opacity: 1, y: 0, height: "auto" }}
-              exit={{ opacity: 0, y: -20, height: 0 }}
-              transition={{ duration: 0.3 }}
+        {/* 公告横幅 - 使用 CSS 过渡避免水合错误 */}
+        <div 
+          className={`mb-6 relative overflow-hidden transition-all duration-300 ${
+            showAnnouncement ? "max-h-20 opacity-100" : "max-h-0 opacity-0"
+          }`}
+        >
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0" />
+            <p className="text-sm text-yellow-600 dark:text-yellow-400 flex-1">
+              本站目前处于开发阶段，对你的数据无 SLA 保证！
+            </p>
+            <button
+              onClick={() => setShowAnnouncement(false)}
+              className="text-yellow-500 hover:text-yellow-600 dark:hover:text-yellow-300 transition-all hover:scale-110 active:scale-90"
             >
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 flex items-center gap-3">
-                <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0" />
-                <p className="text-sm text-yellow-600 dark:text-yellow-400 flex-1">
-                  本站目前处于开发阶段，对你的数据无 SLA 保证！
-                </p>
-                <motion.button
-                  onClick={() => setShowAnnouncement(false)}
-                  className="text-yellow-500 hover:text-yellow-600 dark:hover:text-yellow-300 transition-colors"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                >
-                  <X className="h-4 w-4" />
-                </motion.button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
 
         {/* 网站统计 */}
         <FadeIn delay={0.1}>
@@ -118,20 +110,10 @@ export default function HomePage() {
           <FadeIn delay={0.2} className="space-y-4 mb-6">
             {/* 第一行：标题和排序 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <motion.h1 
-                className="text-xl sm:text-2xl font-bold flex items-center gap-2"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.3 }}
-              >
-                <motion.span
-                  animate={{ rotate: [0, 15, -15, 0] }}
-                  transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-                >
-                  <Sparkles className="h-6 w-6 text-primary" />
-                </motion.span>
+              <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+                <Sparkles className="h-6 w-6 text-primary" />
                 发现视频
-              </motion.h1>
+              </h1>
               
               {/* 排序按钮组 */}
               <div className="flex items-center gap-2">

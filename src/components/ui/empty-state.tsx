@@ -3,7 +3,6 @@
 import { type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { FadeIn, motion } from "@/components/motion";
 
 interface EmptyStateProps {
   icon: LucideIcon;
@@ -24,51 +23,30 @@ export function EmptyState({
   className,
 }: EmptyStateProps) {
   return (
-    <FadeIn
+    <div
       className={cn(
-        "flex flex-col items-center justify-center py-16 px-4 text-center",
+        "flex flex-col items-center justify-center py-16 px-4 text-center animate-in fade-in slide-in-from-bottom-4 duration-500",
         className
       )}
-      direction="up"
-      distance={30}
     >
-      <motion.div 
-        className="rounded-full bg-muted p-6 mb-6"
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ delay: 0.1, type: "spring", stiffness: 200, damping: 15 }}
-      >
+      <div className="rounded-full bg-muted p-6 mb-6 animate-in zoom-in-75 duration-300 delay-100">
         <Icon className="h-12 w-12 text-muted-foreground" />
-      </motion.div>
-      <motion.h3 
-        className="text-lg font-semibold mb-2"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-      >
+      </div>
+      <h3 className="text-lg font-semibold mb-2 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-200">
         {title}
-      </motion.h3>
+      </h3>
       {description && (
-        <motion.p 
-          className="text-muted-foreground max-w-sm"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
+        <p className="text-muted-foreground max-w-sm animate-in fade-in slide-in-from-bottom-2 duration-300 delay-300">
           {description}
-        </motion.p>
+        </p>
       )}
       {action && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-        >
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 delay-[400ms]">
           <Button className="mt-6" onClick={action.onClick}>
             {action.label}
           </Button>
-        </motion.div>
+        </div>
       )}
-    </FadeIn>
+    </div>
   );
 }

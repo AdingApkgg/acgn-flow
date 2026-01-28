@@ -10,9 +10,14 @@ import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import { useVisualSettings } from "@/components/visual-settings";
 
-// 注册 Service Worker
+// 注册 Service Worker（仅生产环境）
 function ServiceWorkerRegistration() {
   useEffect(() => {
+    // 开发环境不注册 Service Worker，避免缓存问题影响开发体验
+    if (process.env.NODE_ENV !== "production") {
+      return;
+    }
+    
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       navigator.serviceWorker
         .register("/sw.js")
