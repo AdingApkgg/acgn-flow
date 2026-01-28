@@ -104,7 +104,7 @@ export default function RootLayout({
         <meta name="ai-content-description" content="ACGN Flow - 动画、漫画、游戏、轻小说相关视频内容分享平台" />
         <link rel="author" href="/llms.txt" />
       </head>
-      <body className="font-sans">
+      <body className="font-sans" suppressHydrationWarning>
         <Providers>
           <div className="relative min-h-screen flex flex-col">
             <Header />

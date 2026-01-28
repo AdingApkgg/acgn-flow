@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, type Variants, AnimatePresence, useInView } from "framer-motion";
-import { forwardRef, type ComponentPropsWithoutRef, useRef } from "react";
+import { forwardRef, type ComponentPropsWithoutRef, useRef, useState, useEffect } from "react";
 
 // ==================== 基础变体 ====================
 
@@ -235,7 +235,13 @@ interface FadeInProps extends ComponentPropsWithoutRef<typeof motion.div> {
 }
 
 export const FadeIn = forwardRef<HTMLDivElement, FadeInProps>(
-  ({ children, delay = 0, direction = "up", duration = 0.4, ...props }, ref) => {
+  ({ children, delay = 0, direction = "up", duration = 0.4, className, ...props }, ref) => {
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+      setMounted(true);
+    }, []);
+
     const directions = {
       up: { y: 20, x: 0 },
       down: { y: -20, x: 0 },
@@ -243,6 +249,11 @@ export const FadeIn = forwardRef<HTMLDivElement, FadeInProps>(
       right: { x: -30, y: 0 },
       none: { x: 0, y: 0 },
     };
+
+    // Render without animation on server to avoid hydration mismatch
+    if (!mounted) {
+      return <div ref={ref} className={className}>{children as React.ReactNode}</div>;
+    }
     
     return (
       <motion.div
@@ -250,6 +261,7 @@ export const FadeIn = forwardRef<HTMLDivElement, FadeInProps>(
         initial={{ opacity: 0, ...directions[direction] }}
         animate={{ opacity: 1, x: 0, y: 0 }}
         transition={{ duration, delay, ease: [0.25, 0.46, 0.45, 0.94] }}
+        className={className}
         {...props}
       >
         {children}
@@ -366,6 +378,17 @@ interface PageWrapperProps {
 }
 
 export function PageWrapper({ children, className }: PageWrapperProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Render without animation on server to avoid hydration mismatch
+  if (!mounted) {
+    return <div className={className}>{children}</div>;
+  }
+
   return (
     <motion.div
       initial="hidden"

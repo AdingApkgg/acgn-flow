@@ -27,18 +27,23 @@ import {
   LogIn,
   UserPlus,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { motion } from "framer-motion";
 import { SettingsPanel } from "./settings-panel";
 
 export function Header() {
   const { data: session, status } = useSession();
   const [searchQuery, setSearchQuery] = useState("");
   const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
+
+  // Avoid hydration mismatch by only rendering auth-dependent UI after mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,21 +87,12 @@ export function Header() {
 
           {/* Logo */}
           <Link href="/" className="flex items-center gap-1 font-bold text-xl group">
-            <motion.span 
-              className="text-gradient-anime"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
+            <span className="text-gradient-anime hover:scale-105 active:scale-95 transition-transform">
               ACGN
-            </motion.span>
-            <motion.span
-              className="text-foreground group-hover:text-primary transition-colors"
-              initial={{ opacity: 0, x: -5 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1 }}
-            >
+            </span>
+            <span className="text-foreground group-hover:text-primary transition-colors">
               Flow
-            </motion.span>
+            </span>
           </Link>
 
           {/* Desktop Nav */}
@@ -146,7 +142,7 @@ export function Header() {
             <Search className="h-5 w-5" />
           </Button>
 
-          {status === "loading" ? (
+          {!mounted || status === "loading" ? (
             <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
           ) : session?.user ? (
             <>
@@ -254,22 +250,25 @@ export function Header() {
           )}
         </div>
       </div>
-      {showMobileSearch ? (
-        <div className="border-t bg-background/95 md:hidden">
-          <form onSubmit={handleSearch} className="container py-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="搜索..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 w-full text-sm"
-              />
-            </div>
-          </form>
-        </div>
-      ) : null}
+      {/* Mobile Search - use CSS to avoid hydration mismatch */}
+      <div
+        className={`border-t bg-background/95 md:hidden overflow-hidden transition-all duration-200 ${
+          showMobileSearch ? "max-h-16 opacity-100" : "max-h-0 opacity-0"
+        }`}
+      >
+        <form onSubmit={handleSearch} className="container py-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="搜索..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 w-full text-sm"
+            />
+          </div>
+        </form>
+      </div>
     </header>
   );
 }
