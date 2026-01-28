@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useSyncExternalStore, type ReactNode } from "react";
 import {
   motion,
   LazyMotion,
@@ -9,6 +9,24 @@ import {
   type Variants,
   type HTMLMotionProps,
 } from "framer-motion";
+
+// ============================================================================
+// 客户端挂载检测 Hook（使用 useSyncExternalStore 避免 lint 警告）
+// ============================================================================
+
+const emptySubscribe = () => () => {};
+
+/**
+ * 检测是否在客户端挂载后
+ * 使用 useSyncExternalStore 来避免 SSR 水合问题
+ */
+export function useIsMounted() {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => true,  // 客户端返回 true
+    () => false  // 服务端返回 false
+  );
+}
 
 // ============================================================================
 // 预定义动画变体
@@ -122,11 +140,7 @@ interface ClientOnlyMotionProps extends HTMLMotionProps<"div"> {
  * 用于避免水合错误
  */
 export function MotionDiv({ children, className, ...props }: ClientOnlyMotionProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useIsMounted();
 
   if (!mounted) {
     // SSR/首次渲染时返回静态 div，避免动画属性导致的水合不匹配
@@ -164,11 +178,7 @@ export function FadeIn({
   direction = "up",
   distance = 20,
 }: FadeInProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useIsMounted();
 
   const getInitialPosition = () => {
     switch (direction) {
@@ -205,11 +215,7 @@ interface PageWrapperProps {
  * 页面过渡包装器
  */
 export function PageWrapper({ children, className }: PageWrapperProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useIsMounted();
 
   if (!mounted) {
     return <div className={className}>{children}</div>;
@@ -237,11 +243,7 @@ interface StaggerListProps {
  * 交错列表动画容器
  */
 export function StaggerList({ children, className, staggerDelay = 0.05 }: StaggerListProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useIsMounted();
 
   if (!mounted) {
     return <div className={className}>{children}</div>;
@@ -322,12 +324,8 @@ export function CountUp({
   className,
   formatter = (v) => Math.round(v).toString(),
 }: CountUpProps) {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsMounted();
   const [displayValue, setDisplayValue] = useState(0);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!mounted) return;

@@ -27,23 +27,19 @@ import {
   LogIn,
   UserPlus,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { SettingsPanel } from "./settings-panel";
+import { useIsMounted } from "@/components/motion";
 
 export function Header() {
   const { data: session, status } = useSession();
   const [searchQuery, setSearchQuery] = useState("");
   const [showMobileSearch, setShowMobileSearch] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsMounted();
   const router = useRouter();
-
-  // Avoid hydration mismatch by only rendering auth-dependent UI after mount
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

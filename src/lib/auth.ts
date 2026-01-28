@@ -95,7 +95,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   providers: staticProviders,
   callbacks: {
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account }) {
       // 只处理 OAuth 登录
       if (account?.provider === "credentials" || !user.email) {
         return true;

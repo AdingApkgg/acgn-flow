@@ -60,7 +60,6 @@ function StatCard({
   color,
   bgColor,
   subtitle,
-  index,
 }: {
   label: string;
   value: number;
@@ -68,7 +67,6 @@ function StatCard({
   color: string;
   bgColor: string;
   subtitle?: string;
-  index: number;
 }) {
   return (
     <div>
@@ -148,7 +146,7 @@ export default function AdminDashboardPage() {
                 .fill(0)
                 .map((_, i) => <StatCardSkeleton key={i} />)
             : totalStats &&
-              totalStatItems.map((item, index) => (
+              totalStatItems.map((item) => (
                 <StatCard
                   key={item.key}
                   label={item.label}
@@ -156,7 +154,6 @@ export default function AdminDashboardPage() {
                   icon={item.icon}
                   color={item.color}
                   bgColor={item.bgColor}
-                  index={index}
                 />
               ))}
         </div>
@@ -177,7 +174,7 @@ export default function AdminDashboardPage() {
                 .fill(0)
                 .map((_, i) => <StatCardSkeleton key={i} />)
             : growthStats &&
-              growthStatItems.map((item, index) => (
+              growthStatItems.map((item) => (
                 <StatCard
                   key={item.key}
                   label={item.label}
@@ -186,7 +183,6 @@ export default function AdminDashboardPage() {
                   color={item.color}
                   bgColor={item.bgColor}
                   subtitle="最近 30 天"
-                  index={index}
                 />
               ))}
         </div>

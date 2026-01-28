@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useVisualSettings } from "@/components/visual-settings";
 import { Button } from "@/components/ui/button";
@@ -19,9 +18,10 @@ import {
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
+import { useIsMounted } from "@/components/motion";
 
 export function SettingsPanel() {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useIsMounted();
   const { theme, setTheme } = useTheme();
   const {
     opacity,
@@ -31,11 +31,6 @@ export function SettingsPanel() {
     setBlur,
     setBorderRadius,
   } = useVisualSettings();
-
-  // Avoid hydration mismatch by only rendering theme-dependent UI after mount
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const themeOptions = [
     { value: "system", label: "跟随系统", icon: Monitor },

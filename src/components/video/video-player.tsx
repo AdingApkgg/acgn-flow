@@ -312,7 +312,6 @@ export function VideoPlayer({
       }
     };
     // 只在 url、danmakuUrl 或字幕列表真正变化时重建播放器
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPlayer, url, danmakuUrl, subtitleUrls]);
 
   const handlePlay = useCallback(() => {
