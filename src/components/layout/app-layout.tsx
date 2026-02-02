@@ -51,7 +51,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const showSidebar = mounted && !isFullscreen;
 
   return (
-    <div className="relative min-h-screen flex flex-col">
+    <div className="relative min-h-screen flex flex-col overflow-x-hidden">
       <Header onMenuClick={toggleSidebar} />
       
       <div className="flex flex-1">
@@ -63,7 +63,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {/* 主内容区 */}
         <main
           className={cn(
-            "flex-1 flex flex-col min-h-[calc(100vh-4rem)]",
+            "flex-1 flex flex-col min-h-[calc(100vh-4rem)] min-w-0 overflow-x-hidden",
             // 桌面端始终使用收起状态的边距，侧边栏展开时覆盖在内容上方
             showSidebar && "md:ml-[72px]",
             // 移动端为底部导航栏留出空间

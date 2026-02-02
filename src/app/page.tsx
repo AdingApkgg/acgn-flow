@@ -111,7 +111,7 @@ export default function HomePage() {
       <WebsiteJsonLd />
       <OrganizationJsonLd />
 
-      <div className="container py-4">
+      <div className="container py-4 max-w-full overflow-x-hidden">
         {/* 公告横幅 */}
         <div 
           className={`mb-4 relative overflow-hidden transition-all duration-300 ${
@@ -141,7 +141,7 @@ export default function HomePage() {
 
         {/* YouTube 风格的标签栏 */}
         <FadeIn delay={0.15}>
-          <div className="relative mb-6">
+          <div className="relative mb-6 overflow-hidden">
             {/* 左侧渐变和箭头 */}
             {showLeftArrow && (
               <div className="absolute left-0 top-0 bottom-0 z-10 flex items-center">

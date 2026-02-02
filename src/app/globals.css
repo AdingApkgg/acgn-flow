@@ -129,8 +129,13 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    overflow-x: hidden;
+  }
   body {
     @apply bg-background text-foreground;
+    overflow-x: hidden;
+    width: 100%;
   }
 }
 
@@ -138,7 +143,8 @@
 @layer utilities {
   .container {
     @apply mx-auto px-4 sm:px-6 lg:px-8;
-    max-width: 1280px;
+    max-width: min(1280px, 100%);
+    box-sizing: border-box;
   }
 }
 

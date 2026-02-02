@@ -104,7 +104,7 @@ export function VideoCard({ video, index = 0 }: VideoCardProps) {
               </div>
             </HoverCardTrigger>
             <HoverCardContent
-              className="w-[calc(100vw-2rem)] max-w-72 sm:w-72"
+              className="w-64 max-w-[calc(100vw-2rem)] sm:w-72"
               side="top"
               align="start"
             >
