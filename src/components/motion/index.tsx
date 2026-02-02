@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   motion,
   LazyMotion,
@@ -9,23 +9,16 @@ import {
   type Variants,
   type HTMLMotionProps,
 } from "framer-motion";
-
-// ============================================================================
-// 客户端挂载检测 Hook（使用 useSyncExternalStore 避免 lint 警告）
-// ============================================================================
-
-const emptySubscribe = () => () => {};
+import { useIsMounted as useIsMountedFn } from "usehooks-ts";
+import ReactCountUp from "react-countup";
 
 /**
- * 检测是否在客户端挂载后
- * 使用 useSyncExternalStore 来避免 SSR 水合问题
+ * 客户端挂载检测 Hook
+ * 包装 usehooks-ts 的 useIsMounted，直接返回布尔值
  */
-export function useIsMounted() {
-  return useSyncExternalStore(
-    emptySubscribe,
-    () => true,  // 客户端返回 true
-    () => false  // 服务端返回 false
-  );
+export function useIsMounted(): boolean {
+  const isMountedFn = useIsMountedFn();
+  return isMountedFn();
 }
 
 // ============================================================================
@@ -316,7 +309,7 @@ interface CountUpProps {
 }
 
 /**
- * 数字递增动画
+ * 数字递增动画 - 使用 react-countup
  */
 export function CountUp({ 
   value, 
@@ -325,40 +318,20 @@ export function CountUp({
   formatter = (v) => Math.round(v).toString(),
 }: CountUpProps) {
   const mounted = useIsMounted();
-  const [displayValue, setDisplayValue] = useState(0);
-
-  useEffect(() => {
-    if (!mounted) return;
-
-    const startTime = Date.now();
-    const startValue = displayValue;
-    const endValue = value;
-    const diff = endValue - startValue;
-
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(elapsed / (duration * 1000), 1);
-      
-      // easeOutQuart 缓动函数
-      const eased = 1 - Math.pow(1 - progress, 4);
-      const current = startValue + diff * eased;
-      
-      setDisplayValue(current);
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
-    };
-
-    requestAnimationFrame(animate);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, mounted, duration]);
 
   if (!mounted) {
     return <span className={className}>{formatter(value)}</span>;
   }
 
-  return <span className={className}>{formatter(displayValue)}</span>;
+  return (
+    <ReactCountUp
+      end={value}
+      duration={duration}
+      formattingFn={(v) => formatter(v)}
+      className={className}
+      preserveValue
+    />
+  );
 }
 
 // ============================================================================

@@ -367,18 +367,23 @@ export const videoRouter = router({
         const preferredTagSet = new Set(preferredTagIds);
         const takeSize = Math.min(limit * 5, 200);
 
+        // 构建查询条件：如果用户指定了 tagId，使用用户的选择；否则使用推荐标签
+        const recommendWhere: Prisma.VideoWhereInput = {
+          ...baseWhere,
+          ...(excludeVideoIds.length > 0 && {
+            id: { notIn: excludeVideoIds },
+          }),
+        };
+        
+        // 只有在用户没有选择特定标签时，才使用推荐标签筛选
+        if (!tagId && preferredTagIds.length > 0) {
+          recommendWhere.tags = { some: { tagId: { in: preferredTagIds } } };
+        }
+
         const videos = await ctx.prisma.video.findMany({
           take: takeSize + 1,
           cursor: cursor ? { id: cursor } : undefined,
-          where: {
-            ...baseWhere,
-            ...(excludeVideoIds.length > 0 && {
-              id: { notIn: excludeVideoIds },
-            }),
-            ...(preferredTagIds.length > 0 && {
-              tags: { some: { tagId: { in: preferredTagIds } } },
-            }),
-          },
+          where: recommendWhere,
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           include: {
             uploader: {

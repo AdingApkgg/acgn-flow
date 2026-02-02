@@ -63,9 +63,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <main
           className={cn(
             "flex-1 flex flex-col min-h-[calc(100vh-4rem)]",
-            // 桌面端根据侧边栏状态调整左边距
-            showSidebar && (sidebarCollapsed ? "md:ml-[72px]" : "md:ml-[240px]"),
-            "transition-all duration-300 ease-in-out"
+            // 桌面端始终使用收起状态的边距，侧边栏展开时覆盖在内容上方
+            showSidebar && "md:ml-[72px]"
           )}
         >
           <div className="flex-1">{children}</div>

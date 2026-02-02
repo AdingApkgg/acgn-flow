@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
   Home,
@@ -142,78 +143,106 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const { session } = useStableSession();
 
-  return (
-    <aside
-      className={cn(
-        "fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] border-r bg-background transition-all duration-300 ease-in-out",
-        "hidden md:flex md:flex-col",
-        collapsed ? "w-[72px]" : "w-[240px]"
-      )}
-    >
-      <ScrollArea className="flex-1 py-4">
-        <div className={cn("space-y-6", collapsed ? "px-2" : "px-3")}>
-          <NavGroup items={mainNavItems} collapsed={collapsed} pathname={pathname} session={session} />
-          
-          <Separator className={collapsed ? "mx-auto w-8" : ""} />
-          
-          {session && (
-            <>
-              <NavGroup
-                title="你的内容"
-                items={userNavItems}
-                collapsed={collapsed}
-                pathname={pathname}
-                session={session}
-              />
-              <Separator className={collapsed ? "mx-auto w-8" : ""} />
-            </>
-          )}
-          
-          <NavGroup
-            title="探索"
-            items={moreNavItems}
-            collapsed={collapsed}
-            pathname={pathname}
-            session={session}
-          />
-          
-          {session && (
-            <>
-              <Separator className={collapsed ? "mx-auto w-8" : ""} />
-              <NavGroup
-                title="设置"
-                items={settingsNavItems}
-                collapsed={collapsed}
-                pathname={pathname}
-                session={session}
-              />
-            </>
-          )}
-        </div>
-      </ScrollArea>
+  // 侧边栏展开时锁定页面滚动，防止布局抖动
+  useEffect(() => {
+    if (!collapsed) {
+      // 获取滚动条宽度
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      document.body.style.overflow = "hidden";
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    } else {
+      document.body.style.overflow = "";
+      document.body.style.paddingRight = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+      document.body.style.paddingRight = "";
+    };
+  }, [collapsed]);
 
-      {/* 折叠按钮 */}
-      <div className={cn("border-t p-2", collapsed ? "flex justify-center" : "")}>
-        <Button
-          variant="ghost"
-          size="sm"
+  return (
+    <>
+      {/* 遮罩层 - 展开时显示 */}
+      {!collapsed && (
+        <div 
+          className="fixed inset-0 top-16 z-30 bg-black/50 hidden md:block"
           onClick={onToggle}
-          className={cn(
-            "w-full justify-center gap-2",
-            collapsed && "w-auto px-2"
-          )}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <>
-              <ChevronLeft className="h-4 w-4" />
-              <span>收起</span>
-            </>
-          )}
-        </Button>
-      </div>
-    </aside>
+        />
+      )}
+      
+      <aside
+        className={cn(
+          "fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] border-r bg-background transition-all duration-300 ease-in-out",
+          "hidden md:flex md:flex-col",
+          // 始终显示，展开时宽度更大
+          collapsed ? "w-[72px]" : "w-[240px]"
+        )}
+      >
+        <ScrollArea className="flex-1 py-4">
+          <div className={cn("space-y-6", collapsed ? "px-2" : "px-3")}>
+            <NavGroup items={mainNavItems} collapsed={collapsed} pathname={pathname} session={session} />
+            
+            <Separator className={collapsed ? "mx-auto w-8" : ""} />
+            
+            {session && (
+              <>
+                <NavGroup
+                  title="你的内容"
+                  items={userNavItems}
+                  collapsed={collapsed}
+                  pathname={pathname}
+                  session={session}
+                />
+                <Separator className={collapsed ? "mx-auto w-8" : ""} />
+              </>
+            )}
+            
+            <NavGroup
+              title="探索"
+              items={moreNavItems}
+              collapsed={collapsed}
+              pathname={pathname}
+              session={session}
+            />
+            
+            {session && (
+              <>
+                <Separator className={collapsed ? "mx-auto w-8" : ""} />
+                <NavGroup
+                  title="设置"
+                  items={settingsNavItems}
+                  collapsed={collapsed}
+                  pathname={pathname}
+                  session={session}
+                />
+              </>
+            )}
+          </div>
+        </ScrollArea>
+
+        {/* 折叠按钮 */}
+        <div className={cn("border-t p-2", collapsed ? "flex justify-center" : "")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggle}
+            className={cn(
+              "w-full justify-center gap-2",
+              collapsed && "w-auto px-2"
+            )}
+          >
+            {collapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <>
+                <ChevronLeft className="h-4 w-4" />
+                <span>收起</span>
+              </>
+            )}
+          </Button>
+        </div>
+      </aside>
+    </>
   );
 }
 

@@ -94,7 +94,7 @@ export default function HomePage() {
 
   const handleSortClick = (id: SortBy) => {
     setSortBy(id);
-    setSelectedTag(null);
+    // 不清除标签选择，排序和标签是独立的筛选条件
   };
 
   const handleTagClick = (tagId: string) => {
@@ -170,7 +170,7 @@ export default function HomePage() {
                   onClick={() => handleSortClick(option.id)}
                   className={cn(
                     "shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap",
-                    selectedTag === null && sortBy === option.id
+                    sortBy === option.id
                       ? "bg-foreground text-background"
                       : "bg-muted hover:bg-muted/80 text-foreground"
                   )}

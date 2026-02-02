@@ -3,11 +3,12 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 
+// 从 usehooks-ts 导出 useIsMounted
+export { useIsMounted } from "usehooks-ts";
+
 /**
  * 防抖 Hook
- * @param value 要防抖的值
- * @param delay 延迟时间（毫秒）
- * @returns 防抖后的值
+ * 注：usehooks-ts v3 使用 useDebounceValue，API 不兼容，保持自实现
  */
 export function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
