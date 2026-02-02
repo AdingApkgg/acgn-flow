@@ -302,7 +302,7 @@ export function Header() {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href="/admin">
+                    <Link href="/dashboard">
                       <Shield className="mr-2 h-4 w-4" />
                       管理面板
                     </Link>

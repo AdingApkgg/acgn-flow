@@ -28,6 +28,12 @@ import {
   SkipForward,
   PictureInPicture2,
   Loader2,
+  Lock,
+  Unlock,
+  RotateCcw,
+  RotateCw,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -49,18 +55,18 @@ const ReactPlayer = dynamic(() => import("react-player"), { ssr: false });
 
 // 弹幕设置接口
 interface DanmakuSettings {
-  opacity: number; // 透明度 0-1
-  scale: number; // 字体缩放 0.5-2
-  speed: number; // 速度 0.5-2 (1为正常)
-  area: number; // 显示区域 0.25/0.5/0.75/1 (1为全屏)
+  opacity: number;
+  scale: number;
+  speed: number;
+  area: number;
   typeFilter: {
-    scroll: boolean; // 滚动弹幕
-    top: boolean; // 顶部弹幕
-    bottom: boolean; // 底部弹幕
-    advanced: boolean; // 高级弹幕
+    scroll: boolean;
+    top: boolean;
+    bottom: boolean;
+    advanced: boolean;
   };
-  density: "unlimited" | "normal" | "less"; // 密度
-  blockList: string[]; // 屏蔽词
+  density: "unlimited" | "normal" | "less";
+  blockList: string[];
 }
 
 // 弹幕渲染器接口
@@ -75,25 +81,24 @@ interface DanmakuRenderer {
 
 interface DanmakuComment {
   text: string;
-  stime: number; // 开始时间（毫秒）
-  mode: number; // B站模式: 1-3滚动, 4底部, 5顶部, 6逆向, 7高级
+  stime: number;
+  mode: number;
   size: number;
   color: number;
-  // 高级弹幕属性（B站 mode=7）
   advanced?: {
-    startX?: number; // 起始X位置（百分比）
-    startY?: number; // 起始Y位置（百分比）
-    endX?: number; // 结束X位置（百分比）
-    endY?: number; // 结束Y位置（百分比）
-    duration?: number; // 持续时间（毫秒）
-    rotateX?: number; // X轴旋转
-    rotateY?: number; // Y轴旋转
-    rotateZ?: number; // Z轴旋转
-    fadeStart?: number; // 起始透明度
-    fadeEnd?: number; // 结束透明度
-    fontFamily?: string; // 字体
-    isBorder?: boolean; // 是否有边框
-    linear?: boolean; // 是否线性移动
+    startX?: number;
+    startY?: number;
+    endX?: number;
+    endY?: number;
+    duration?: number;
+    rotateX?: number;
+    rotateY?: number;
+    rotateZ?: number;
+    fadeStart?: number;
+    fadeEnd?: number;
+    fontFamily?: string;
+    isBorder?: boolean;
+    linear?: boolean;
   };
 }
 
@@ -113,20 +118,17 @@ const defaultDanmakuSettings: DanmakuSettings = {
   blockList: [],
 };
 
-// 字幕解析函数（支持 VTT/SRT/ASS）
+// 字幕解析函数
 function parseSubtitle(content: string, url: string): Array<{ start: number; end: number; text: string }> {
   const cues: Array<{ start: number; end: number; text: string }> = [];
   const ext = url.split(".").pop()?.toLowerCase();
 
-  // 解析时间字符串为秒数
   const parseTime = (timeStr: string): number => {
-    // VTT/SRT 格式: 00:00:00.000 或 00:00:00,000
     const match = timeStr.match(/(\d+):(\d+):(\d+)[.,](\d+)/);
     if (match) {
       const [, h, m, s, ms] = match;
       return parseInt(h) * 3600 + parseInt(m) * 60 + parseInt(s) + parseInt(ms) / 1000;
     }
-    // 简化格式: 00:00.000
     const shortMatch = timeStr.match(/(\d+):(\d+)[.,](\d+)/);
     if (shortMatch) {
       const [, m, s, ms] = shortMatch;
@@ -136,12 +138,10 @@ function parseSubtitle(content: string, url: string): Array<{ start: number; end
   };
 
   if (ext === "vtt" || content.includes("WEBVTT")) {
-    // VTT 格式解析
     const lines = content.split(/\r?\n/);
     let i = 0;
     while (i < lines.length) {
       const line = lines[i].trim();
-      // 查找时间行
       if (line.includes("-->")) {
         const [startStr, endStr] = line.split("-->").map((s) => s.trim());
         const start = parseTime(startStr);
@@ -159,7 +159,6 @@ function parseSubtitle(content: string, url: string): Array<{ start: number; end
       i++;
     }
   } else if (ext === "srt") {
-    // SRT 格式解析
     const blocks = content.split(/\r?\n\r?\n/);
     for (const block of blocks) {
       const lines = block.trim().split(/\r?\n/);
@@ -175,7 +174,6 @@ function parseSubtitle(content: string, url: string): Array<{ start: number; end
       }
     }
   } else if (ext === "ass" || ext === "ssa") {
-    // ASS/SSA 格式解析
     const lines = content.split(/\r?\n/);
     for (const line of lines) {
       if (line.startsWith("Dialogue:")) {
@@ -183,7 +181,6 @@ function parseSubtitle(content: string, url: string): Array<{ start: number; end
         if (parts.length >= 10) {
           const startStr = parts[1].trim();
           const endStr = parts[2].trim();
-          // ASS 时间格式: 0:00:00.00
           const parseAssTime = (t: string): number => {
             const m = t.match(/(\d+):(\d+):(\d+)\.(\d+)/);
             if (m) {
@@ -193,7 +190,6 @@ function parseSubtitle(content: string, url: string): Array<{ start: number; end
           };
           const start = parseAssTime(startStr);
           const end = parseAssTime(endStr);
-          // 文本在第9个逗号之后
           const text = parts.slice(9).join(",").replace(/\{[^}]*\}/g, "").trim();
           if (text) {
             cues.push({ start, end, text });
@@ -215,27 +211,24 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
   let settings: DanmakuSettings = { ...defaultDanmakuSettings };
   let animationId: number | null = null;
   const activeElements = new Set<HTMLElement>();
-  const renderedTimes = new Set<number>(); // 防止重复渲染
-  let renderedInSecond = 0; // 每秒渲染计数
+  const renderedTimes = new Set<number>();
+  let renderedInSecond = 0;
   let lastSecond = 0;
 
-  // 检查弹幕类型是否被过滤
   const isTypeFiltered = (mode: number): boolean => {
     const { typeFilter } = settings;
     if (mode >= 1 && mode <= 3) return !typeFilter.scroll;
     if (mode === 4) return !typeFilter.bottom;
     if (mode === 5) return !typeFilter.top;
-    if (mode === 6) return !typeFilter.scroll; // 逆向也算滚动
+    if (mode === 6) return !typeFilter.scroll;
     if (mode === 7) return !typeFilter.advanced;
     return !typeFilter.scroll;
   };
 
-  // 检查是否被屏蔽词过滤
   const isBlocked = (text: string): boolean => {
     return settings.blockList.some((word) => text.includes(word));
   };
 
-  // 获取密度限制
   const getDensityLimit = (): number => {
     switch (settings.density) {
       case "less": return 3;
@@ -250,7 +243,6 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
     const now = currentTime;
     const currentSecond = Math.floor(now / 1000);
     
-    // 重置每秒计数
     if (currentSecond !== lastSecond) {
       renderedInSecond = 0;
       lastSecond = currentSecond;
@@ -258,7 +250,6 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
 
     const densityLimit = getDensityLimit();
 
-    // 渲染当前时间点的弹幕
     comments.forEach((comment, index) => {
       const uniqueKey = comment.stime * 10000 + index;
       if (
@@ -266,13 +257,8 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
         comment.stime < now + 100 &&
         !renderedTimes.has(uniqueKey)
       ) {
-        // 类型过滤
         if (isTypeFiltered(comment.mode)) return;
-        
-        // 屏蔽词过滤
         if (isBlocked(comment.text)) return;
-        
-        // 密度限制
         if (renderedInSecond >= densityLimit) return;
         
         renderedTimes.add(uniqueKey);
@@ -284,7 +270,6 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
     animationId = requestAnimationFrame(render);
   };
 
-  // 轨道管理（避免弹幕重叠）
   const trackCount = 15;
   const tracks: number[] = new Array(trackCount).fill(0);
   const bottomTracks: number[] = new Array(5).fill(0);
@@ -296,7 +281,6 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
         return i;
       }
     }
-    // 如果没有空闲轨道，返回最早结束的轨道
     let minIndex = 0;
     for (let i = 1; i < trackArray.length; i++) {
       if (trackArray[i] < trackArray[minIndex]) {
@@ -312,10 +296,9 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
     
     const colorHex = comment.color.toString(16).padStart(6, "0");
     const fontSize = comment.size * settings.scale;
-    const areaMultiplier = settings.area; // 显示区域
-    const speedMultiplier = settings.speed; // 速度倍率
+    const areaMultiplier = settings.area;
+    const speedMultiplier = settings.speed;
     
-    // 基础样式
     el.style.cssText = `
       position: absolute;
       white-space: nowrap;
@@ -329,14 +312,12 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
       font-weight: bold;
     `;
 
-    // 基础持续时间（根据速度调整）
     let baseDuration = 8000 / speedMultiplier;
 
-    // B站弹幕模式适配
     switch (comment.mode) {
-      case 1: // 普通滚动弹幕（从右到左）
-      case 2: // 同上
-      case 3: // 同上
+      case 1:
+      case 2:
+      case 3:
         {
           const effectiveTrackCount = Math.floor(trackCount * areaMultiplier);
           const track = getAvailableTrack(tracks.slice(0, effectiveTrackCount), currentTime);
@@ -348,10 +329,10 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
         }
         break;
 
-      case 4: // 底部固定弹幕
+      case 4:
         {
           const duration = 4000 / speedMultiplier;
-          const effectiveBottom = 15 + (1 - areaMultiplier) * 40; // 根据区域调整底部位置
+          const effectiveBottom = 15 + (1 - areaMultiplier) * 40;
           const track = getAvailableTrack(bottomTracks, currentTime);
           el.style.bottom = `${effectiveBottom + track * 8}%`;
           el.style.left = "50%";
@@ -362,7 +343,7 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
         }
         break;
 
-      case 5: // 顶部固定弹幕
+      case 5:
         {
           const duration = 4000 / speedMultiplier;
           const track = getAvailableTrack(topTracks, currentTime);
@@ -375,7 +356,7 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
         }
         break;
 
-      case 6: // 逆向滚动弹幕（从左到右）
+      case 6:
         {
           const track = getAvailableTrack(tracks, currentTime);
           const trackHeight = 100 / trackCount;
@@ -386,41 +367,35 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
         }
         break;
 
-      case 7: // 高级弹幕
+      case 7:
         if (comment.advanced) {
           const adv = comment.advanced;
           const advDuration = adv.duration || 4000;
           
-          // 起始位置
           const startX = adv.startX ?? 50;
           const startY = adv.startY ?? 50;
           el.style.left = `${startX}%`;
           el.style.top = `${startY}%`;
           
-          // 字体
           if (adv.fontFamily) {
             el.style.fontFamily = `"${adv.fontFamily}", "Microsoft YaHei", sans-serif`;
           }
           
-          // 边框
           if (adv.isBorder) {
             el.style.border = "1px solid currentColor";
             el.style.padding = "2px 4px";
           }
           
-          // 透明度
           const fadeStart = adv.fadeStart ?? 1;
           const fadeEnd = adv.fadeEnd ?? 1;
           el.style.opacity = String(fadeStart * settings.opacity);
           
-          // 旋转
           const transforms: string[] = ["translate(-50%, -50%)"];
           if (adv.rotateX) transforms.push(`rotateX(${adv.rotateX}deg)`);
           if (adv.rotateY) transforms.push(`rotateY(${adv.rotateY}deg)`);
           if (adv.rotateZ) transforms.push(`rotateZ(${adv.rotateZ}deg)`);
           el.style.transform = transforms.join(" ");
           
-          // 移动动画
           if (adv.endX !== undefined || adv.endY !== undefined) {
             const endX = adv.endX ?? startX;
             const endY = adv.endY ?? startY;
@@ -447,14 +422,11 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
             
             el.style.animation = `${animName} ${advDuration}ms ${adv.linear ? "linear" : "ease-in-out"} forwards`;
             
-            // 清理样式元素
             setTimeout(() => styleEl.remove(), advDuration + 100);
           } else {
-            // 只有透明度变化
             el.style.animation = `danmaku-fade ${advDuration}ms ease-out forwards`;
           }
         } else {
-          // 没有高级属性，当作普通弹幕处理
           el.style.top = "50%";
           el.style.left = "50%";
           el.style.transform = "translate(-50%, -50%)";
@@ -463,7 +435,6 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
         break;
 
       default:
-        // 未知模式，当作滚动弹幕
         {
           const track = getAvailableTrack(tracks, currentTime);
           const trackHeight = 100 / trackCount;
@@ -477,13 +448,11 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
     container.appendChild(el);
     activeElements.add(el);
 
-    // 动画结束后移除
     el.addEventListener("animationend", () => {
       el.remove();
       activeElements.delete(el);
     });
 
-    // 备用清理
     setTimeout(() => {
       if (el.parentNode) {
         el.remove();
@@ -499,7 +468,6 @@ function createDanmakuRenderer(container: HTMLElement): DanmakuRenderer {
     },
     time: (ms) => {
       currentTime = ms;
-      // 如果时间跳跃较大，清除已渲染记录
       if (Math.abs(ms - lastRenderTime) > 2000) {
         renderedTimes.clear();
       }
@@ -548,7 +516,7 @@ export interface AudioTrack {
 // 画质接口
 export interface QualityLevel {
   url: string;
-  name: string; // 如 "1080p", "720p", "480p"
+  name: string;
   height?: number;
   default?: boolean;
 }
@@ -556,11 +524,10 @@ export interface QualityLevel {
 // 弹幕数据接口
 export interface DanmakuItem {
   text: string;
-  time: number; // 秒
+  time: number;
   color?: string;
-  mode?: number; // B站模式: 1-3滚动, 4底部, 5顶部, 6逆向, 7高级
+  mode?: number;
   size?: number;
-  // 高级弹幕属性（B站 mode=7）
   advanced?: {
     startX?: number;
     startY?: number;
@@ -605,17 +572,38 @@ export interface VideoPlayerRef {
   getDuration: () => number;
 }
 
+// 移动端检测 Hook
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        window.matchMedia("(max-width: 768px)").matches ||
+        ("ontouchstart" in window && navigator.maxTouchPoints > 0)
+      );
+    };
+    
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+  
+  return isMobile;
+}
+
 export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
   function VideoPlayer(
     {
       url,
       qualities = [],
-  poster,
-  onProgress,
-  onEnded,
-  initialProgress = 0,
-  subtitles = [],
-  danmakuUrl,
+      poster,
+      onProgress,
+      onEnded,
+      initialProgress = 0,
+      subtitles = [],
+      danmakuUrl,
       danmakuList,
       autoStart = true,
     },
@@ -623,7 +611,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
   ) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const playerRef = useRef<any>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const danmakuContainerRef = useRef<HTMLDivElement>(null);
     const danmakuRendererRef = useRef<DanmakuRenderer | null>(null);
     const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -634,22 +622,26 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     const lastTapRef = useRef<{ time: number; x: number } | null>(null);
     const gestureActiveRef = useRef<"none" | "progress" | "volume" | "brightness">("none");
     const gestureStartValueRef = useRef<number>(0);
+    const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isLongPressingRef = useRef(false);
     
     // 手势提示状态
-    const [gestureHint, setGestureHint] = useState<{ type: string; value: string } | null>(null);
+    const [gestureHint, setGestureHint] = useState<{ type: string; value: string; icon?: string } | null>(null);
     const gestureHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // 客户端挂载状态（避免 hydration mismatch）
+    // 移动端检测
+    const isMobile = useIsMobile();
+
+    // 客户端挂载状态
     const [isMounted, setIsMounted] = useState(false);
     useEffect(() => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsMounted(true);
     }, []);
 
     // 播放器状态
-  const [isReady, setIsReady] = useState(false);
-  const [hasError, setHasError] = useState(false);
-  const [showPlayer, setShowPlayer] = useState(autoStart || !poster);
+    const [isReady, setIsReady] = useState(false);
+    const [hasError, setHasError] = useState(false);
+    const [showPlayer, setShowPlayer] = useState(autoStart || !poster);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [volume, setVolume] = useState(0.7);
@@ -660,6 +652,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     const [showControls, setShowControls] = useState(true);
     const [isBuffering, setIsBuffering] = useState(false);
     const [playbackRate, setPlaybackRate] = useState(1);
+    const [isLocked, setIsLocked] = useState(false);
+    const [showMobileMenu, setShowMobileMenu] = useState(false);
 
     // 多媒体轨道状态
     const [currentQuality, setCurrentQuality] = useState<QualityLevel | null>(
@@ -688,8 +682,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     }, [currentQuality, url]);
 
     // URL 变化时重置状态
-  useEffect(() => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+    useEffect(() => {
       setIsReady(false);
       setHasError(false);
       setPlayed(0);
@@ -717,7 +710,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 加载弹幕数据
     useEffect(() => {
       if (danmakuList) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setDanmakuData(danmakuList);
         return;
       }
@@ -726,7 +718,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         setDanmakuData([]);
         return;
       }
-       
 
       const loadDanmaku = async () => {
         try {
@@ -735,23 +726,22 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           
           if (contentType.includes("application/json") || danmakuUrl.endsWith(".json")) {
             const data = await response.json();
-          let list = data;
-          if (!Array.isArray(data)) {
-            list = data.danmaku || data.danmakus || data.comments || data.data || [];
-          }
+            let list = data;
+            if (!Array.isArray(data)) {
+              list = data.danmaku || data.danmakus || data.comments || data.data || [];
+            }
             if (Array.isArray(list)) {
               setDanmakuData(
                 list.map((item: DanmakuItem) => ({
                   text: item.text || "",
-            time: item.time || 0,
-            color: item.color || "#FFFFFF",
+                  time: item.time || 0,
+                  color: item.color || "#FFFFFF",
                   mode: item.mode ?? 0,
                   size: item.size,
                 }))
               );
             }
           } else {
-            // XML 格式解析（B站弹幕格式）
             const text = await response.text();
             const parser = new DOMParser();
             const xml = parser.parseFromString(text, "text/xml");
@@ -763,16 +753,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
               const content = item.textContent || "";
               const mode = parseInt(p[1]) || 1;
               
-              // B站弹幕 p 属性格式:
-              // [0] 时间（秒）
-              // [1] 模式: 1-3滚动, 4底部, 5顶部, 6逆向, 7高级, 8代码, 9BAS
-              // [2] 字号（一般25）
-              // [3] 颜色（十进制）
-              // [4] 发送时间戳
-              // [5] 弹幕池
-              // [6] 发送者ID的CRC32
-              // [7] 弹幕ID
-              
               const danmaku: DanmakuItem = {
                 text: content,
                 time: parseFloat(p[0]) || 0,
@@ -781,12 +761,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                 color: p[3] ? `#${parseInt(p[3]).toString(16).padStart(6, "0")}` : "#FFFFFF",
               };
               
-              // 解析高级弹幕（mode=7）
-              // B站高级弹幕的内容是一个JSON数组
               if (mode === 7 && content.startsWith("[")) {
                 try {
                   const advData = JSON.parse(content);
-                  // 高级弹幕格式: [text, startX, startY, endX, endY, duration, rotateZ, fadeStart, fadeEnd, ...]
                   if (Array.isArray(advData) && advData.length > 0) {
                     danmaku.text = String(advData[0] || "");
                     danmaku.advanced = {
@@ -803,7 +780,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                     };
                   }
                 } catch {
-                  // JSON 解析失败，当作普通弹幕处理
+                  // JSON 解析失败
                 }
               }
               
@@ -824,7 +801,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 加载字幕数据
     useEffect(() => {
       if (!currentSubtitle?.url) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSubtitleCues([]);
         return;
       }
@@ -847,7 +823,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 更新当前显示的字幕
     useEffect(() => {
       if (!subtitlesEnabled || subtitleCues.length === 0) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCurrentCue("");
         return;
       }
@@ -859,13 +834,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       setCurrentCue(cue?.text || "");
     }, [playedSeconds, subtitleCues, subtitlesEnabled]);
 
-    // 初始化弹幕渲染器（不依赖 danmakuSettings，设置变化通过 setSettings 更新）
+    // 初始化弹幕渲染器
     useEffect(() => {
       if (!showPlayer || !danmakuContainerRef.current || danmakuData.length === 0) {
         return;
       }
 
-      // 清理旧的渲染器
       if (danmakuRendererRef.current) {
         danmakuRendererRef.current.stop();
         danmakuRendererRef.current.clear();
@@ -873,11 +847,10 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
       const renderer = createDanmakuRenderer(danmakuContainerRef.current);
 
-      // 转换弹幕格式（保持 B 站原始模式值）
       const comments: DanmakuComment[] = danmakuData.map((item) => ({
         text: item.text,
-        stime: item.time * 1000, // 毫秒
-        mode: item.mode || 1, // 保持原始模式: 1-3滚动, 4底部, 5顶部, 6逆向, 7高级
+        stime: item.time * 1000,
+        mode: item.mode || 1,
         size: item.size || 25,
         color: parseInt((item.color || "#FFFFFF").replace("#", ""), 16),
         advanced: item.advanced,
@@ -893,7 +866,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           danmakuRendererRef.current = null;
         }
       };
-       
     }, [showPlayer, danmakuData]);
 
     // 同步弹幕时间
@@ -928,11 +900,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       }
       setShowControls(true);
       controlsTimeoutRef.current = setTimeout(() => {
-        if (isPlaying) {
+        if (isPlaying && !showMobileMenu) {
           setShowControls(false);
         }
       }, 3000);
-    }, [isPlaying]);
+    }, [isPlaying, showMobileMenu]);
 
     // 全屏变化监听
     useEffect(() => {
@@ -970,7 +942,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         }
       };
 
-      // 延迟检查，等待视频加载
       const timer = setTimeout(checkAudioTracks, 1000);
       return () => clearTimeout(timer);
     }, [isReady, currentAudioTrack]);
@@ -992,7 +963,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       (quality: QualityLevel) => {
         const currentTime = playedSeconds;
         setCurrentQuality(quality);
-        // 画质切换后恢复进度
         setTimeout(() => {
           const video = getVideoElement();
           if (video) {
@@ -1008,7 +978,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       if (!containerRef.current) return;
       if (document.fullscreenElement) {
         document.exitFullscreen();
-                  } else {
+      } else {
         containerRef.current.requestFullscreen();
       }
     }, []);
@@ -1043,11 +1013,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     );
 
     // 显示手势提示
-    const showGestureHint = useCallback((type: string, value: string) => {
+    const showGestureHint = useCallback((type: string, value: string, icon?: string) => {
       if (gestureHintTimeoutRef.current) {
         clearTimeout(gestureHintTimeoutRef.current);
       }
-      setGestureHint({ type, value });
+      setGestureHint({ type, value, icon });
       gestureHintTimeoutRef.current = setTimeout(() => {
         setGestureHint(null);
       }, 1000);
@@ -1061,7 +1031,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         video.currentTime = newTime;
         if (showHint) {
           const sign = seconds > 0 ? "+" : "";
-          showGestureHint("progress", `${sign}${seconds}秒`);
+          showGestureHint("progress", `${sign}${seconds}秒`, seconds > 0 ? "forward" : "backward");
         }
       }
     }, [showGestureHint]);
@@ -1081,7 +1051,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       if (!showPlayer || !isReady) return;
 
       const handleKeyDown = (e: KeyboardEvent) => {
-        // 忽略在输入框中的按键
         if (
           e.target instanceof HTMLInputElement ||
           e.target instanceof HTMLTextAreaElement ||
@@ -1090,11 +1059,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           return;
         }
 
-        // 只有当播放器容器或其子元素获得焦点时才响应
         const container = containerRef.current;
         if (!container) return;
 
-        // 检查是否在全屏模式或焦点在播放器内
         const isPlayerFocused = 
           document.fullscreenElement === container ||
           container.contains(document.activeElement) ||
@@ -1103,48 +1070,48 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         if (!isPlayerFocused) return;
 
         switch (e.key) {
-          case " ": // 空格：播放/暂停
-          case "k": // K 键：播放/暂停（YouTube 风格）
+          case " ":
+          case "k":
             e.preventDefault();
             setIsPlaying((prev) => !prev);
             break;
-          case "ArrowLeft": // 左箭头：快退
+          case "ArrowLeft":
             e.preventDefault();
             skip(e.shiftKey ? -10 : -5, true);
             break;
-          case "ArrowRight": // 右箭头：快进
+          case "ArrowRight":
             e.preventDefault();
             skip(e.shiftKey ? 10 : 5, true);
             break;
-          case "ArrowUp": // 上箭头：音量增加
+          case "ArrowUp":
             e.preventDefault();
             adjustVolume(0.1);
             break;
-          case "ArrowDown": // 下箭头：音量减少
+          case "ArrowDown":
             e.preventDefault();
             adjustVolume(-0.1);
             break;
-          case "m": // M 键：静音切换
+          case "m":
           case "M":
             e.preventDefault();
             setIsMuted((prev) => !prev);
             break;
-          case "f": // F 键：全屏切换
+          case "f":
           case "F":
             e.preventDefault();
             toggleFullscreen();
             break;
-          case "Escape": // ESC 键：退出全屏
+          case "Escape":
             if (document.fullscreenElement) {
               document.exitFullscreen();
             }
             break;
-          case "j": // J 键：快退 10 秒（YouTube 风格）
+          case "j":
           case "J":
             e.preventDefault();
             skip(-10, true);
             break;
-          case "l": // L 键：快进 10 秒（YouTube 风格）
+          case "l":
           case "L":
             e.preventDefault();
             skip(10, true);
@@ -1159,7 +1126,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           case "7":
           case "8":
           case "9":
-            // 数字键：跳转到对应百分比
             e.preventDefault();
             const percent = parseInt(e.key) / 10;
             const video = getVideoElement();
@@ -1168,7 +1134,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
               showGestureHint("progress", `${parseInt(e.key) * 10}%`);
             }
             break;
-          case ",": // < 键：降低播放速度
+          case ",":
             e.preventDefault();
             setPlaybackRate((prev) => {
               const rates = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -1178,7 +1144,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
               return newRate;
             });
             break;
-          case ".": // > 键：提高播放速度
+          case ".":
             e.preventDefault();
             setPlaybackRate((prev) => {
               const rates = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -1197,21 +1163,19 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
     const handlePlay = useCallback(() => setShowPlayer(true), []);
 
-    // 鼠标双击处理
+    // 鼠标双击处理（桌面端）
     const lastClickRef = useRef<number>(0);
     const handleVideoClick = useCallback((e: React.MouseEvent) => {
-      // 忽略控制栏区域的点击
+      if (isMobile || isLocked) return;
       if ((e.target as HTMLElement).closest("[data-controls]")) return;
       
       const now = Date.now();
       const timeSinceLastClick = now - lastClickRef.current;
       
       if (timeSinceLastClick < 300) {
-        // 双击：全屏切换
         toggleFullscreen();
-        lastClickRef.current = 0; // 重置防止三击
+        lastClickRef.current = 0;
       } else {
-        // 单击：播放/暂停（延迟执行，等待可能的双击）
         lastClickRef.current = now;
         setTimeout(() => {
           if (Date.now() - lastClickRef.current >= 300) {
@@ -1219,23 +1183,45 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           }
         }, 300);
       }
-    }, [toggleFullscreen]);
+    }, [toggleFullscreen, isMobile, isLocked]);
 
     // 触摸开始
     const handleTouchStart = useCallback((e: React.TouchEvent) => {
+      if (isLocked) {
+        // 锁定时只允许单击解锁按钮区域
+        return;
+      }
+      
       if (e.touches.length !== 1) return;
       const touch = e.touches[0];
       touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
       touchMoveRef.current = null;
       gestureActiveRef.current = "none";
+      isLongPressingRef.current = false;
       
-      // 获取当前值用于手势计算
       gestureStartValueRef.current = playedSeconds;
-    }, [playedSeconds]);
+      
+      // 长按检测（快进模式）
+      longPressTimerRef.current = setTimeout(() => {
+        isLongPressingRef.current = true;
+        setPlaybackRate(2);
+        showGestureHint("speed", "2x 快进中...", "fastforward");
+      }, 500);
+    }, [playedSeconds, isLocked, showGestureHint]);
 
     // 触摸移动
     const handleTouchMove = useCallback((e: React.TouchEvent) => {
+      if (isLocked) return;
       if (!touchStartRef.current || e.touches.length !== 1) return;
+      
+      // 取消长按
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      
+      // 如果在长按快进中，不处理滑动
+      if (isLongPressingRef.current) return;
       
       const touch = e.touches[0];
       const container = containerRef.current;
@@ -1247,18 +1233,15 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       const deltaX = touch.clientX - startX;
       const deltaY = touch.clientY - startY;
       
-      // 确定手势类型（仅在首次超过阈值时确定）
       if (gestureActiveRef.current === "none") {
-        const threshold = 15;
-        if (Math.abs(deltaX) > threshold && Math.abs(deltaX) > Math.abs(deltaY)) {
-          // 水平滑动：调整进度
+        const threshold = 20;
+        if (Math.abs(deltaX) > threshold && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
           gestureActiveRef.current = "progress";
           gestureStartValueRef.current = playedSeconds;
-        } else if (Math.abs(deltaY) > threshold && Math.abs(deltaY) > Math.abs(deltaX)) {
-          // 垂直滑动：左侧调整亮度，右侧调整音量
+        } else if (Math.abs(deltaY) > threshold && Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
           const isLeftSide = startX < rect.left + rect.width / 2;
           if (isLeftSide) {
-            gestureActiveRef.current = "brightness"; // 亮度（当前不实现，仅显示提示）
+            gestureActiveRef.current = "brightness";
           } else {
             gestureActiveRef.current = "volume";
             gestureStartValueRef.current = volume;
@@ -1268,36 +1251,56 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       
       touchMoveRef.current = { x: touch.clientX, y: touch.clientY };
       
-      // 执行手势操作
       if (gestureActiveRef.current === "progress") {
-        // 进度调整：每 100px 对应 30 秒
-        const seekDelta = (deltaX / 100) * 30;
+        // 进度调整：每滑动宽度的 1/3 对应视频总长的 1/4
+        const seekDelta = (deltaX / (rect.width / 3)) * (duration / 4);
         const newTime = Math.max(0, Math.min(duration, gestureStartValueRef.current + seekDelta));
         const video = getVideoElement();
         if (video) {
           video.currentTime = newTime;
         }
         const sign = seekDelta >= 0 ? "+" : "";
-        showGestureHint("progress", `${formatTime(newTime)} (${sign}${Math.round(seekDelta)}秒)`);
+        showGestureHint("progress", `${formatTime(newTime)} (${sign}${Math.round(seekDelta)}秒)`, seekDelta >= 0 ? "forward" : "backward");
+        e.preventDefault();
       } else if (gestureActiveRef.current === "volume") {
-        // 音量调整：每 100px 对应 50%
-        const volumeDelta = -(deltaY / 100) * 0.5;
+        const volumeDelta = -(deltaY / (rect.height / 2)) * 0.5;
         const newVol = Math.max(0, Math.min(1, gestureStartValueRef.current + volumeDelta));
         setVolume(newVol);
         if (newVol > 0) setIsMuted(false);
         showGestureHint("volume", `${Math.round(newVol * 100)}%`);
+        e.preventDefault();
       } else if (gestureActiveRef.current === "brightness") {
-        // 亮度调整（仅显示提示，实际亮度调整需要 CSS filter）
-        const brightnessDelta = -(deltaY / 100) * 50;
+        const brightnessDelta = -(deltaY / (rect.height / 2)) * 50;
         const newBrightness = Math.max(0, Math.min(100, 50 + brightnessDelta));
         showGestureHint("brightness", `${Math.round(newBrightness)}%`);
+        e.preventDefault();
       }
-      
-      e.preventDefault(); // 阻止页面滚动
-    }, [duration, playedSeconds, volume, getVideoElement, showGestureHint]);
+    }, [duration, playedSeconds, volume, getVideoElement, showGestureHint, isLocked]);
 
     // 触摸结束
     const handleTouchEnd = useCallback(() => {
+      if (isLocked) {
+        touchStartRef.current = null;
+        return;
+      }
+      
+      // 取消长按计时器
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      
+      // 结束长按快进
+      if (isLongPressingRef.current) {
+        isLongPressingRef.current = false;
+        setPlaybackRate(1);
+        setGestureHint(null);
+        touchStartRef.current = null;
+        touchMoveRef.current = null;
+        gestureActiveRef.current = "none";
+        return;
+      }
+      
       const touchStart = touchStartRef.current;
       const touchMove = touchMoveRef.current;
       
@@ -1307,7 +1310,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       const touchDuration = now - touchStart.time;
       
       // 如果没有移动且是快速点击，检测双击
-      if (!touchMove && touchDuration < 300) {
+      if (!touchMove && touchDuration < 300 && gestureActiveRef.current === "none") {
         const lastTap = lastTapRef.current;
         
         if (lastTap && now - lastTap.time < 300) {
@@ -1325,8 +1328,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
               // 双击右侧：快进 10 秒
               skip(10, true);
             } else {
-              // 双击中间：全屏切换
-              toggleFullscreen();
+              // 双击中间：播放/暂停
+              setIsPlaying(prev => !prev);
             }
           }
           lastTapRef.current = null;
@@ -1336,6 +1339,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           setTimeout(() => {
             if (lastTapRef.current && Date.now() - lastTapRef.current.time >= 300) {
               setShowControls((prev) => !prev);
+              if (!showControls) {
+                resetControlsTimeout();
+              }
               lastTapRef.current = null;
             }
           }, 300);
@@ -1346,18 +1352,17 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       touchMoveRef.current = null;
       gestureActiveRef.current = "none";
       
-      // 延迟清除手势提示
       if (gestureHintTimeoutRef.current) {
         clearTimeout(gestureHintTimeoutRef.current);
       }
       gestureHintTimeoutRef.current = setTimeout(() => {
         setGestureHint(null);
       }, 500);
-    }, [skip, toggleFullscreen]);
+    }, [skip, showControls, resetControlsTimeout, isLocked]);
 
     const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-    // 服务端渲染时显示骨架屏（避免 hydration mismatch）
+    // 服务端渲染时显示骨架屏
     if (!isMounted) {
       return (
         <div className="aspect-video bg-black rounded-lg overflow-hidden">
@@ -1366,57 +1371,57 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       );
     }
 
-  if (hasError) {
-    return (
+    if (hasError) {
+      return (
         <div className="aspect-video bg-muted flex flex-col items-center justify-center rounded-lg gap-2">
           <AlertCircle className="h-10 w-10 text-muted-foreground" />
           <p className="text-muted-foreground">视频加载失败</p>
-        <a
+          <a
             href={currentUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-sm text-primary hover:underline"
-        >
-          尝试直接打开
-        </a>
-      </div>
-    );
-  }
+          >
+            尝试直接打开
+          </a>
+        </div>
+      );
+    }
 
     // 封面预览
-  if (!showPlayer && poster) {
-    return (
-      <div
-        className="relative aspect-video bg-black rounded-lg overflow-hidden cursor-pointer group"
-        onClick={handlePlay}
-      >
-        <Image
-          src={poster}
-          alt="Video poster"
-          fill
-          className="object-cover"
-          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 50vw"
-          unoptimized
-        />
-        <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
-            <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-            <Play className="w-8 h-8 text-black ml-1" />
+    if (!showPlayer && poster) {
+      return (
+        <div
+          className="relative aspect-video bg-black rounded-lg overflow-hidden cursor-pointer group"
+          onClick={handlePlay}
+        >
+          <Image
+            src={poster}
+            alt="Video poster"
+            fill
+            className="object-cover"
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 50vw"
+            unoptimized
+          />
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
+            <div className="w-16 h-16 md:w-20 md:h-20 bg-white/90 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Play className="w-8 h-8 md:w-10 md:h-10 text-black ml-1" />
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  return (
+    return (
       <div
         ref={containerRef}
         className={cn(
-          "relative aspect-video bg-black rounded-lg overflow-hidden group select-none",
+          "relative aspect-video bg-black rounded-lg overflow-hidden group select-none touch-none",
           isFullscreen && "rounded-none"
         )}
         tabIndex={0}
-        onMouseMove={resetControlsTimeout}
-        onMouseLeave={() => isPlaying && setShowControls(false)}
+        onMouseMove={!isMobile ? resetControlsTimeout : undefined}
+        onMouseLeave={!isMobile ? () => isPlaying && setShowControls(false) : undefined}
         onClick={handleVideoClick}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -1426,11 +1431,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         <div
           className={cn(
             "absolute inset-0 z-10 transition-opacity duration-300",
-          isReady ? "opacity-0 pointer-events-none" : "opacity-100"
+            isReady ? "opacity-0 pointer-events-none" : "opacity-100"
           )}
-      >
-        <Skeleton className="w-full h-full" />
-      </div>
+        >
+          <Skeleton className="w-full h-full" />
+        </div>
 
         {/* React Player */}
         <ReactPlayer
@@ -1451,7 +1456,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
             setIsBuffering(false);
             if (!isReady) {
               setIsReady(true);
-              // 设置初始进度
               if (initialProgress > 0) {
                 const video = getVideoElement();
                 if (video && video.currentTime < 1) {
@@ -1490,7 +1494,6 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
             !danmakuEnabled && "hidden"
           )}
         >
-          {/* 弹幕动画样式 */}
           <style>{`
             @keyframes danmaku-scroll {
               from { transform: translateX(0); }
@@ -1510,11 +1513,14 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
         {/* 字幕层 */}
         {subtitlesEnabled && currentCue && (
-          <div className="absolute bottom-16 left-0 right-0 flex justify-center pointer-events-none z-20 px-4">
+          <div className={cn(
+            "absolute left-0 right-0 flex justify-center pointer-events-none z-20 px-4",
+            isMobile ? "bottom-20" : "bottom-16"
+          )}>
             <div 
-              className="bg-black/75 text-white px-4 py-2 rounded-lg text-center max-w-[80%]"
+              className="bg-black/75 text-white px-4 py-2 rounded-lg text-center max-w-[90%]"
               style={{
-                fontSize: "1.1em",
+                fontSize: isMobile ? "0.9em" : "1.1em",
                 lineHeight: 1.5,
                 textShadow: "1px 1px 2px rgba(0,0,0,0.5)",
                 fontFamily: '"Microsoft YaHei", "SimHei", "Noto Sans SC", sans-serif',
@@ -1527,14 +1533,28 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         {/* 手势提示 */}
         {gestureHint && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
-            <div className="bg-black/75 text-white px-4 py-2 rounded-lg text-center">
-              <div className="text-sm opacity-75 mb-1">
-                {gestureHint.type === "progress" && "进度"}
-                {gestureHint.type === "volume" && "音量"}
-                {gestureHint.type === "brightness" && "亮度"}
-                {gestureHint.type === "speed" && "速度"}
-              </div>
-              <div className="text-lg font-medium">{gestureHint.value}</div>
+            <div className="bg-black/80 text-white px-6 py-4 rounded-2xl text-center backdrop-blur-sm">
+              {gestureHint.icon === "forward" && (
+                <RotateCw className="h-8 w-8 mx-auto mb-2 animate-spin" style={{ animationDuration: "1s" }} />
+              )}
+              {gestureHint.icon === "backward" && (
+                <RotateCcw className="h-8 w-8 mx-auto mb-2 animate-spin" style={{ animationDuration: "1s", animationDirection: "reverse" }} />
+              )}
+              {gestureHint.icon === "fastforward" && (
+                <div className="flex items-center justify-center gap-1 mb-2">
+                  <ChevronRight className="h-6 w-6 animate-pulse" />
+                  <ChevronRight className="h-6 w-6 animate-pulse" style={{ animationDelay: "0.1s" }} />
+                </div>
+              )}
+              {!gestureHint.icon && (
+                <div className="text-sm opacity-75 mb-1">
+                  {gestureHint.type === "progress" && "进度"}
+                  {gestureHint.type === "volume" && "音量"}
+                  {gestureHint.type === "brightness" && "亮度"}
+                  {gestureHint.type === "speed" && "速度"}
+                </div>
+              )}
+              <div className="text-xl font-medium">{gestureHint.value}</div>
             </div>
           </div>
         )}
@@ -1547,391 +1567,670 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         )}
 
         {/* 中央播放按钮 */}
-        {!isPlaying && isReady && (
+        {!isPlaying && isReady && !isLocked && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center">
-              <Play className="w-8 h-8 text-black ml-1" />
+            <div className="w-16 h-16 md:w-20 md:h-20 bg-white/90 rounded-full flex items-center justify-center shadow-lg">
+              <Play className="w-8 h-8 md:w-10 md:h-10 text-black ml-1" />
             </div>
           </div>
         )}
 
-        {/* 控制栏 */}
-        <div
-          data-controls
-          className={cn(
-            "absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity duration-300",
-            showControls || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
-          )}
-          onClick={(e) => e.stopPropagation()} // 阻止事件冒泡到容器
-          onTouchEnd={(e) => e.stopPropagation()}
-        >
-          {/* 进度条 */}
-          <div className="mb-3">
-            <Slider
-              value={[played]}
-              max={1}
-              step={0.001}
-              onValueChange={handleSeek}
-              className="cursor-pointer"
-            />
+        {/* 锁定按钮（移动端全屏时显示） */}
+        {isMobile && isFullscreen && (
+          <button
+            className={cn(
+              "absolute left-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-black/50 text-white transition-opacity",
+              (showControls || isLocked) ? "opacity-100" : "opacity-0"
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsLocked(!isLocked);
+              if (!isLocked) {
+                setShowControls(false);
+              }
+            }}
+          >
+            {isLocked ? <Lock className="h-5 w-5" /> : <Unlock className="h-5 w-5" />}
+          </button>
+        )}
+
+        {/* 锁定提示 */}
+        {isLocked && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+            <div className="text-white/50 text-sm">点击左侧锁图标解锁</div>
           </div>
+        )}
 
-          <div className="flex items-center justify-between">
-            {/* 左侧控制 */}
-            <div className="flex items-center gap-2">
-              {/* 播放/暂停 */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-white hover:bg-white/20"
-                onClick={() => setIsPlaying(!isPlaying)}
-              >
-                {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-              </Button>
-
-              {/* 快退 */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-white hover:bg-white/20 hidden sm:flex"
-                onClick={() => skip(-10)}
-              >
-                <SkipBack className="h-4 w-4" />
-              </Button>
-
-              {/* 快进 */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-white hover:bg-white/20 hidden sm:flex"
-                onClick={() => skip(10)}
-              >
-                <SkipForward className="h-4 w-4" />
-              </Button>
-
-              {/* 音量 */}
-              <div className="hidden sm:flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-white hover:bg-white/20"
-                  onClick={() => setIsMuted(!isMuted)}
-                >
-                  {isMuted || volume === 0 ? (
-                    <VolumeX className="h-5 w-5" />
-                  ) : (
-                    <Volume2 className="h-5 w-5" />
-                  )}
-                </Button>
+        {/* 移动端控制栏 */}
+        {isMobile ? (
+          <div
+            data-controls
+            className={cn(
+              "absolute inset-x-0 bottom-0 transition-all duration-300 z-20",
+              showControls && !isLocked ? "opacity-100 translate-y-0" : "opacity-0 translate-y-full pointer-events-none"
+            )}
+            onClick={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+          >
+            {/* 渐变背景 */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent" />
+            
+            <div className="relative p-3 pb-safe">
+              {/* 进度条 */}
+              <div className="mb-3">
                 <Slider
-                  value={[isMuted ? 0 : volume]}
+                  value={[played]}
                   max={1}
-                  step={0.01}
-                  onValueChange={(v) => {
-                    setVolume(v[0]);
-                    setIsMuted(v[0] === 0);
-                  }}
-                  className="w-20"
+                  step={0.001}
+                  onValueChange={handleSeek}
+                  className="cursor-pointer [&_[role=slider]]:h-5 [&_[role=slider]]:w-5"
                 />
+                <div className="flex justify-between text-xs text-white/70 mt-1 px-1">
+                  <span>{formatTime(playedSeconds)}</span>
+                  <span>{formatTime(duration)}</span>
+                </div>
               </div>
 
-              {/* 时间 */}
-              <span className="text-white text-sm ml-2">
-                {formatTime(playedSeconds)} / {formatTime(duration)}
-              </span>
-            </div>
-
-            {/* 右侧控制 */}
-            <div className="flex items-center gap-1">
-              {/* 弹幕开关 */}
-              {danmakuData.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    "text-white hover:bg-white/20",
-                    !danmakuEnabled && "opacity-50"
-                  )}
-                  onClick={() => setDanmakuEnabled(!danmakuEnabled)}
-                  title={danmakuEnabled ? "关闭弹幕" : "开启弹幕"}
-                >
-                  <MessageSquare className="h-4 w-4" />
-                </Button>
-              )}
-
-              {/* 设置菜单 */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+              {/* 控制按钮 */}
+              <div className="flex items-center justify-between">
+                {/* 左侧 */}
+                <div className="flex items-center gap-1">
+                  {/* 快退 */}
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="text-white hover:bg-white/20"
+                    className="text-white hover:bg-white/20 h-12 w-12"
+                    onClick={() => skip(-10)}
                   >
-                    <Settings className="h-4 w-4" />
+                    <RotateCcw className="h-5 w-5" />
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  {/* 画质选择 */}
-                  {qualities.length > 0 && (
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <Layers className="h-4 w-4 mr-2" />
-                        画质 ({currentQuality?.name || "自动"})
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        {qualities.map((q) => (
-                          <DropdownMenuCheckboxItem
-                            key={q.url}
-                            checked={currentQuality?.url === q.url}
-                            onCheckedChange={() => handleQualityChange(q)}
-                          >
-                            {q.name}
-                          </DropdownMenuCheckboxItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
+
+                  {/* 播放/暂停 */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-white hover:bg-white/20 h-14 w-14"
+                    onClick={() => setIsPlaying(!isPlaying)}
+                  >
+                    {isPlaying ? <Pause className="h-7 w-7" /> : <Play className="h-7 w-7 ml-0.5" />}
+                  </Button>
+
+                  {/* 快进 */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-white hover:bg-white/20 h-12 w-12"
+                    onClick={() => skip(10)}
+                  >
+                    <RotateCw className="h-5 w-5" />
+                  </Button>
+                </div>
+
+                {/* 右侧 */}
+                <div className="flex items-center gap-1">
+                  {/* 弹幕开关 */}
+                  {danmakuData.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        "text-white hover:bg-white/20 h-10 w-10",
+                        !danmakuEnabled && "opacity-50"
+                      )}
+                      onClick={() => setDanmakuEnabled(!danmakuEnabled)}
+                    >
+                      <MessageSquare className="h-5 w-5" />
+                    </Button>
                   )}
 
-                  {/* 音轨选择 */}
-                  {audioTracks.length > 1 && (
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <AudioLines className="h-4 w-4 mr-2" />
-                        音轨 ({currentAudioTrack?.name || "默认"})
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        {audioTracks.map((track) => (
-                          <DropdownMenuCheckboxItem
-                            key={track.id}
-                            checked={currentAudioTrack?.id === track.id}
-                            onCheckedChange={() => handleAudioTrackChange(track)}
+                  {/* 更多设置 */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-white hover:bg-white/20 h-10 w-10"
+                    onClick={() => setShowMobileMenu(!showMobileMenu)}
+                  >
+                    <Settings className="h-5 w-5" />
+                  </Button>
+
+                  {/* 全屏 */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-white hover:bg-white/20 h-10 w-10"
+                    onClick={toggleFullscreen}
+                  >
+                    {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* 移动端菜单面板 */}
+            {showMobileMenu && (
+              <div 
+                className="absolute bottom-full left-0 right-0 bg-black/95 backdrop-blur-sm max-h-[50vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="p-4 space-y-4">
+                  {/* 播放速度 */}
+                  <div>
+                    <div className="text-sm text-white/70 mb-2">播放速度</div>
+                    <div className="flex flex-wrap gap-2">
+                      {playbackRates.map((rate) => (
+                        <button
+                          key={rate}
+                          className={cn(
+                            "px-4 py-2 rounded-lg text-sm",
+                            playbackRate === rate
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-white/10 text-white"
+                          )}
+                          onClick={() => {
+                            setPlaybackRate(rate);
+                            setShowMobileMenu(false);
+                          }}
+                        >
+                          {rate}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 画质选择 */}
+                  {qualities.length > 0 && (
+                    <div>
+                      <div className="text-sm text-white/70 mb-2">画质</div>
+                      <div className="flex flex-wrap gap-2">
+                        {qualities.map((q) => (
+                          <button
+                            key={q.url}
+                            className={cn(
+                              "px-4 py-2 rounded-lg text-sm",
+                              currentQuality?.url === q.url
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-white/10 text-white"
+                            )}
+                            onClick={() => {
+                              handleQualityChange(q);
+                              setShowMobileMenu(false);
+                            }}
                           >
-                            {track.name}
-                          </DropdownMenuCheckboxItem>
+                            {q.name}
+                          </button>
                         ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
+                      </div>
+                    </div>
                   )}
 
                   {/* 字幕选择 */}
                   {subtitles.length > 0 && (
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <Subtitles className="h-4 w-4 mr-2" />
-                        字幕 ({subtitlesEnabled ? currentSubtitle?.name : "关闭"})
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        <DropdownMenuCheckboxItem
-                          checked={!subtitlesEnabled}
-                          onCheckedChange={() => setSubtitlesEnabled(false)}
+                    <div>
+                      <div className="text-sm text-white/70 mb-2">字幕</div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          className={cn(
+                            "px-4 py-2 rounded-lg text-sm",
+                            !subtitlesEnabled
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-white/10 text-white"
+                          )}
+                          onClick={() => {
+                            setSubtitlesEnabled(false);
+                            setShowMobileMenu(false);
+                          }}
                         >
                           关闭
-                        </DropdownMenuCheckboxItem>
+                        </button>
                         {subtitles.map((sub) => (
-                          <DropdownMenuCheckboxItem
+                          <button
                             key={sub.url}
-                            checked={subtitlesEnabled && currentSubtitle?.url === sub.url}
-                            onCheckedChange={() => {
+                            className={cn(
+                              "px-4 py-2 rounded-lg text-sm",
+                              subtitlesEnabled && currentSubtitle?.url === sub.url
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-white/10 text-white"
+                            )}
+                            onClick={() => {
                               setCurrentSubtitle(sub);
                               setSubtitlesEnabled(true);
+                              setShowMobileMenu(false);
                             }}
                           >
                             {sub.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 弹幕设置 */}
+                  {danmakuData.length > 0 && (
+                    <div>
+                      <div className="text-sm text-white/70 mb-2">弹幕设置</div>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="flex justify-between text-xs text-white/50 mb-1">
+                            <span>透明度</span>
+                            <span>{Math.round(danmakuSettings.opacity * 100)}%</span>
+                          </div>
+                          <Slider
+                            value={[danmakuSettings.opacity]}
+                            min={0.1}
+                            max={1}
+                            step={0.1}
+                            onValueChange={(v) => setDanmakuSettings({ ...danmakuSettings, opacity: v[0] })}
+                            className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
+                          />
+                        </div>
+                        <div>
+                          <div className="flex justify-between text-xs text-white/50 mb-1">
+                            <span>字体大小</span>
+                            <span>{Math.round(danmakuSettings.scale * 100)}%</span>
+                          </div>
+                          <Slider
+                            value={[danmakuSettings.scale]}
+                            min={0.5}
+                            max={2}
+                            step={0.1}
+                            onValueChange={(v) => setDanmakuSettings({ ...danmakuSettings, scale: v[0] })}
+                            className="[&_[role=slider]]:h-4 [&_[role=slider]]:w-4"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 关闭按钮 */}
+                <button
+                  className="w-full py-3 text-center text-white/70 border-t border-white/10"
+                  onClick={() => setShowMobileMenu(false)}
+                >
+                  关闭
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* 桌面端控制栏 */
+          <div
+            data-controls
+            className={cn(
+              "absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity duration-300",
+              showControls || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
+            )}
+            onClick={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+          >
+            {/* 进度条 */}
+            <div className="mb-3">
+              <Slider
+                value={[played]}
+                max={1}
+                step={0.001}
+                onValueChange={handleSeek}
+                className="cursor-pointer"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              {/* 左侧控制 */}
+              <div className="flex items-center gap-2">
+                {/* 播放/暂停 */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-white hover:bg-white/20"
+                  onClick={() => setIsPlaying(!isPlaying)}
+                >
+                  {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                </Button>
+
+                {/* 快退 */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-white hover:bg-white/20"
+                  onClick={() => skip(-10)}
+                >
+                  <SkipBack className="h-4 w-4" />
+                </Button>
+
+                {/* 快进 */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-white hover:bg-white/20"
+                  onClick={() => skip(10)}
+                >
+                  <SkipForward className="h-4 w-4" />
+                </Button>
+
+                {/* 音量 */}
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-white hover:bg-white/20"
+                    onClick={() => setIsMuted(!isMuted)}
+                  >
+                    {isMuted || volume === 0 ? (
+                      <VolumeX className="h-5 w-5" />
+                    ) : (
+                      <Volume2 className="h-5 w-5" />
+                    )}
+                  </Button>
+                  <Slider
+                    value={[isMuted ? 0 : volume]}
+                    max={1}
+                    step={0.01}
+                    onValueChange={(v) => {
+                      setVolume(v[0]);
+                      setIsMuted(v[0] === 0);
+                    }}
+                    className="w-20"
+                  />
+                </div>
+
+                {/* 时间 */}
+                <span className="text-white text-sm ml-2">
+                  {formatTime(playedSeconds)} / {formatTime(duration)}
+                </span>
+              </div>
+
+              {/* 右侧控制 */}
+              <div className="flex items-center gap-1">
+                {/* 弹幕开关 */}
+                {danmakuData.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      "text-white hover:bg-white/20",
+                      !danmakuEnabled && "opacity-50"
+                    )}
+                    onClick={() => setDanmakuEnabled(!danmakuEnabled)}
+                    title={danmakuEnabled ? "关闭弹幕" : "开启弹幕"}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                  </Button>
+                )}
+
+                {/* 设置菜单 */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-white hover:bg-white/20"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {/* 画质选择 */}
+                    {qualities.length > 0 && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <Layers className="h-4 w-4 mr-2" />
+                          画质 ({currentQuality?.name || "自动"})
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          {qualities.map((q) => (
+                            <DropdownMenuCheckboxItem
+                              key={q.url}
+                              checked={currentQuality?.url === q.url}
+                              onCheckedChange={() => handleQualityChange(q)}
+                            >
+                              {q.name}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
+
+                    {/* 音轨选择 */}
+                    {audioTracks.length > 1 && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <AudioLines className="h-4 w-4 mr-2" />
+                          音轨 ({currentAudioTrack?.name || "默认"})
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          {audioTracks.map((track) => (
+                            <DropdownMenuCheckboxItem
+                              key={track.id}
+                              checked={currentAudioTrack?.id === track.id}
+                              onCheckedChange={() => handleAudioTrackChange(track)}
+                            >
+                              {track.name}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
+
+                    {/* 字幕选择 */}
+                    {subtitles.length > 0 && (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <Subtitles className="h-4 w-4 mr-2" />
+                          字幕 ({subtitlesEnabled ? currentSubtitle?.name : "关闭"})
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuCheckboxItem
+                            checked={!subtitlesEnabled}
+                            onCheckedChange={() => setSubtitlesEnabled(false)}
+                          >
+                            关闭
+                          </DropdownMenuCheckboxItem>
+                          {subtitles.map((sub) => (
+                            <DropdownMenuCheckboxItem
+                              key={sub.url}
+                              checked={subtitlesEnabled && currentSubtitle?.url === sub.url}
+                              onCheckedChange={() => {
+                                setCurrentSubtitle(sub);
+                                setSubtitlesEnabled(true);
+                              }}
+                            >
+                              {sub.name}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
+
+                    {/* 播放速度 */}
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>播放速度 ({playbackRate}x)</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        {playbackRates.map((rate) => (
+                          <DropdownMenuCheckboxItem
+                            key={rate}
+                            checked={playbackRate === rate}
+                            onCheckedChange={() => setPlaybackRate(rate)}
+                          >
+                            {rate}x
                           </DropdownMenuCheckboxItem>
                         ))}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
+
+                    {/* 弹幕设置 */}
+                    {danmakuData.length > 0 && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                            <MessageSquare className="h-4 w-4 mr-2" />
+                            弹幕设置
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="w-64 p-3">
+                            <div className="space-y-4">
+                              {/* 透明度 */}
+                              <div>
+                                <div className="flex justify-between mb-1">
+                                  <span className="text-xs text-muted-foreground">透明度</span>
+                                  <span className="text-xs">{Math.round(danmakuSettings.opacity * 100)}%</span>
+                                </div>
+                                <Slider
+                                  value={[danmakuSettings.opacity]}
+                                  min={0.1}
+                                  max={1}
+                                  step={0.1}
+                                  onValueChange={(v) => setDanmakuSettings({ ...danmakuSettings, opacity: v[0] })}
+                                />
+                              </div>
+
+                              {/* 字体大小 */}
+                              <div>
+                                <div className="flex justify-between mb-1">
+                                  <span className="text-xs text-muted-foreground">字体大小</span>
+                                  <span className="text-xs">{Math.round(danmakuSettings.scale * 100)}%</span>
+                                </div>
+                                <Slider
+                                  value={[danmakuSettings.scale]}
+                                  min={0.5}
+                                  max={2}
+                                  step={0.1}
+                                  onValueChange={(v) => setDanmakuSettings({ ...danmakuSettings, scale: v[0] })}
+                                />
+                              </div>
+
+                              {/* 弹幕速度 */}
+                              <div>
+                                <div className="flex justify-between mb-1">
+                                  <span className="text-xs text-muted-foreground">弹幕速度</span>
+                                  <span className="text-xs">{danmakuSettings.speed}x</span>
+                                </div>
+                                <Slider
+                                  value={[danmakuSettings.speed]}
+                                  min={0.5}
+                                  max={2}
+                                  step={0.25}
+                                  onValueChange={(v) => setDanmakuSettings({ ...danmakuSettings, speed: v[0] })}
+                                />
+                              </div>
+
+                              {/* 显示区域 */}
+                              <div>
+                                <span className="text-xs text-muted-foreground block mb-2">显示区域</span>
+                                <div className="flex gap-1">
+                                  {[
+                                    { value: 0.25, label: "1/4" },
+                                    { value: 0.5, label: "1/2" },
+                                    { value: 0.75, label: "3/4" },
+                                    { value: 1, label: "全屏" },
+                                  ].map((opt) => (
+                                    <button
+                                      key={opt.value}
+                                      className={`flex-1 py-1 text-xs rounded ${
+                                        danmakuSettings.area === opt.value
+                                          ? "bg-primary text-primary-foreground"
+                                          : "bg-muted hover:bg-muted/80"
+                                      }`}
+                                      onClick={() => setDanmakuSettings({ ...danmakuSettings, area: opt.value })}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* 弹幕密度 */}
+                              <div>
+                                <span className="text-xs text-muted-foreground block mb-2">弹幕密度</span>
+                                <div className="flex gap-1">
+                                  {[
+                                    { value: "unlimited" as const, label: "不限" },
+                                    { value: "normal" as const, label: "适中" },
+                                    { value: "less" as const, label: "较少" },
+                                  ].map((opt) => (
+                                    <button
+                                      key={opt.value}
+                                      className={`flex-1 py-1 text-xs rounded ${
+                                        danmakuSettings.density === opt.value
+                                          ? "bg-primary text-primary-foreground"
+                                          : "bg-muted hover:bg-muted/80"
+                                      }`}
+                                      onClick={() => setDanmakuSettings({ ...danmakuSettings, density: opt.value })}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* 弹幕类型过滤 */}
+                              <div>
+                                <span className="text-xs text-muted-foreground block mb-2">弹幕类型</span>
+                                <div className="flex flex-wrap gap-2">
+                                  {[
+                                    { key: "scroll" as const, label: "滚动" },
+                                    { key: "top" as const, label: "顶部" },
+                                    { key: "bottom" as const, label: "底部" },
+                                    { key: "advanced" as const, label: "高级" },
+                                  ].map((opt) => (
+                                    <button
+                                      key={opt.key}
+                                      className={`px-2 py-1 text-xs rounded ${
+                                        danmakuSettings.typeFilter[opt.key]
+                                          ? "bg-primary text-primary-foreground"
+                                          : "bg-muted/50 text-muted-foreground"
+                                      }`}
+                                      onClick={() =>
+                                        setDanmakuSettings({
+                                          ...danmakuSettings,
+                                          typeFilter: {
+                                            ...danmakuSettings.typeFilter,
+                                            [opt.key]: !danmakuSettings.typeFilter[opt.key],
+                                          },
+                                        })
+                                      }
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* 画中画 */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-white hover:bg-white/20"
+                  onClick={togglePiP}
+                >
+                  <PictureInPicture2 className="h-4 w-4" />
+                </Button>
+
+                {/* 全屏 */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-white hover:bg-white/20"
+                  onClick={toggleFullscreen}
+                >
+                  {isFullscreen ? (
+                    <Minimize className="h-4 w-4" />
+                  ) : (
+                    <Maximize className="h-4 w-4" />
                   )}
-
-                  {/* 播放速度 */}
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>播放速度 ({playbackRate}x)</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      {playbackRates.map((rate) => (
-                        <DropdownMenuCheckboxItem
-                          key={rate}
-                          checked={playbackRate === rate}
-                          onCheckedChange={() => setPlaybackRate(rate)}
-                        >
-                          {rate}x
-                        </DropdownMenuCheckboxItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-
-                  {/* 弹幕设置 */}
-                  {danmakuData.length > 0 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>
-                          <MessageSquare className="h-4 w-4 mr-2" />
-                          弹幕设置
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="w-64 p-3">
-                          <div className="space-y-4">
-                            {/* 透明度 */}
-                            <div>
-                              <div className="flex justify-between mb-1">
-                                <span className="text-xs text-muted-foreground">透明度</span>
-                                <span className="text-xs">{Math.round(danmakuSettings.opacity * 100)}%</span>
-                              </div>
-                              <Slider
-                                value={[danmakuSettings.opacity]}
-                                min={0.1}
-                                max={1}
-                                step={0.1}
-                                onValueChange={(v) => setDanmakuSettings({ ...danmakuSettings, opacity: v[0] })}
-                              />
-                            </div>
-
-                            {/* 字体大小 */}
-                            <div>
-                              <div className="flex justify-between mb-1">
-                                <span className="text-xs text-muted-foreground">字体大小</span>
-                                <span className="text-xs">{Math.round(danmakuSettings.scale * 100)}%</span>
-                              </div>
-                              <Slider
-                                value={[danmakuSettings.scale]}
-                                min={0.5}
-                                max={2}
-                                step={0.1}
-                                onValueChange={(v) => setDanmakuSettings({ ...danmakuSettings, scale: v[0] })}
-                              />
-                            </div>
-
-                            {/* 弹幕速度 */}
-                            <div>
-                              <div className="flex justify-between mb-1">
-                                <span className="text-xs text-muted-foreground">弹幕速度</span>
-                                <span className="text-xs">{danmakuSettings.speed}x</span>
-                              </div>
-                              <Slider
-                                value={[danmakuSettings.speed]}
-                                min={0.5}
-                                max={2}
-                                step={0.25}
-                                onValueChange={(v) => setDanmakuSettings({ ...danmakuSettings, speed: v[0] })}
-                              />
-                            </div>
-
-                            {/* 显示区域 */}
-                            <div>
-                              <span className="text-xs text-muted-foreground block mb-2">显示区域</span>
-                              <div className="flex gap-1">
-                                {[
-                                  { value: 0.25, label: "1/4" },
-                                  { value: 0.5, label: "1/2" },
-                                  { value: 0.75, label: "3/4" },
-                                  { value: 1, label: "全屏" },
-                                ].map((opt) => (
-                                  <button
-                                    key={opt.value}
-                                    className={`flex-1 py-1 text-xs rounded ${
-                                      danmakuSettings.area === opt.value
-                                        ? "bg-primary text-primary-foreground"
-                                        : "bg-muted hover:bg-muted/80"
-                                    }`}
-                                    onClick={() => setDanmakuSettings({ ...danmakuSettings, area: opt.value })}
-                                  >
-                                    {opt.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* 弹幕密度 */}
-                            <div>
-                              <span className="text-xs text-muted-foreground block mb-2">弹幕密度</span>
-                              <div className="flex gap-1">
-                                {[
-                                  { value: "unlimited" as const, label: "不限" },
-                                  { value: "normal" as const, label: "适中" },
-                                  { value: "less" as const, label: "较少" },
-                                ].map((opt) => (
-                                  <button
-                                    key={opt.value}
-                                    className={`flex-1 py-1 text-xs rounded ${
-                                      danmakuSettings.density === opt.value
-                                        ? "bg-primary text-primary-foreground"
-                                        : "bg-muted hover:bg-muted/80"
-                                    }`}
-                                    onClick={() => setDanmakuSettings({ ...danmakuSettings, density: opt.value })}
-                                  >
-                                    {opt.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* 弹幕类型过滤 */}
-                            <div>
-                              <span className="text-xs text-muted-foreground block mb-2">弹幕类型</span>
-                              <div className="flex flex-wrap gap-2">
-                                {[
-                                  { key: "scroll" as const, label: "滚动" },
-                                  { key: "top" as const, label: "顶部" },
-                                  { key: "bottom" as const, label: "底部" },
-                                  { key: "advanced" as const, label: "高级" },
-                                ].map((opt) => (
-                                  <button
-                                    key={opt.key}
-                                    className={`px-2 py-1 text-xs rounded ${
-                                      danmakuSettings.typeFilter[opt.key]
-                                        ? "bg-primary text-primary-foreground"
-                                        : "bg-muted/50 text-muted-foreground"
-                                    }`}
-                                    onClick={() =>
-                                      setDanmakuSettings({
-                                        ...danmakuSettings,
-                                        typeFilter: {
-                                          ...danmakuSettings.typeFilter,
-                                          [opt.key]: !danmakuSettings.typeFilter[opt.key],
-                                        },
-                                      })
-                                    }
-                                  >
-                                    {opt.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              {/* 画中画 */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-white hover:bg-white/20 hidden sm:flex"
-                onClick={togglePiP}
-              >
-                <PictureInPicture2 className="h-4 w-4" />
-              </Button>
-
-              {/* 全屏 */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-white hover:bg-white/20"
-                onClick={toggleFullscreen}
-              >
-                {isFullscreen ? (
-                  <Minimize className="h-4 w-4" />
-                ) : (
-                  <Maximize className="h-4 w-4" />
-                )}
-              </Button>
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-    </div>
-  );
+        )}
+      </div>
+    );
   }
 );
 

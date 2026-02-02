@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
 
   // AI 爬虫允许访问的路径
   const aiAllowPaths = ["/", "/video/", "/tag/", "/user/", "/tags", "/search", "/llms.txt", "/llms-full.txt", "/feed.xml"];
-  const aiDisallowPaths = ["/api/", "/settings", "/profile", "/upload", "/my-videos", "/favorites", "/history", "/comments", "/video/edit/", "/admin/"];
+  const aiDisallowPaths = ["/api/", "/settings", "/profile", "/upload", "/my-videos", "/favorites", "/history", "/comments", "/video/edit/", "/dashboard/"];
 
   return {
     rules: [
@@ -23,7 +23,7 @@ export default function robots(): MetadataRoute.Robots {
           "/history",
           "/comments",
           "/video/edit/",
-          "/admin/",
+          "/dashboard/",
         ],
       },
       // OpenAI
