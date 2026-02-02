@@ -28,10 +28,7 @@ export function TagPageClient({ slug, initialTag }: TagPageClientProps) {
   );
 
   // 优先使用服务端数据，然后是客户端数据
-  const displayTag = tag || (initialTag ? {
-    ...initialTag,
-    createdAt: new Date(), // tRPC 返回的是 Date，但不影响显示
-  } : null);
+  const displayTag = tag || initialTag;
 
   const {
     data,

@@ -1,85 +1,57 @@
-"use client";
+import { prisma } from "@/lib/prisma";
+import type { Metadata } from "next";
+import { TagsPageClient } from "./client";
+import { CollectionPageJsonLd } from "@/components/seo/json-ld";
 
-import Link from "next/link";
-import { trpc } from "@/lib/trpc";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+const siteName = process.env.NEXT_PUBLIC_APP_NAME || "ACGN Flow";
+const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://acgn.app";
 
-// Note: metadata is exported from a separate file to allow client component
-// See: https://nextjs.org/docs/app/building-your-application/optimizing/metadata
+export const metadata: Metadata = {
+  title: "标签",
+  description: `浏览 ${siteName} 的所有视频标签，按分类查找 ACGN 相关视频内容`,
+  keywords: ["标签", "分类", "ACGN", "动漫", "视频"],
+};
 
-export default function TagsPage() {
-  const { data: popularTags, isLoading: loadingPopular } =
-    trpc.tag.popular.useQuery({ limit: 20 });
-  const { data: allTags, isLoading: loadingAll } =
-    trpc.tag.list.useQuery({ limit: 100 });
+// 获取服务端数据
+async function getTagsData() {
+  const [popularTags, allTags] = await Promise.all([
+    prisma.tag.findMany({
+      take: 20,
+      include: {
+        _count: { select: { videos: true } },
+      },
+      orderBy: {
+        videos: { _count: "desc" },
+      },
+    }),
+    prisma.tag.findMany({
+      take: 100,
+      include: {
+        _count: { select: { videos: true } },
+      },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
-  const isLoading = loadingPopular || loadingAll;
+  return { popularTags, allTags };
+}
 
-  if (isLoading) {
-    return (
-      <div className="container py-6">
-        <h1 className="text-2xl font-bold mb-6">标签</h1>
-        <div className="flex flex-wrap gap-2">
-          {Array.from({ length: 20 }).map((_, i) => (
-            <Skeleton key={i} className="h-8 w-20 rounded-full" />
-          ))}
-        </div>
-      </div>
-    );
-  }
+export default async function TagsPage() {
+  const { popularTags, allTags } = await getTagsData();
+  const totalTags = allTags.length;
 
   return (
-    <div className="container py-6 animate-in fade-in duration-300">
-      <h1 className="text-2xl font-bold mb-6">标签</h1>
-
-      {popularTags && popularTags.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-xl font-bold mb-4">热门标签</h2>
-          <div className="flex flex-wrap gap-2">
-            {popularTags.map((tag) => (
-              <Link 
-                key={tag.id} 
-                href={`/tag/${tag.slug}`}
-                className="transition-transform duration-200 hover:scale-105 active:scale-95"
-              >
-                <Badge
-                  variant="default"
-                  className="text-sm py-1.5 px-3 cursor-pointer hover:opacity-80 transition-opacity"
-                >
-                  {tag.name}
-                  <span className="ml-1 opacity-70">({tag._count.videos})</span>
-                </Badge>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section>
-        <h2 className="text-xl font-bold mb-4">所有标签</h2>
-        {allTags && allTags.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {allTags.map((tag) => (
-              <Link 
-                key={tag.id} 
-                href={`/tag/${tag.slug}`}
-                className="transition-all duration-200 hover:scale-105 hover:-translate-y-0.5 active:scale-95"
-              >
-                <Badge
-                  variant="outline"
-                  className="text-sm py-1.5 px-3 cursor-pointer hover:bg-accent transition-colors"
-                >
-                  {tag.name}
-                  <span className="ml-1 opacity-70">({tag._count.videos})</span>
-                </Badge>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <p className="text-muted-foreground">暂无标签</p>
-        )}
-      </section>
-    </div>
+    <>
+      <CollectionPageJsonLd
+        name={`标签 - ${siteName}`}
+        description={`浏览 ${siteName} 的 ${totalTags} 个视频标签`}
+        url={`${siteUrl}/tags`}
+        numberOfItems={totalTags}
+      />
+      <TagsPageClient
+        initialPopularTags={popularTags}
+        initialAllTags={allTags}
+      />
+    </>
   );
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { TagPageClient } from "./client";
 import { cache } from "react";
+import { CollectionPageJsonLd } from "@/components/seo/json-ld";
 
 interface TagPageProps {
   params: Promise<{ slug: string }>;
@@ -21,6 +22,19 @@ const getTag = cache(async (slug: string) => {
     },
   });
 });
+
+// 预生成热门标签页面
+export async function generateStaticParams() {
+  const popularTags = await prisma.tag.findMany({
+    take: 50, // 预生成前 50 个热门标签
+    orderBy: { videos: { _count: "desc" } },
+    select: { slug: true },
+  });
+
+  return popularTags.map((tag) => ({
+    slug: tag.slug,
+  }));
+}
 
 // 动态生成 metadata
 export async function generateMetadata({ params }: TagPageProps): Promise<Metadata> {
@@ -74,6 +88,20 @@ export default async function TagPage({ params }: TagPageProps) {
 
   // 服务端预取标签数据
   const initialTag = tag ? serializeTag(tag) : null;
+  const siteName = process.env.NEXT_PUBLIC_APP_NAME || "ACGN Flow";
+  const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://acgn.app";
 
-  return <TagPageClient slug={slug} initialTag={initialTag} />;
+  return (
+    <>
+      {tag && (
+        <CollectionPageJsonLd
+          name={`#${tag.name} - ${siteName}`}
+          description={`浏览 ${tag.name} 标签下的 ${tag._count.videos} 个视频`}
+          url={`${siteUrl}/tag/${tag.slug}`}
+          numberOfItems={tag._count.videos}
+        />
+      )}
+      <TagPageClient slug={slug} initialTag={initialTag} />
+    </>
+  );
 }

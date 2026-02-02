@@ -286,3 +286,43 @@ header.sticky {
 [data-radix-popper-content-wrapper] > div {
   border-radius: var(--visual-radius);
 }
+
+/* 视频字幕样式 */
+video::cue {
+  background-color: rgba(0, 0, 0, 0.75);
+  color: white;
+  font-size: 1.1em;
+  line-height: 1.5;
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-family: "Microsoft YaHei", "SimHei", "Noto Sans SC", sans-serif;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* 弹幕动画 */
+@keyframes danmaku-scroll {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(-100vw);
+  }
+}
+
+@keyframes danmaku-scroll-reverse {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100vw);
+  }
+}
+
+@keyframes danmaku-fade {
+  0%, 80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

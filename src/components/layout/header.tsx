@@ -26,28 +26,77 @@ import {
   Shield,
   LogIn,
   UserPlus,
+  Tag,
+  Film,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { SettingsPanel } from "./settings-panel";
 import { useIsMounted } from "@/components/motion";
+import { trpc } from "@/lib/trpc";
+import { useDebounce } from "@/lib/utils";
 
 export function Header() {
   const { data: session, status } = useSession();
   const [searchQuery, setSearchQuery] = useState("");
   const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
   const mounted = useIsMounted();
   const router = useRouter();
+
+  // 防抖搜索
+  const debouncedQuery = useDebounce(searchQuery, 300);
+
+  // 获取搜索建议
+  const { data: suggestions } = trpc.video.searchSuggestions.useQuery(
+    { query: debouncedQuery, limit: 5 },
+    {
+      enabled: debouncedQuery.length >= 2,
+      staleTime: 60000, // 1 分钟内不重新请求
+    }
+  );
+
+  // 点击外部关闭建议
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(e.target as Node) &&
+        searchInputRef.current &&
+        !searchInputRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
       router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
       setShowMobileSearch(false);
+      setShowSuggestions(false);
     }
   };
+
+  const handleSuggestionClick = (type: "video" | "tag", value: string) => {
+    setShowSuggestions(false);
+    if (type === "video") {
+      router.push(`/video/${value}`);
+    } else {
+      router.push(`/tag/${value}`);
+    }
+  };
+
+  const hasSuggestions =
+    suggestions && (suggestions.videos.length > 0 || suggestions.tags.length > 0);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -113,12 +162,55 @@ export function Header() {
           <div className="relative w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
+              ref={searchInputRef}
               type="search"
-              placeholder="搜索..."
+              placeholder="搜索视频、标签..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setShowSuggestions(true)}
               className="pl-10 w-full text-sm md:text-base"
+              autoComplete="off"
             />
+            {/* 搜索建议下拉 */}
+            {showSuggestions && hasSuggestions && (
+              <div
+                ref={suggestionsRef}
+                className="absolute top-full left-0 right-0 mt-1 bg-background border rounded-md shadow-lg z-50 overflow-hidden"
+              >
+                {suggestions.tags.length > 0 && (
+                  <div className="p-2">
+                    <div className="text-xs text-muted-foreground px-2 py-1">标签</div>
+                    {suggestions.tags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => handleSuggestionClick("tag", tag.slug)}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent rounded-sm text-left"
+                      >
+                        <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>#{tag.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {suggestions.videos.length > 0 && (
+                  <div className="p-2 border-t">
+                    <div className="text-xs text-muted-foreground px-2 py-1">视频</div>
+                    {suggestions.videos.map((video) => (
+                      <button
+                        key={video.id}
+                        type="button"
+                        onClick={() => handleSuggestionClick("video", video.id)}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent rounded-sm text-left"
+                      >
+                        <Film className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="truncate">{video.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </form>
 
@@ -257,10 +349,11 @@ export function Header() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="搜索..."
+              placeholder="搜索视频、标签..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 w-full text-sm"
+              autoComplete="off"
             />
           </div>
         </form>

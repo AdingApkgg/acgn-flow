@@ -1,17 +1,54 @@
 import { z } from "zod";
 import { router, publicProcedure, adminProcedure } from "../trpc";
+import { getCache, setCache, deleteCachePattern } from "@/lib/redis";
+
+// 缓存键
+const CACHE_KEYS = {
+  tagBySlug: (slug: string) => `tag:slug:${slug}`,
+  tagList: (search: string, limit: number) => `tag:list:${search || "all"}:${limit}`,
+  popularTags: (limit: number) => `tag:popular:${limit}`,
+};
+
+// 缓存时间（秒）
+const CACHE_TTL = {
+  tag: 300, // 5 分钟
+  list: 300, // 5 分钟
+  popular: 600, // 10 分钟（热门标签变化较慢）
+};
 
 export const tagRouter = router({
   // 根据 slug 获取标签
   getBySlug: publicProcedure
     .input(z.object({ slug: z.string() }))
     .query(async ({ ctx, input }) => {
+      const cacheKey = CACHE_KEYS.tagBySlug(input.slug);
+      
+      // 定义返回类型
+      type TagWithCount = {
+        id: string;
+        name: string;
+        slug: string;
+        createdAt: Date;
+        _count: { videos: number };
+      };
+      
+      // 尝试从缓存获取
+      const cached = await getCache<TagWithCount>(cacheKey);
+      if (cached !== null) {
+        return cached;
+      }
+
       const tag = await ctx.prisma.tag.findUnique({
         where: { slug: input.slug },
         include: {
           _count: { select: { videos: true } },
         },
       });
+
+      // 写入缓存
+      if (tag) {
+        await setCache(cacheKey, tag, CACHE_TTL.tag);
+      }
 
       return tag;
     }),
@@ -25,6 +62,25 @@ export const tagRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
+      const cacheKey = CACHE_KEYS.tagList(input.search || "", input.limit);
+      
+      // 定义返回类型
+      type TagWithCount = {
+        id: string;
+        name: string;
+        slug: string;
+        createdAt: Date;
+        _count: { videos: number };
+      };
+      
+      // 尝试从缓存获取（仅当无搜索时缓存）
+      if (!input.search) {
+        const cached = await getCache<TagWithCount[]>(cacheKey);
+        if (cached !== null) {
+          return cached;
+        }
+      }
+
       const tags = await ctx.prisma.tag.findMany({
         take: input.limit,
         where: input.search
@@ -38,6 +94,11 @@ export const tagRouter = router({
         orderBy: { name: "asc" },
       });
 
+      // 仅缓存无搜索条件的结果
+      if (!input.search) {
+        await setCache(cacheKey, tags, CACHE_TTL.list);
+      }
+
       return tags;
     }),
 
@@ -45,6 +106,23 @@ export const tagRouter = router({
   popular: publicProcedure
     .input(z.object({ limit: z.number().min(1).max(20).default(10) }))
     .query(async ({ ctx, input }) => {
+      const cacheKey = CACHE_KEYS.popularTags(input.limit);
+      
+      // 定义返回类型
+      type TagWithCount = {
+        id: string;
+        name: string;
+        slug: string;
+        createdAt: Date;
+        _count: { videos: number };
+      };
+      
+      // 尝试从缓存获取
+      const cached = await getCache<TagWithCount[]>(cacheKey);
+      if (cached !== null) {
+        return cached;
+      }
+
       const tags = await ctx.prisma.tag.findMany({
         take: input.limit,
         include: {
@@ -54,6 +132,9 @@ export const tagRouter = router({
           videos: { _count: "desc" },
         },
       });
+
+      // 写入缓存
+      await setCache(cacheKey, tags, CACHE_TTL.popular);
 
       return tags;
     }),
@@ -71,6 +152,9 @@ export const tagRouter = router({
         data: input,
       });
 
+      // 清除标签相关缓存
+      await deleteCachePattern("tag:*");
+
       return tag;
     }),
 
@@ -81,6 +165,9 @@ export const tagRouter = router({
       await ctx.prisma.tag.delete({
         where: { id: input.id },
       });
+
+      // 清除标签相关缓存
+      await deleteCachePattern("tag:*");
 
       return { success: true };
     }),

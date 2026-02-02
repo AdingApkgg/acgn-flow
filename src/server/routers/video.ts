@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Prisma } from "@/generated/prisma/client";
 import { router, publicProcedure, protectedProcedure, adminProcedure } from "../trpc";
 import { TRPCError } from "@trpc/server";
 import { getCache, setCache, deleteCachePattern } from "@/lib/redis";
@@ -6,8 +7,52 @@ import { submitVideoToIndexNow } from "@/lib/indexnow";
 
 const VIDEO_CACHE_TTL = 60; // 1 minute
 const STATS_CACHE_TTL = 15; // 15 seconds - 短缓存，仅防止并发请求
+const SEARCH_SUGGESTIONS_CACHE_TTL = 300; // 5 minutes
 
 export const videoRouter = router({
+  // 搜索建议
+  searchSuggestions: publicProcedure
+    .input(
+      z.object({
+        query: z.string().min(1).max(50),
+        limit: z.number().min(1).max(10).default(5),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const { query, limit } = input;
+      const cacheKey = `search:suggestions:${query.toLowerCase()}`;
+
+      // 尝试从缓存获取
+      const cached = await getCache<{ videos: { id: string; title: string }[]; tags: { id: string; name: string; slug: string }[] }>(cacheKey);
+      if (cached) return cached;
+
+      // 并行搜索视频标题和标签
+      const [videos, tags] = await Promise.all([
+        ctx.prisma.video.findMany({
+          where: {
+            status: "PUBLISHED",
+            title: { contains: query, mode: "insensitive" },
+          },
+          select: { id: true, title: true },
+          take: limit,
+          orderBy: { views: "desc" },
+        }),
+        ctx.prisma.tag.findMany({
+          where: {
+            name: { contains: query, mode: "insensitive" },
+          },
+          select: { id: true, name: true, slug: true },
+          take: 5,
+          orderBy: { videos: { _count: "desc" } },
+        }),
+      ]);
+
+      const result = { videos, tags };
+      await setCache(cacheKey, result, SEARCH_SUGGESTIONS_CACHE_TTL);
+
+      return result;
+    }),
+
   // 获取网站公开统计数据
   getPublicStats: publicProcedure.query(async ({ ctx }) => {
     const cacheKey = "stats:public";
@@ -49,18 +94,12 @@ export const videoRouter = router({
         cursor: z.string().optional(),
         tagId: z.string().optional(),
         search: z.string().optional(),
-        sortBy: z.enum(["latest", "views", "likes"]).default("latest"),
+        sortBy: z.enum(["latest", "views", "likes", "recommend"]).default("latest"),
         timeRange: z.enum(["all", "today", "week", "month"]).default("all"),
       })
     )
     .query(async ({ ctx, input }) => {
       const { limit, cursor, tagId, search, sortBy, timeRange } = input;
-
-      const orderBy = {
-        latest: { createdAt: "desc" as const },
-        views: { views: "desc" as const },
-        likes: { createdAt: "desc" as const }, // 简化处理
-      }[sortBy];
 
       // 计算时间范围
       const getTimeFilter = () => {
@@ -78,32 +117,178 @@ export const videoRouter = router({
       };
       const timeFilter = getTimeFilter();
 
-      const videos = await ctx.prisma.video.findMany({
-        take: limit + 1,
-        cursor: cursor ? { id: cursor } : undefined,
-        where: {
-          status: "PUBLISHED",
-          ...(tagId && {
-            tags: { some: { tagId } },
-          }),
-          ...(search && {
-            OR: [
-              { title: { contains: search, mode: "insensitive" } },
-              { description: { contains: search, mode: "insensitive" } },
-            ],
-          }),
-          ...(timeFilter && {
-            createdAt: { gte: timeFilter },
-          }),
-        },
-        orderBy,
-        include: {
-          uploader: {
-            select: { id: true, username: true, nickname: true, avatar: true },
+      const baseWhere: Prisma.VideoWhereInput = {
+        status: "PUBLISHED",
+      };
+
+      if (tagId) {
+        baseWhere.tags = { some: { tagId } };
+      }
+
+      if (search) {
+        baseWhere.OR = [
+          { title: { contains: search, mode: Prisma.QueryMode.insensitive } },
+          { description: { contains: search, mode: Prisma.QueryMode.insensitive } },
+        ];
+      }
+
+      if (timeFilter) {
+        baseWhere.createdAt = { gte: timeFilter };
+      }
+
+      if (sortBy === "recommend") {
+        const userId = ctx.session?.user?.id;
+        let preferredTagIds: string[] = [];
+        let excludeVideoIds: string[] = [];
+
+        if (userId) {
+          const [history, likes, favorites] = await Promise.all([
+            ctx.prisma.watchHistory.findMany({
+              where: { userId },
+              select: { videoId: true },
+              orderBy: { updatedAt: "desc" },
+              take: 100,
+            }),
+            ctx.prisma.like.findMany({
+              where: { userId },
+              select: { videoId: true },
+              orderBy: { createdAt: "desc" },
+              take: 50,
+            }),
+            ctx.prisma.favorite.findMany({
+              where: { userId },
+              select: { videoId: true },
+              orderBy: { createdAt: "desc" },
+              take: 50,
+            }),
+          ]);
+
+          excludeVideoIds = history.map((item) => item.videoId);
+          const interactionVideoIds = Array.from(
+            new Set([
+              ...history.map((item) => item.videoId),
+              ...likes.map((item) => item.videoId),
+              ...favorites.map((item) => item.videoId),
+            ])
+          );
+
+          if (interactionVideoIds.length > 0) {
+            const interactionTags = await ctx.prisma.tagOnVideo.findMany({
+              where: { videoId: { in: interactionVideoIds } },
+              select: { tagId: true },
+            });
+
+            const tagCounts = new Map<string, number>();
+            for (const item of interactionTags) {
+              tagCounts.set(item.tagId, (tagCounts.get(item.tagId) || 0) + 1);
+            }
+
+            preferredTagIds = Array.from(tagCounts.entries())
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 10)
+              .map(([tagId]) => tagId);
+          }
+        }
+
+        const preferredTagSet = new Set(preferredTagIds);
+        const takeSize = Math.min(limit * 5, 200);
+
+        const videos = await ctx.prisma.video.findMany({
+          take: takeSize + 1,
+          cursor: cursor ? { id: cursor } : undefined,
+          where: {
+            ...baseWhere,
+            ...(excludeVideoIds.length > 0 && {
+              id: { notIn: excludeVideoIds },
+            }),
+            ...(preferredTagIds.length > 0 && {
+              tags: { some: { tagId: { in: preferredTagIds } } },
+            }),
           },
-          _count: { select: { likes: true, favorites: true } },
-        },
-      });
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          include: {
+            uploader: {
+              select: { id: true, username: true, nickname: true, avatar: true },
+            },
+            _count: { select: { likes: true, favorites: true } },
+            tags: { select: { tagId: true } },
+          },
+        });
+
+        let nextCursor: string | undefined;
+        if (videos.length > takeSize) {
+          const nextItem = videos.pop();
+          nextCursor = nextItem?.id;
+        }
+
+        const hourSeed = Math.floor(Date.now() / 3600000);
+        const hashString = (input: string) => {
+          let hash = 0;
+          for (let i = 0; i < input.length; i++) {
+            hash = (hash << 5) - hash + input.charCodeAt(i);
+            hash |= 0;
+          }
+          return Math.abs(hash);
+        };
+
+        const scored = videos.map((video) => {
+          const likesCount = video._count?.likes ?? 0;
+          const favoritesCount = video._count?.favorites ?? 0;
+          const days =
+            (Date.now() - video.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+          const decay = 1 / (1 + days * 0.05);
+
+          const tagMatchCount =
+            preferredTagIds.length > 0
+              ? video.tags.filter((tag) => preferredTagSet.has(tag.tagId)).length
+              : 0;
+          const tagBonus = tagMatchCount * 50;
+
+          const baseScore =
+            (video.views + likesCount * 5 + favoritesCount * 10) * decay;
+
+          const randomFactor =
+            0.9 + (hashString(`${video.id}-${hourSeed}`) % 21) / 100;
+
+          return { video, score: (baseScore + tagBonus) * randomFactor };
+        });
+
+        const ranked = scored
+          .sort((a, b) => b.score - a.score)
+          .slice(0, limit)
+          .map((item) => item.video);
+
+        // 获取总数量（仅首页请求时计算）
+        let totalCount: number | undefined;
+        if (!cursor) {
+          totalCount = await ctx.prisma.video.count({ where: baseWhere });
+        }
+
+        return { videos: ranked, nextCursor, totalCount };
+      }
+
+      const orderBy = {
+        latest: { createdAt: "desc" as const },
+        views: { views: "desc" as const },
+        likes: { createdAt: "desc" as const }, // 简化处理
+      }[sortBy];
+
+      // 并行获取视频和总数量（仅首页请求时计算总数）
+      const [videos, totalCount] = await Promise.all([
+        ctx.prisma.video.findMany({
+          take: limit + 1,
+          cursor: cursor ? { id: cursor } : undefined,
+          where: baseWhere,
+          orderBy,
+          include: {
+            uploader: {
+              select: { id: true, username: true, nickname: true, avatar: true },
+            },
+            _count: { select: { likes: true, favorites: true } },
+          },
+        }),
+        cursor ? Promise.resolve(undefined) : ctx.prisma.video.count({ where: baseWhere }),
+      ]);
 
       let nextCursor: string | undefined;
       if (videos.length > limit) {
@@ -111,7 +296,7 @@ export const videoRouter = router({
         nextCursor = nextItem?.id;
       }
 
-      return { videos, nextCursor };
+      return { videos, nextCursor, totalCount };
     }),
 
   // 获取单个视频

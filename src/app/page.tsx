@@ -12,10 +12,11 @@ import { SiteStats } from "@/components/stats/site-stats";
 import Link from "next/link";
 import { PageWrapper, FadeIn, motion } from "@/components/motion";
 
-type SortBy = "latest" | "views" | "likes";
+type SortBy = "recommend" | "latest" | "views" | "likes";
 type TimeRange = "all" | "today" | "week" | "month";
 
 const sortOptions = [
+  { value: "recommend", label: "推荐", icon: Sparkles },
   { value: "latest", label: "最新", icon: Clock },
   { value: "views", label: "热门", icon: TrendingUp },
   { value: "likes", label: "点赞", icon: Heart },
@@ -29,7 +30,7 @@ const timeOptions = [
 ] as const;
 
 export default function HomePage() {
-  const [sortBy, setSortBy] = useState<SortBy>("latest");
+  const [sortBy, setSortBy] = useState<SortBy>("recommend");
   const [timeRange, setTimeRange] = useState<TimeRange>("all");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [showAnnouncement, setShowAnnouncement] = useState(true);
@@ -63,10 +64,11 @@ export default function HomePage() {
   }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const videos = data?.pages.flatMap((page) => page.videos) ?? [];
-  const hasFilters = sortBy !== "latest" || timeRange !== "all" || selectedTag !== null;
+  const hasFilters =
+    sortBy !== "recommend" || timeRange !== "all" || selectedTag !== null;
 
   const resetFilters = () => {
-    setSortBy("latest");
+    setSortBy("recommend");
     setTimeRange("all");
     setSelectedTag(null);
   };
