@@ -13,6 +13,10 @@ export const env = createEnv({
     SMTP_PASSWORD: z.string().optional(),
     SMTP_FROM: z.string().email().optional(),
     UPLOAD_DIR: z.string().default("./uploads"),
+    INDEXNOW_KEY: z.string().optional(),
+    // Google Indexing API (可选)
+    GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().email().optional(),
+    GOOGLE_PRIVATE_KEY: z.string().optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().url(),
@@ -31,6 +35,9 @@ export const env = createEnv({
     SMTP_PASSWORD: process.env.SMTP_PASSWORD,
     SMTP_FROM: process.env.SMTP_FROM,
     UPLOAD_DIR: process.env.UPLOAD_DIR,
+    INDEXNOW_KEY: process.env.INDEXNOW_KEY,
+    GOOGLE_SERVICE_ACCOUNT_EMAIL: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    GOOGLE_PRIVATE_KEY: process.env.GOOGLE_PRIVATE_KEY,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
     NEXT_PUBLIC_ARTALK_SERVER: process.env.NEXT_PUBLIC_ARTALK_SERVER,

@@ -103,6 +103,9 @@ export default function RootLayout({
         {/* AI 友好标签 */}
         <meta name="ai-content-description" content="ACGN Flow - 动画、漫画、游戏、轻小说相关视频内容分享平台" />
         <link rel="author" href="/llms.txt" />
+        <link rel="help" href="/llms-full.txt" />
+        {/* 规范链接和多语言备用 */}
+        <link rel="canonical" href={baseUrl} />
       </head>
       <body className="font-sans" suppressHydrationWarning>
         <Providers>

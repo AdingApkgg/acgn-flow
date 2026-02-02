@@ -5,6 +5,9 @@ import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
+// Note: metadata is exported from a separate file to allow client component
+// See: https://nextjs.org/docs/app/building-your-application/optimizing/metadata
+
 export default function TagsPage() {
   const { data: popularTags, isLoading: loadingPopular } =
     trpc.tag.popular.useQuery({ limit: 20 });

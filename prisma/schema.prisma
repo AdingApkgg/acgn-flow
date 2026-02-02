@@ -121,6 +121,7 @@ model Video {
   duration    Int?
   views       Int         @default(0)
   status      VideoStatus @default(PENDING)
+  pages       Json?       // B站分P信息 [{ page: number, title: string, cid?: number }]
   
   tags        TagOnVideo[]
   

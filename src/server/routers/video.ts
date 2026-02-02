@@ -2,6 +2,7 @@ import { z } from "zod";
 import { router, publicProcedure, protectedProcedure, adminProcedure } from "../trpc";
 import { TRPCError } from "@trpc/server";
 import { getCache, setCache, deleteCachePattern } from "@/lib/redis";
+import { submitVideoToIndexNow } from "@/lib/indexnow";
 
 const VIDEO_CACHE_TTL = 60; // 1 minute
 const STATS_CACHE_TTL = 15; // 15 seconds - 短缓存，仅防止并发请求
@@ -217,6 +218,7 @@ export const videoRouter = router({
   create: protectedProcedure
     .input(
       z.object({
+        customId: z.string().regex(/^av\d+$/i, "自定义ID格式必须为 av+数字").optional(), // B站AV号作为ID
         title: z.string().min(1).max(100),
         description: z.string().max(5000).optional(),
         coverUrl: z.string().url().optional().or(z.literal("")),
@@ -226,10 +228,28 @@ export const videoRouter = router({
         duration: z.number().optional(),
         tagIds: z.array(z.string()).optional(),
         tagNames: z.array(z.string()).optional(), // 新建标签名称
+        pages: z.array(z.object({
+          page: z.number(),
+          title: z.string(),
+          cid: z.number().optional(),
+        })).optional(), // B站分P信息
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { tagIds, tagNames, coverUrl, subtitleUrl, danmakuUrl, ...data } = input;
+      const { customId, tagIds, tagNames, coverUrl, subtitleUrl, danmakuUrl, pages, ...data } = input;
+
+      // 如果提供了自定义ID，检查是否已存在
+      if (customId) {
+        const existing = await ctx.prisma.video.findUnique({
+          where: { id: customId.toLowerCase() },
+        });
+        if (existing) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `视频 ${customId.toLowerCase()} 已存在`,
+          });
+        }
+      }
 
       // 处理新标签
       const allTagIds: string[] = [...(tagIds || [])];
@@ -257,8 +277,13 @@ export const videoRouter = router({
         }
       }
 
+      // 去重标签ID
+      const uniqueTagIds = [...new Set(allTagIds)];
+
       const video = await ctx.prisma.video.create({
         data: {
+          // 使用自定义ID（如B站AV号）或自动生成
+          ...(customId ? { id: customId.toLowerCase() } : {}),
           title: data.title,
           description: data.description,
           videoUrl: data.videoUrl,
@@ -267,12 +292,16 @@ export const videoRouter = router({
           ...(coverUrl ? { coverUrl } : {}),
           ...(subtitleUrl ? { subtitleUrl } : {}),
           ...(danmakuUrl ? { danmakuUrl } : {}),
+          ...(pages && pages.length > 1 ? { pages } : {}), // 只有多P时才保存
           uploader: { connect: { id: ctx.session.user.id } },
-          ...(allTagIds.length > 0 
-            ? { tags: { create: allTagIds.map((tagId) => ({ tag: { connect: { id: tagId } } })) } }
+          ...(uniqueTagIds.length > 0 
+            ? { tags: { create: uniqueTagIds.map((tagId) => ({ tag: { connect: { id: tagId } } })) } }
             : {}),
         },
       });
+
+      // 异步提交到 IndexNow（不阻塞响应）
+      submitVideoToIndexNow(video.id).catch(() => {});
 
       return video;
     }),
@@ -366,6 +395,10 @@ export const videoRouter = router({
       }
 
       await deleteCachePattern(`video:${id}`);
+
+      // 视频更新后通知搜索引擎重新索引
+      submitVideoToIndexNow(id).catch(() => {});
+
       return updated;
     }),
 
@@ -617,6 +650,12 @@ export const videoRouter = router({
       });
 
       await deleteCachePattern(`video:${input.id}`);
+
+      // 审核通过时通知搜索引擎索引
+      if (input.status === "PUBLISHED") {
+        submitVideoToIndexNow(input.id).catch(() => {});
+      }
+
       return video;
     }),
 
