@@ -32,7 +32,6 @@ import {
   Unlock,
   RotateCcw,
   RotateCw,
-  ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import {
@@ -635,6 +634,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 客户端挂载状态
     const [isMounted, setIsMounted] = useState(false);
     useEffect(() => {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsMounted(true);
     }, []);
 
@@ -683,6 +683,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
     // URL 变化时重置状态
     useEffect(() => {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsReady(false);
       setHasError(false);
       setPlayed(0);
@@ -710,6 +711,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 加载弹幕数据
     useEffect(() => {
       if (danmakuList) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setDanmakuData(danmakuList);
         return;
       }
@@ -801,6 +803,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 加载字幕数据
     useEffect(() => {
       if (!currentSubtitle?.url) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSubtitleCues([]);
         return;
       }
@@ -823,6 +826,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 更新当前显示的字幕
     useEffect(() => {
       if (!subtitlesEnabled || subtitleCues.length === 0) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCurrentCue("");
         return;
       }

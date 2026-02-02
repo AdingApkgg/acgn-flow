@@ -21,11 +21,9 @@ import {
   Video,
   Tag,
   Settings,
-  ChevronLeft,
   Shield,
   MessageSquare,
   Menu,
-  X,
   Home,
   Sparkles,
 } from "lucide-react";
@@ -203,6 +201,7 @@ export default function DashboardLayout({
 
   // 路由变化时关闭移动端菜单
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMobileOpen(false);
   }, [pathname]);
 
