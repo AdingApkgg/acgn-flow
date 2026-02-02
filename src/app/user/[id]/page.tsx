@@ -22,6 +22,8 @@ const getUser = cache(async (id: string) => {
       location: true,
       website: true,
       socialLinks: true,
+      lastIpLocation: true,
+      lastGpsLocation: true,
       createdAt: true,
       _count: {
         select: {
@@ -93,6 +95,8 @@ function serializeUser(user: NonNullable<Awaited<ReturnType<typeof getUser>>>) {
     location: user.location,
     website: user.website,
     socialLinks: user.socialLinks as Record<string, string> | null,
+    lastIpLocation: user.lastIpLocation,
+    lastGpsLocation: user.lastGpsLocation,
     createdAt: user.createdAt.toISOString(),
     _count: user._count,
   };

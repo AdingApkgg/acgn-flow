@@ -610,12 +610,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     {
       url,
       qualities = [],
-      poster,
-      onProgress,
-      onEnded,
-      initialProgress = 0,
-      subtitles = [],
-      danmakuUrl,
+  poster,
+  onProgress,
+  onEnded,
+  initialProgress = 0,
+  subtitles = [],
+  danmakuUrl,
       danmakuList,
       autoStart = true,
     },
@@ -623,7 +623,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
   ) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const playerRef = useRef<any>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
     const danmakuContainerRef = useRef<HTMLDivElement>(null);
     const danmakuRendererRef = useRef<DanmakuRenderer | null>(null);
     const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -647,9 +647,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     }, []);
 
     // 播放器状态
-    const [isReady, setIsReady] = useState(false);
-    const [hasError, setHasError] = useState(false);
-    const [showPlayer, setShowPlayer] = useState(autoStart || !poster);
+  const [isReady, setIsReady] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [showPlayer, setShowPlayer] = useState(autoStart || !poster);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [volume, setVolume] = useState(0.7);
@@ -688,7 +688,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     }, [currentQuality, url]);
 
     // URL 变化时重置状态
-    useEffect(() => {
+  useEffect(() => {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsReady(false);
       setHasError(false);
@@ -732,19 +732,19 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         try {
           const response = await fetch(danmakuUrl);
           const contentType = response.headers.get("content-type") || "";
-
+          
           if (contentType.includes("application/json") || danmakuUrl.endsWith(".json")) {
             const data = await response.json();
-            let list = data;
-            if (!Array.isArray(data)) {
-              list = data.danmaku || data.danmakus || data.comments || data.data || [];
-            }
+          let list = data;
+          if (!Array.isArray(data)) {
+            list = data.danmaku || data.danmakus || data.comments || data.data || [];
+          }
             if (Array.isArray(list)) {
               setDanmakuData(
                 list.map((item: DanmakuItem) => ({
                   text: item.text || "",
-                  time: item.time || 0,
-                  color: item.color || "#FFFFFF",
+            time: item.time || 0,
+            color: item.color || "#FFFFFF",
                   mode: item.mode ?? 0,
                   size: item.size,
                 }))
@@ -1008,7 +1008,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       if (!containerRef.current) return;
       if (document.fullscreenElement) {
         document.exitFullscreen();
-      } else {
+                  } else {
         containerRef.current.requestFullscreen();
       }
     }, []);
@@ -1366,48 +1366,48 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       );
     }
 
-    if (hasError) {
-      return (
+  if (hasError) {
+    return (
         <div className="aspect-video bg-muted flex flex-col items-center justify-center rounded-lg gap-2">
           <AlertCircle className="h-10 w-10 text-muted-foreground" />
           <p className="text-muted-foreground">视频加载失败</p>
-          <a
+        <a
             href={currentUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          target="_blank"
+          rel="noopener noreferrer"
             className="text-sm text-primary hover:underline"
-          >
-            尝试直接打开
-          </a>
-        </div>
-      );
-    }
+        >
+          尝试直接打开
+        </a>
+      </div>
+    );
+  }
 
     // 封面预览
-    if (!showPlayer && poster) {
-      return (
-        <div
-          className="relative aspect-video bg-black rounded-lg overflow-hidden cursor-pointer group"
-          onClick={handlePlay}
-        >
-          <Image
-            src={poster}
-            alt="Video poster"
-            fill
-            className="object-cover"
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 50vw"
-            unoptimized
-          />
-          <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
+  if (!showPlayer && poster) {
+    return (
+      <div
+        className="relative aspect-video bg-black rounded-lg overflow-hidden cursor-pointer group"
+        onClick={handlePlay}
+      >
+        <Image
+          src={poster}
+          alt="Video poster"
+          fill
+          className="object-cover"
+          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 50vw"
+          unoptimized
+        />
+        <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/50 transition-colors">
             <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Play className="w-8 h-8 text-black ml-1" />
-            </div>
+            <Play className="w-8 h-8 text-black ml-1" />
           </div>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-    return (
+  return (
       <div
         ref={containerRef}
         className={cn(
@@ -1426,11 +1426,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         <div
           className={cn(
             "absolute inset-0 z-10 transition-opacity duration-300",
-            isReady ? "opacity-0 pointer-events-none" : "opacity-100"
+          isReady ? "opacity-0 pointer-events-none" : "opacity-100"
           )}
-        >
-          <Skeleton className="w-full h-full" />
-        </div>
+      >
+        <Skeleton className="w-full h-full" />
+      </div>
 
         {/* React Player */}
         <ReactPlayer
@@ -1930,8 +1930,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
             </div>
           </div>
         </div>
-      </div>
-    );
+    </div>
+  );
   }
 );
 

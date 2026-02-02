@@ -33,7 +33,18 @@ import {
   Pin,
   ChevronDown,
   ChevronUp,
+  MapPin,
+  Globe,
+  Globe2,
+  Smartphone,
+  Monitor,
+  Tablet,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatRelativeTime } from "@/lib/format";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -65,6 +76,10 @@ interface CommentData {
   replyToUser?: ReplyToUser | null;
   userReaction: boolean | null;
   _count?: { replies: number };
+  ipv4Location?: string | null;
+  ipv6Location?: string | null;
+  gpsLocation?: string | null;
+  deviceInfo?: unknown;
 }
 
 interface CommentItemProps {
@@ -251,6 +266,59 @@ export function CommentItem({
   }, [editContent, updateMutation, comment.id]);
 
   const displayName = comment.user.nickname || comment.user.username;
+  const normalizedDeviceInfo = (() => {
+    if (!comment.deviceInfo || typeof comment.deviceInfo !== "object") return null;
+    if (Array.isArray(comment.deviceInfo)) return null;
+    return comment.deviceInfo as {
+      deviceType?: string | null;
+      os?: string | null;
+      osVersion?: string | null;
+      browser?: string | null;
+      browserVersion?: string | null;
+      brand?: string | null;
+      model?: string | null;
+      platform?: string | null;
+      language?: string | null;
+      timezone?: string | null;
+      screen?: string | null;
+      pixelRatio?: number | null;
+    };
+  })();
+  // 设备图标
+  const DeviceIcon = (() => {
+    if (!normalizedDeviceInfo?.deviceType) return Monitor;
+    switch (normalizedDeviceInfo.deviceType.toLowerCase()) {
+      case "mobile": return Smartphone;
+      case "tablet": return Tablet;
+      default: return Monitor;
+    }
+  })();
+
+  // 设备简要信息（用于显示）
+  const deviceBrief = (() => {
+    if (!normalizedDeviceInfo) return null;
+    const os = [normalizedDeviceInfo.os, normalizedDeviceInfo.osVersion].filter(Boolean).join(" ");
+    const browser = normalizedDeviceInfo.browser || "";
+    return [os, browser].filter(Boolean).join(" · ") || null;
+  })();
+
+  // 设备完整信息（用于 tooltip）
+  const deviceFullDetails = (() => {
+    if (!normalizedDeviceInfo) return null;
+    const lines = [
+      normalizedDeviceInfo.deviceType && `类型: ${normalizedDeviceInfo.deviceType}`,
+      normalizedDeviceInfo.os && `系统: ${[normalizedDeviceInfo.os, normalizedDeviceInfo.osVersion].filter(Boolean).join(" ")}`,
+      normalizedDeviceInfo.browser && `浏览器: ${[normalizedDeviceInfo.browser, normalizedDeviceInfo.browserVersion].filter(Boolean).join(" ")}`,
+      (normalizedDeviceInfo.brand || normalizedDeviceInfo.model) && `设备: ${[normalizedDeviceInfo.brand, normalizedDeviceInfo.model].filter(Boolean).join(" ")}`,
+      normalizedDeviceInfo.screen && `屏幕: ${normalizedDeviceInfo.screen}`,
+      normalizedDeviceInfo.language && `语言: ${normalizedDeviceInfo.language}`,
+      normalizedDeviceInfo.timezone && `时区: ${normalizedDeviceInfo.timezone}`,
+    ].filter(Boolean);
+    return lines.length > 0 ? lines.join("\n") : null;
+  })();
+
+  // 是否有元信息需要显示
+  const hasMetaInfo = comment.ipv4Location || comment.ipv6Location || comment.gpsLocation || deviceBrief;
 
   return (
     <div className={cn("flex gap-3", isReply && "ml-12")}>
@@ -266,12 +334,12 @@ export function CommentItem({
         <div className="flex items-center gap-2 flex-wrap">
           <Link
             href={`/user/${comment.user.id}`}
-            className="font-medium hover:underline"
+            className="font-medium text-sm hover:underline"
           >
             {displayName}
           </Link>
           {comment.isPinned && (
-            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+            <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">
               置顶
             </span>
           )}
@@ -279,9 +347,77 @@ export function CommentItem({
             {formatRelativeTime(comment.createdAt)}
           </span>
           {comment.isEdited && (
-            <span className="text-xs text-muted-foreground">(已编辑)</span>
+            <span className="text-xs text-muted-foreground italic">(已编辑)</span>
           )}
         </div>
+
+        {/* 位置和设备信息 - 单独一行，更紧凑的标签样式 */}
+        {hasMetaInfo && (
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {/* IPv4 属地 */}
+            {comment.ipv4Location && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded cursor-default">
+                    <Globe className="h-3 w-3 text-blue-500" />
+                    <span className="max-w-[100px] truncate">{comment.ipv4Location}</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  <p className="font-medium">IPv4 属地</p>
+                  <p className="text-muted-foreground">{comment.ipv4Location}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* IPv6 属地 */}
+            {comment.ipv6Location && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded cursor-default">
+                    <Globe2 className="h-3 w-3 text-purple-500" />
+                    <span className="max-w-[100px] truncate">{comment.ipv6Location}</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  <p className="font-medium">IPv6 属地</p>
+                  <p className="text-muted-foreground">{comment.ipv6Location}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* GPS 定位 */}
+            {comment.gpsLocation && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded cursor-default">
+                    <MapPin className="h-3 w-3 text-green-500" />
+                    <span className="max-w-[120px] truncate">{comment.gpsLocation}</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs max-w-[300px]">
+                  <p className="font-medium">GPS 定位</p>
+                  <p className="text-muted-foreground whitespace-pre-wrap">{comment.gpsLocation}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* 设备信息 */}
+            {deviceBrief && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded cursor-default">
+                    <DeviceIcon className="h-3 w-3" />
+                    <span className="max-w-[100px] truncate">{deviceBrief}</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  <pre className="whitespace-pre-wrap font-sans">{deviceFullDetails}</pre>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        )}
 
         {/* 评论内容 */}
         {isEditing ? (

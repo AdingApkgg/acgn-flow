@@ -18,6 +18,8 @@ import { MessageSquare, ArrowUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { CommentItem } from "./comment-item";
 import Link from "next/link";
+import { parseDeviceInfo, getHighEntropyDeviceInfo, mergeDeviceInfo, type DeviceInfo } from "@/lib/device-info";
+import { getGpsLocation, formatGpsLocation } from "@/lib/geolocation";
 
 interface CommentSectionProps {
   videoId: string;
@@ -31,6 +33,8 @@ export function CommentSection({ videoId }: CommentSectionProps) {
   const [newComment, setNewComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
+  const [gpsLocation, setGpsLocation] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
 
@@ -38,6 +42,28 @@ export function CommentSection({ videoId }: CommentSectionProps) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
+  }, []);
+
+  // 初始化设备信息（包括高精度版本获取）
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const init = async () => {
+      // 先获取基础设备信息
+      const baseInfo = parseDeviceInfo(navigator.userAgent, {
+        platform: navigator.platform || null,
+        language: navigator.language || null,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+        screen: `${window.screen.width}x${window.screen.height}`,
+        pixelRatio: window.devicePixelRatio || null,
+      });
+      
+      // 尝试获取高精度信息（真实 OS 版本等）
+      const highEntropyInfo = await getHighEntropyDeviceInfo();
+      const mergedInfo = mergeDeviceInfo(baseInfo, highEntropyInfo);
+      
+      setDeviceInfo(mergedInfo);
+    };
+    init();
   }, []);
 
   // 获取评论数量
@@ -73,11 +99,44 @@ export function CommentSection({ videoId }: CommentSectionProps) {
     },
   });
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     if (!newComment.trim() || isSubmitting) return;
     setIsSubmitting(true);
-    createMutation.mutate({ videoId, content: newComment.trim() });
-  }, [newComment, isSubmitting, createMutation, videoId]);
+    
+    // 如果设备信息还没有获取到高精度版本，重新获取一次
+    let currentDeviceInfo = deviceInfo;
+    if (!currentDeviceInfo || currentDeviceInfo.osVersion === "10.15.7") {
+      console.log("[Comment] deviceInfo may be stale, re-fetching...");
+      const baseInfo = parseDeviceInfo(navigator.userAgent, {
+        platform: navigator.platform || null,
+        language: navigator.language || null,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+        screen: `${window.screen.width}x${window.screen.height}`,
+        pixelRatio: window.devicePixelRatio || null,
+      });
+      const highEntropyInfo = await getHighEntropyDeviceInfo();
+      currentDeviceInfo = mergeDeviceInfo(baseInfo, highEntropyInfo);
+      setDeviceInfo(currentDeviceInfo);
+    }
+    
+    console.log("[Comment] Submitting with deviceInfo:", currentDeviceInfo);
+    
+    let currentGps = gpsLocation;
+    if (!currentGps) {
+      // 使用逆地理编码获取可读地址
+      const gps = await getGpsLocation({ reverseGeocode: true, timeout: 8000 });
+      if (gps) {
+        currentGps = formatGpsLocation(gps);
+        setGpsLocation(currentGps);
+      }
+    }
+    createMutation.mutate({ 
+      videoId, 
+      content: newComment.trim(),
+      gpsLocation: currentGps || undefined,
+      deviceInfo: currentDeviceInfo || undefined,
+    });
+  }, [newComment, isSubmitting, createMutation, videoId, gpsLocation, deviceInfo]);
 
   const comments = data?.pages.flatMap((page) => page.comments) ?? [];
 

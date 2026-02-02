@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { router, publicProcedure, protectedProcedure } from "../trpc";
 import { TRPCError } from "@trpc/server";
+import { Prisma } from "@/generated/prisma/client";
+import { getIpLocation } from "@/lib/ip-location";
+import { parseDeviceInfo, type DeviceInfo } from "@/lib/device-info";
 
 // 排序类型
 const SortType = z.enum(["newest", "oldest", "popular"]);
@@ -37,6 +40,7 @@ export const commentRouter = router({
           videoId,
           parentId: null,
           isDeleted: false,
+          isHidden: false,
         },
         take: limit + 1,
         cursor: cursor ? { id: cursor } : undefined,
@@ -104,6 +108,7 @@ export const commentRouter = router({
         where: {
           parentId: commentId,
           isDeleted: false,
+          isHidden: false,
         },
         take: limit + 1,
         cursor: cursor ? { id: cursor } : undefined,
@@ -159,6 +164,7 @@ export const commentRouter = router({
         where: {
           videoId: input.videoId,
           isDeleted: false,
+          isHidden: false,
         },
       });
       return count;
@@ -172,11 +178,62 @@ export const commentRouter = router({
         content: z.string().min(1).max(2000),
         parentId: z.string().optional(),
         replyToUserId: z.string().optional(), // 回复的目标用户
+        gpsLocation: z.string().optional(),
+        deviceInfo: z
+          .object({
+            deviceType: z.string().nullable().optional(),
+            os: z.string().nullable().optional(),
+            osVersion: z.string().nullable().optional(),
+            browser: z.string().nullable().optional(),
+            browserVersion: z.string().nullable().optional(),
+            brand: z.string().nullable().optional(),
+            model: z.string().nullable().optional(),
+            platform: z.string().nullable().optional(),
+            language: z.string().nullable().optional(),
+            timezone: z.string().nullable().optional(),
+            screen: z.string().nullable().optional(),
+            pixelRatio: z.number().nullable().optional(),
+            userAgent: z.string().nullable().optional(),
+            fingerprint: z.string().optional(),
+          })
+          .optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { videoId, content, parentId, replyToUserId } = input;
+      const { videoId, content, parentId, replyToUserId, gpsLocation, deviceInfo } = input;
       const userId = ctx.session.user.id;
+      
+      // 获取 IPv4 和 IPv6 位置
+      const [ipv4Location, ipv6Location] = await Promise.all([
+        getIpLocation(ctx.ipv4Address),
+        getIpLocation(ctx.ipv6Address),
+      ]);
+      
+      // 如果客户端传递了设备信息（包含高精度版本），直接使用
+      // 否则用 User-Agent 解析（精度较低）
+      let normalizedDeviceInfo: DeviceInfo;
+      if (deviceInfo && deviceInfo.os && deviceInfo.osVersion) {
+        // 客户端传递了完整的高精度设备信息，直接使用
+        normalizedDeviceInfo = {
+          deviceType: deviceInfo.deviceType || "desktop",
+          os: deviceInfo.os,
+          osVersion: deviceInfo.osVersion,
+          browser: deviceInfo.browser || null,
+          browserVersion: deviceInfo.browserVersion || null,
+          brand: deviceInfo.brand || null,
+          model: deviceInfo.model || null,
+          platform: deviceInfo.platform || null,
+          language: deviceInfo.language || null,
+          timezone: deviceInfo.timezone || null,
+          screen: deviceInfo.screen || null,
+          pixelRatio: deviceInfo.pixelRatio || null,
+          userAgent: deviceInfo.userAgent || ctx.userAgent || null,
+          fingerprint: deviceInfo.fingerprint || "unknown",
+        };
+      } else {
+        // 回退到 User-Agent 解析
+        normalizedDeviceInfo = parseDeviceInfo(ctx.userAgent, deviceInfo);
+      }
 
       // 验证视频存在
       const video = await ctx.prisma.video.findUnique({
@@ -213,6 +270,13 @@ export const commentRouter = router({
           videoId,
           parentId,
           replyToUserId,
+          ipv4Address: ctx.ipv4Address,
+          ipv4Location,
+          ipv6Address: ctx.ipv6Address,
+          ipv6Location,
+          gpsLocation,
+          deviceInfo: normalizedDeviceInfo as unknown as Prisma.InputJsonValue,
+          userAgent: ctx.userAgent,
         },
         include: {
           user: {
@@ -233,6 +297,59 @@ export const commentRouter = router({
           _count: {
             select: { replies: true },
           },
+        },
+      });
+
+      // 更新用户最近位置（优先使用 IPv4，其次 IPv6）
+      const lastIpLocation = ipv4Location || ipv6Location;
+      await ctx.prisma.user.update({
+        where: { id: userId },
+        data: {
+          lastIpLocation: lastIpLocation || undefined,
+          lastGpsLocation: gpsLocation || undefined,
+        },
+      });
+
+      // 记录设备历史
+      await ctx.prisma.userDevice.upsert({
+        where: {
+          userId_fingerprint: {
+            userId,
+            fingerprint: normalizedDeviceInfo.fingerprint,
+          },
+        },
+        update: {
+          deviceType: normalizedDeviceInfo.deviceType,
+          os: normalizedDeviceInfo.os,
+          osVersion: normalizedDeviceInfo.osVersion,
+          browser: normalizedDeviceInfo.browser,
+          browserVersion: normalizedDeviceInfo.browserVersion,
+          brand: normalizedDeviceInfo.brand,
+          model: normalizedDeviceInfo.model,
+          userAgent: normalizedDeviceInfo.userAgent,
+          ipv4Address: ctx.ipv4Address,
+          ipv4Location,
+          ipv6Address: ctx.ipv6Address,
+          ipv6Location,
+          gpsLocation,
+          lastActiveAt: new Date(),
+        },
+        create: {
+          userId,
+          fingerprint: normalizedDeviceInfo.fingerprint,
+          deviceType: normalizedDeviceInfo.deviceType,
+          os: normalizedDeviceInfo.os,
+          osVersion: normalizedDeviceInfo.osVersion,
+          browser: normalizedDeviceInfo.browser,
+          browserVersion: normalizedDeviceInfo.browserVersion,
+          brand: normalizedDeviceInfo.brand,
+          model: normalizedDeviceInfo.model,
+          userAgent: normalizedDeviceInfo.userAgent,
+          ipv4Address: ctx.ipv4Address,
+          ipv4Location,
+          ipv6Address: ctx.ipv6Address,
+          ipv6Location,
+          gpsLocation,
         },
       });
 

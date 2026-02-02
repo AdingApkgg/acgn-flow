@@ -2,6 +2,8 @@ import { z } from "zod";
 import { router, publicProcedure, protectedProcedure, ownerProcedure, adminProcedure } from "../trpc";
 import bcrypt from "bcryptjs";
 import { TRPCError } from "@trpc/server";
+import { getIpLocation } from "@/lib/ip-location";
+import { parseDeviceInfo, type DeviceInfo } from "@/lib/device-info";
 
 export const userRouter = router({
   // 注册
@@ -59,6 +61,8 @@ export const userRouter = router({
           website: true,
           location: true,
           socialLinks: true,
+          lastIpLocation: true,
+          lastGpsLocation: true,
           createdAt: true,
           _count: {
             select: {
@@ -128,6 +132,8 @@ export const userRouter = router({
         location: true,
         socialLinks: true,
         role: true,
+          lastIpLocation: true,
+          lastGpsLocation: true,
         createdAt: true,
       },
     });
@@ -169,6 +175,167 @@ export const userRouter = router({
       });
 
       return { success: true, user };
+    }),
+
+  // 获取用户设备历史（公开）
+  getDevices: publicProcedure
+    .input(
+      z.object({
+        userId: z.string(),
+        limit: z.number().min(1).max(50).default(10),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const devices = await ctx.prisma.userDevice.findMany({
+        where: { userId: input.userId },
+        orderBy: { lastActiveAt: "desc" },
+        take: input.limit,
+        select: {
+          id: true,
+          deviceType: true,
+          os: true,
+          osVersion: true,
+          browser: true,
+          browserVersion: true,
+          brand: true,
+          model: true,
+          ipv4Location: true,
+          ipv6Location: true,
+          gpsLocation: true,
+          lastActiveAt: true,
+        },
+      });
+
+      return devices;
+    }),
+
+  // 记录设备信息（登录/活动）
+  recordDevice: protectedProcedure
+    .input(
+      z.object({
+        gpsLocation: z.string().optional(),
+        deviceInfo: z
+          .object({
+            deviceType: z.string().nullable().optional(),
+            os: z.string().nullable().optional(),
+            osVersion: z.string().nullable().optional(),
+            browser: z.string().nullable().optional(),
+            browserVersion: z.string().nullable().optional(),
+            brand: z.string().nullable().optional(),
+            model: z.string().nullable().optional(),
+            platform: z.string().nullable().optional(),
+            language: z.string().nullable().optional(),
+            timezone: z.string().nullable().optional(),
+            screen: z.string().nullable().optional(),
+            pixelRatio: z.number().nullable().optional(),
+            userAgent: z.string().nullable().optional(),
+            fingerprint: z.string().optional(),
+          })
+          .optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      
+      // 获取 IPv4 和 IPv6 位置
+      const [ipv4Location, ipv6Location] = await Promise.all([
+        getIpLocation(ctx.ipv4Address),
+        getIpLocation(ctx.ipv6Address),
+      ]);
+      
+      // 如果客户端传递了设备信息（包含高精度版本），直接使用
+      let normalizedDeviceInfo: DeviceInfo;
+      if (input.deviceInfo && input.deviceInfo.os && input.deviceInfo.osVersion) {
+        normalizedDeviceInfo = {
+          deviceType: input.deviceInfo.deviceType || "desktop",
+          os: input.deviceInfo.os,
+          osVersion: input.deviceInfo.osVersion,
+          browser: input.deviceInfo.browser || null,
+          browserVersion: input.deviceInfo.browserVersion || null,
+          brand: input.deviceInfo.brand || null,
+          model: input.deviceInfo.model || null,
+          platform: input.deviceInfo.platform || null,
+          language: input.deviceInfo.language || null,
+          timezone: input.deviceInfo.timezone || null,
+          screen: input.deviceInfo.screen || null,
+          pixelRatio: input.deviceInfo.pixelRatio || null,
+          userAgent: input.deviceInfo.userAgent || ctx.userAgent || null,
+          fingerprint: input.deviceInfo.fingerprint || "unknown",
+        };
+      } else {
+        normalizedDeviceInfo = parseDeviceInfo(ctx.userAgent, input.deviceInfo);
+      }
+
+      // 更新用户最近位置（优先使用 IPv4，其次 IPv6）
+      const lastIpLocation = ipv4Location || ipv6Location;
+      await ctx.prisma.user.update({
+        where: { id: userId },
+        data: {
+          lastIpLocation: lastIpLocation || undefined,
+          lastGpsLocation: input.gpsLocation || undefined,
+        },
+      });
+
+      const device = await ctx.prisma.userDevice.upsert({
+        where: {
+          userId_fingerprint: {
+            userId,
+            fingerprint: normalizedDeviceInfo.fingerprint,
+          },
+        },
+        update: {
+          deviceType: normalizedDeviceInfo.deviceType,
+          os: normalizedDeviceInfo.os,
+          osVersion: normalizedDeviceInfo.osVersion,
+          browser: normalizedDeviceInfo.browser,
+          browserVersion: normalizedDeviceInfo.browserVersion,
+          brand: normalizedDeviceInfo.brand,
+          model: normalizedDeviceInfo.model,
+          userAgent: normalizedDeviceInfo.userAgent,
+          ipv4Address: ctx.ipv4Address,
+          ipv4Location,
+          ipv6Address: ctx.ipv6Address,
+          ipv6Location,
+          gpsLocation: input.gpsLocation,
+          lastActiveAt: new Date(),
+        },
+        create: {
+          userId,
+          fingerprint: normalizedDeviceInfo.fingerprint,
+          deviceType: normalizedDeviceInfo.deviceType,
+          os: normalizedDeviceInfo.os,
+          osVersion: normalizedDeviceInfo.osVersion,
+          browser: normalizedDeviceInfo.browser,
+          browserVersion: normalizedDeviceInfo.browserVersion,
+          brand: normalizedDeviceInfo.brand,
+          model: normalizedDeviceInfo.model,
+          userAgent: normalizedDeviceInfo.userAgent,
+          ipv4Address: ctx.ipv4Address,
+          ipv4Location,
+          ipv6Address: ctx.ipv6Address,
+          ipv6Location,
+          gpsLocation: input.gpsLocation,
+        },
+      });
+
+      return { success: true, device };
+    }),
+
+  // 移除设备记录（仅本人）
+  removeDevice: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const device = await ctx.prisma.userDevice.findUnique({
+        where: { id: input.id },
+        select: { userId: true },
+      });
+
+      if (!device || device.userId !== ctx.session.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无权限删除该设备" });
+      }
+
+      await ctx.prisma.userDevice.delete({ where: { id: input.id } });
+      return { success: true };
     }),
 
   // 更新账户信息（用户名、邮箱）

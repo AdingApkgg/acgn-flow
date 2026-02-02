@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +15,9 @@ import {
   Star,
   TrendingUp,
   BarChart3,
+  MessageSquare,
+  Settings,
+  ArrowRight,
 } from "lucide-react";
 import {
   LineChart,
@@ -40,10 +44,20 @@ const totalStatItems = [
   { key: "userCount", label: "用户", icon: Users, color: "text-blue-500", bgColor: "bg-blue-500/10" },
   { key: "videoCount", label: "视频", icon: Video, color: "text-green-500", bgColor: "bg-green-500/10" },
   { key: "tagCount", label: "标签", icon: Tag, color: "text-purple-500", bgColor: "bg-purple-500/10" },
+  { key: "commentCount", label: "评论", icon: MessageSquare, color: "text-cyan-500", bgColor: "bg-cyan-500/10" },
   { key: "totalViews", label: "播放量", icon: Eye, color: "text-orange-500", bgColor: "bg-orange-500/10" },
   { key: "likeCount", label: "点赞", icon: Heart, color: "text-red-500", bgColor: "bg-red-500/10" },
   { key: "favoriteCount", label: "收藏", icon: Star, color: "text-yellow-500", bgColor: "bg-yellow-500/10" },
 ] as const;
+
+// 快捷管理入口
+const quickActions = [
+  { href: "/admin/videos", label: "视频管理", icon: Video, color: "text-green-500", bgColor: "bg-green-500/10", desc: "审核、编辑、删除视频" },
+  { href: "/admin/users", label: "用户管理", icon: Users, color: "text-blue-500", bgColor: "bg-blue-500/10", desc: "查看用户、分配权限" },
+  { href: "/admin/comments", label: "评论管理", icon: MessageSquare, color: "text-cyan-500", bgColor: "bg-cyan-500/10", desc: "审核、隐藏、删除评论" },
+  { href: "/admin/tags", label: "标签管理", icon: Tag, color: "text-purple-500", bgColor: "bg-purple-500/10", desc: "创建、编辑、合并标签" },
+  { href: "/admin/settings", label: "系统设置", icon: Settings, color: "text-gray-500", bgColor: "bg-gray-500/10", desc: "网站配置、功能开关" },
+];
 
 const growthStatItems = [
   { key: "newUsers", label: "新增用户", icon: Users, color: "text-blue-500", bgColor: "bg-blue-500/10" },
@@ -131,6 +145,36 @@ export default function AdminDashboardPage() {
         </p>
       </div>
 
+      {/* 快捷入口 */}
+      <section>
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <ArrowRight className="h-5 w-5 text-muted-foreground" />
+          快捷管理
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          {quickActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Link key={action.href} href={action.href}>
+                <Card className="hover:shadow-md hover:border-primary/50 transition-all cursor-pointer h-full">
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2 rounded-lg ${action.bgColor}`}>
+                        <Icon className={`h-5 w-5 ${action.color}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium">{action.label}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{action.desc}</div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
       {/* 加和数据 */}
       <section>
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -140,9 +184,9 @@ export default function AdminDashboardPage() {
             网站建立以来各项指标的总和
           </span>
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
           {totalLoading
-            ? Array(6)
+            ? Array(7)
                 .fill(0)
                 .map((_, i) => <StatCardSkeleton key={i} />)
             : totalStats &&

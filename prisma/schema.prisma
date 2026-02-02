@@ -26,6 +26,11 @@ model User {
   socialLinks   Json?     // 社交账号 { twitter?: string, github?: string, ... }
   role          Role      @default(USER)
   adminScopes   Json?     // 管理员权限范围 ["video:moderate", "user:manage", ...]
+  isBanned      Boolean   @default(false)  // 是否被封禁
+  banReason     String?   // 封禁原因
+  bannedAt      DateTime? // 封禁时间
+  lastIpLocation  String?  // 最后一次 IP 属地
+  lastGpsLocation String?  // 最后一次 GPS 位置
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -41,6 +46,7 @@ model User {
   comments         Comment[]         @relation("CommentAuthor")
   commentRepliesTo Comment[]         @relation("CommentReplyTo")
   commentReactions CommentReaction[]
+  devices          UserDevice[]
 
   @@index([email])
   @@index([username])
@@ -290,6 +296,13 @@ model Comment {
   videoId       String
   parentId      String?  // 回复的父评论 ID（顶级评论的 ID）
   replyToUserId String?  // 回复的目标用户 ID（用于 @用户名 显示）
+  ipv4Address   String?
+  ipv4Location  String?
+  ipv6Address   String?
+  ipv6Location  String?
+  gpsLocation   String?
+  deviceInfo    Json?
+  userAgent     String?
   
   likes     Int      @default(0)
   dislikes  Int      @default(0)
@@ -297,6 +310,7 @@ model Comment {
   isEdited  Boolean  @default(false)
   isPinned  Boolean  @default(false)
   isDeleted Boolean  @default(false) // 软删除
+  isHidden  Boolean  @default(false) // 后台隐藏
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -312,6 +326,33 @@ model Comment {
   @@index([videoId, likes])
   @@index([userId])
   @@index([parentId])
+}
+
+model UserDevice {
+  id             String   @id @default(cuid())
+  userId         String
+  fingerprint    String
+  deviceType     String?  // desktop, mobile, tablet
+  os             String?  // Windows, iOS, Android
+  osVersion      String?
+  browser        String?  // Chrome, Safari, Firefox
+  browserVersion String?
+  brand          String?  // Apple, Samsung, Xiaomi
+  model          String?  // iPhone 15, Galaxy S24
+  userAgent      String?
+  ipv4Address    String?
+  ipv4Location   String?
+  ipv6Address    String?
+  ipv6Location   String?
+  gpsLocation    String?
+  lastActiveAt   DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId])
+  @@index([lastActiveAt])
 }
 
 model CommentReaction {

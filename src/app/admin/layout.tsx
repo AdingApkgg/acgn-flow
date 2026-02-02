@@ -17,6 +17,7 @@ import {
   Settings,
   ChevronLeft,
   Shield,
+  MessageSquare,
 } from "lucide-react";
 
 const menuItems = [
@@ -43,6 +44,12 @@ const menuItems = [
     label: "标签管理",
     icon: Tag,
     scope: "tag:manage",
+  },
+  {
+    href: "/admin/comments",
+    label: "评论管理",
+    icon: MessageSquare,
+    scope: "comment:manage",
   },
   {
     href: "/admin/settings",

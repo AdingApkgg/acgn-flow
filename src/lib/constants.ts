@@ -7,6 +7,7 @@ export const ADMIN_SCOPES = {
   "user:manage": "管理用户",
   "tag:manage": "标签管理",
   "settings:manage": "系统设置",
+  "comment:manage": "评论管理",
 } as const;
 
 export type AdminScope = keyof typeof ADMIN_SCOPES;

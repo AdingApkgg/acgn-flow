@@ -61,6 +61,7 @@ export const adminRouter = router({
       userCount,
       videoCount,
       tagCount,
+      commentCount,
       totalViews,
       likeCount,
       favoriteCount,
@@ -68,6 +69,7 @@ export const adminRouter = router({
       ctx.prisma.user.count(),
       ctx.prisma.video.count({ where: { status: "PUBLISHED" } }),
       ctx.prisma.tag.count(),
+      ctx.prisma.comment.count({ where: { isDeleted: false } }),
       ctx.prisma.video.aggregate({
         where: { status: "PUBLISHED" },
         _sum: { views: true },
@@ -80,6 +82,7 @@ export const adminRouter = router({
       userCount,
       videoCount,
       tagCount,
+      commentCount,
       totalViews: totalViews._sum.views || 0,
       likeCount,
       favoriteCount,
@@ -167,6 +170,24 @@ export const adminRouter = router({
 
   // ========== 用户管理（站长专用）==========
 
+  // 用户统计
+  getUserStats: adminProcedure.query(async ({ ctx }) => {
+    const canView = await hasScope(ctx.prisma, ctx.session.user.id, "user:view");
+    if (!canView) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "无用户查看权限" });
+    }
+
+    const [total, users, admins, owners, banned] = await Promise.all([
+      ctx.prisma.user.count(),
+      ctx.prisma.user.count({ where: { role: "USER" } }),
+      ctx.prisma.user.count({ where: { role: "ADMIN" } }),
+      ctx.prisma.user.count({ where: { role: "OWNER" } }),
+      ctx.prisma.user.count({ where: { isBanned: true } }),
+    ]);
+
+    return { total, users, admins, owners, banned };
+  }),
+
   // 获取用户列表（管理员可查看，站长可管理）
   listUsers: adminProcedure
     .input(
@@ -175,6 +196,7 @@ export const adminRouter = router({
         cursor: z.string().nullish(),
         search: z.string().optional(),
         role: z.enum(["ALL", "USER", "ADMIN", "OWNER"]).default("ALL"),
+        banned: z.enum(["ALL", "BANNED", "ACTIVE"]).default("ALL"),
       })
     )
     .query(async ({ ctx, input }) => {
@@ -189,6 +211,8 @@ export const adminRouter = router({
         cursor: input.cursor ? { id: input.cursor } : undefined,
         where: {
           ...(input.role !== "ALL" && { role: input.role }),
+          ...(input.banned === "BANNED" && { isBanned: true }),
+          ...(input.banned === "ACTIVE" && { isBanned: false }),
           ...(input.search && {
             OR: [
               { username: { contains: input.search, mode: "insensitive" } },
@@ -206,8 +230,12 @@ export const adminRouter = router({
           avatar: true,
           role: true,
           adminScopes: true,
+          isBanned: true,
+          banReason: true,
+          lastIpLocation: true,
+          lastGpsLocation: true,
           createdAt: true,
-          _count: { select: { videos: true } },
+          _count: { select: { videos: true, comments: true, likes: true } },
         },
       });
 
@@ -218,6 +246,87 @@ export const adminRouter = router({
       }
 
       return { users, nextCursor };
+    }),
+
+  // 封禁用户
+  banUser: adminProcedure
+    .input(z.object({ userId: z.string(), reason: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "user:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无用户管理权限" });
+      }
+
+      const target = await ctx.prisma.user.findUnique({
+        where: { id: input.userId },
+        select: { role: true },
+      });
+
+      if (!target) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+      }
+
+      if (target.role === "OWNER") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "不能封禁站长" });
+      }
+
+      await ctx.prisma.user.update({
+        where: { id: input.userId },
+        data: { isBanned: true, banReason: input.reason, bannedAt: new Date() },
+      });
+
+      return { success: true };
+    }),
+
+  // 解封用户
+  unbanUser: adminProcedure
+    .input(z.object({ userId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "user:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无用户管理权限" });
+      }
+
+      await ctx.prisma.user.update({
+        where: { id: input.userId },
+        data: { isBanned: false, banReason: null, bannedAt: null },
+      });
+
+      return { success: true };
+    }),
+
+  // 批量封禁用户
+  batchBanUsers: adminProcedure
+    .input(z.object({ userIds: z.array(z.string()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "user:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无用户管理权限" });
+      }
+
+      const result = await ctx.prisma.user.updateMany({
+        where: { id: { in: input.userIds }, role: { not: "OWNER" } },
+        data: { isBanned: true, bannedAt: new Date() },
+      });
+
+      return { success: true, count: result.count };
+    }),
+
+  // 批量解封用户
+  batchUnbanUsers: adminProcedure
+    .input(z.object({ userIds: z.array(z.string()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "user:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无用户管理权限" });
+      }
+
+      const result = await ctx.prisma.user.updateMany({
+        where: { id: { in: input.userIds } },
+        data: { isBanned: false, banReason: null, bannedAt: null },
+      });
+
+      return { success: true, count: result.count };
     }),
 
   // 更新用户角色（站长专用）
@@ -295,6 +404,23 @@ export const adminRouter = router({
 
   // ========== 视频管理 ==========
 
+  // 视频统计
+  getVideoStats: adminProcedure.query(async ({ ctx }) => {
+    const canModerate = await hasScope(ctx.prisma, ctx.session.user.id, "video:moderate");
+    if (!canModerate) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "无视频管理权限" });
+    }
+
+    const [total, published, pending, rejected] = await Promise.all([
+      ctx.prisma.video.count(),
+      ctx.prisma.video.count({ where: { status: "PUBLISHED" } }),
+      ctx.prisma.video.count({ where: { status: "PENDING" } }),
+      ctx.prisma.video.count({ where: { status: "REJECTED" } }),
+    ]);
+
+    return { total, published, pending, rejected };
+  }),
+
   // 获取所有视频列表（包括待审核）
   listAllVideos: adminProcedure
     .input(
@@ -328,7 +454,8 @@ export const adminRouter = router({
           uploader: {
             select: { id: true, username: true, nickname: true, avatar: true },
           },
-          _count: { select: { likes: true, favorites: true } },
+          tags: { include: { tag: true } },
+          _count: { select: { likes: true, favorites: true, comments: true } },
         },
       });
 
@@ -378,7 +505,96 @@ export const adminRouter = router({
       return { success: true };
     }),
 
+  // 批量审核视频
+  batchModerateVideos: adminProcedure
+    .input(
+      z.object({
+        videoIds: z.array(z.string()).min(1).max(100),
+        status: z.enum(["PUBLISHED", "REJECTED"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const canModerate = await hasScope(ctx.prisma, ctx.session.user.id, "video:moderate");
+      if (!canModerate) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无视频审核权限" });
+      }
+
+      const result = await ctx.prisma.video.updateMany({
+        where: { id: { in: input.videoIds } },
+        data: { status: input.status },
+      });
+
+      return { success: true, count: result.count };
+    }),
+
+  // 批量删除视频
+  batchDeleteVideos: adminProcedure
+    .input(z.object({ videoIds: z.array(z.string()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "video:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无视频管理权限" });
+      }
+
+      const result = await ctx.prisma.video.deleteMany({
+        where: { id: { in: input.videoIds } },
+      });
+
+      return { success: true, count: result.count };
+    }),
+
   // ========== 标签管理 ==========
+
+  // 标签统计
+  getTagStats: adminProcedure.query(async ({ ctx }) => {
+    const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "tag:manage");
+    if (!canManage) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "无标签管理权限" });
+    }
+
+    const tags = await ctx.prisma.tag.findMany({
+      select: { _count: { select: { videos: true } } },
+    });
+
+    const total = tags.length;
+    const withVideos = tags.filter((t) => t._count.videos > 0).length;
+    const empty = total - withVideos;
+
+    return { total, withVideos, empty };
+  }),
+
+  // 创建标签
+  createTag: adminProcedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(50),
+        slug: z.string().min(1).max(50).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "tag:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无标签管理权限" });
+      }
+
+      // 生成 slug
+      const slug = input.slug || input.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-\u4e00-\u9fa5]/g, "");
+
+      // 检查是否已存在
+      const existing = await ctx.prisma.tag.findFirst({
+        where: { OR: [{ name: input.name }, { slug }] },
+      });
+
+      if (existing) {
+        throw new TRPCError({ code: "CONFLICT", message: "标签名称或 slug 已存在" });
+      }
+
+      const tag = await ctx.prisma.tag.create({
+        data: { name: input.name, slug },
+      });
+
+      return { success: true, tag };
+    }),
 
   // 获取所有标签
   listTags: adminProcedure
@@ -458,5 +674,291 @@ export const adminRouter = router({
       await ctx.prisma.tag.delete({ where: { id: input.tagId } });
 
       return { success: true };
+    }),
+
+  // 批量删除标签
+  batchDeleteTags: adminProcedure
+    .input(z.object({ tagIds: z.array(z.string()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "tag:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无标签管理权限" });
+      }
+
+      const result = await ctx.prisma.tag.deleteMany({
+        where: { id: { in: input.tagIds } },
+      });
+
+      return { success: true, count: result.count };
+    }),
+
+  // 合并标签
+  mergeTags: adminProcedure
+    .input(
+      z.object({
+        sourceTagIds: z.array(z.string()).min(1).max(100),
+        targetTagId: z.string(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "tag:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无标签管理权限" });
+      }
+
+      // 获取目标标签
+      const targetTag = await ctx.prisma.tag.findUnique({
+        where: { id: input.targetTagId },
+      });
+
+      if (!targetTag) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "目标标签不存在" });
+      }
+
+      // 获取所有源标签关联的视频
+      const sourceVideos = await ctx.prisma.video.findMany({
+        where: {
+          tags: { some: { tagId: { in: input.sourceTagIds } } },
+        },
+        select: { id: true },
+      });
+
+      // 将这些视频关联到目标标签
+      for (const video of sourceVideos) {
+        // 添加目标标签关联
+        await ctx.prisma.tagOnVideo.upsert({
+          where: { videoId_tagId: { videoId: video.id, tagId: input.targetTagId } },
+          create: { videoId: video.id, tagId: input.targetTagId },
+          update: {},
+        });
+        
+        // 删除源标签关联
+        await ctx.prisma.tagOnVideo.deleteMany({
+          where: { videoId: video.id, tagId: { in: input.sourceTagIds } },
+        });
+      }
+
+      // 删除源标签
+      await ctx.prisma.tag.deleteMany({
+        where: { id: { in: input.sourceTagIds } },
+      });
+
+      return { success: true, mergedCount: input.sourceTagIds.length };
+    }),
+
+  // ========== 评论管理 ==========
+
+  // 获取评论列表
+  listComments: adminProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(50),
+        cursor: z.string().nullish(),
+        search: z.string().optional(),
+        status: z.enum(["ALL", "VISIBLE", "HIDDEN", "DELETED"]).default("ALL"),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+      }
+
+      const where = {
+        ...(input.search && {
+          OR: [
+            { content: { contains: input.search, mode: "insensitive" as const } },
+            { user: { username: { contains: input.search, mode: "insensitive" as const } } },
+            { user: { nickname: { contains: input.search, mode: "insensitive" as const } } },
+            { video: { title: { contains: input.search, mode: "insensitive" as const } } },
+          ],
+        }),
+        ...(input.status === "VISIBLE" && { isDeleted: false, isHidden: false }),
+        ...(input.status === "HIDDEN" && { isHidden: true, isDeleted: false }),
+        ...(input.status === "DELETED" && { isDeleted: true }),
+      };
+
+      type AdminComment = Prisma.CommentGetPayload<{
+        include: {
+          user: { select: { id: true; username: true; nickname: true; avatar: true } };
+          video: { select: { id: true; title: true } };
+        };
+      }>;
+
+      const comments = (await ctx.prisma.comment.findMany({
+        take: input.limit + 1,
+        cursor: input.cursor ? { id: input.cursor } : undefined,
+        where,
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: { select: { id: true, username: true, nickname: true, avatar: true } },
+          video: { select: { id: true, title: true } },
+        },
+      })) as AdminComment[];
+
+      let nextCursor: string | undefined = undefined;
+      if (comments.length > input.limit) {
+        const nextItem = comments.pop();
+        nextCursor = nextItem!.id;
+      }
+
+      return { comments, nextCursor };
+    }),
+
+  // 隐藏/显示评论
+  toggleCommentHidden: adminProcedure
+    .input(z.object({ commentId: z.string(), isHidden: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+      }
+
+      await ctx.prisma.comment.update({
+        where: { id: input.commentId },
+        data: { isHidden: input.isHidden },
+      });
+
+      return { success: true };
+    }),
+
+  // 删除评论（软删除）
+  deleteComment: adminProcedure
+    .input(z.object({ commentId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+      }
+
+      await ctx.prisma.comment.update({
+        where: { id: input.commentId },
+        data: { isDeleted: true },
+      });
+
+      return { success: true };
+    }),
+
+  // 恢复评论
+  restoreComment: adminProcedure
+    .input(z.object({ commentId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+      }
+
+      await ctx.prisma.comment.update({
+        where: { id: input.commentId },
+        data: { isDeleted: false },
+      });
+
+      return { success: true };
+    }),
+
+  // 评论统计
+  getCommentStats: adminProcedure.query(async ({ ctx }) => {
+    const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+    if (!canManage) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+    }
+
+    const [total, visible, hidden, deleted] = await Promise.all([
+      ctx.prisma.comment.count(),
+      ctx.prisma.comment.count({ where: { isDeleted: false, isHidden: false } }),
+      ctx.prisma.comment.count({ where: { isHidden: true, isDeleted: false } }),
+      ctx.prisma.comment.count({ where: { isDeleted: true } }),
+    ]);
+
+    return { total, visible, hidden, deleted };
+  }),
+
+  // 批量评论操作
+  batchCommentAction: adminProcedure
+    .input(
+      z.object({
+        commentIds: z.array(z.string()).min(1).max(100),
+        action: z.enum(["hide", "show", "delete", "restore"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+      }
+
+      const data = (() => {
+        switch (input.action) {
+          case "hide":
+            return { isHidden: true };
+          case "show":
+            return { isHidden: false };
+          case "delete":
+            return { isDeleted: true };
+          case "restore":
+            return { isDeleted: false };
+        }
+      })();
+
+      const result = await ctx.prisma.comment.updateMany({
+        where: { id: { in: input.commentIds } },
+        data,
+      });
+
+      return { success: true, count: result.count };
+    }),
+
+  // 硬删除评论（彻底删除）
+  hardDeleteComment: adminProcedure
+    .input(z.object({ commentId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+      }
+
+      // 先删除所有子评论（回复）
+      await ctx.prisma.comment.deleteMany({
+        where: { parentId: input.commentId },
+      });
+
+      // 删除评论的所有反应
+      await ctx.prisma.commentReaction.deleteMany({
+        where: { commentId: input.commentId },
+      });
+
+      // 删除评论本身
+      await ctx.prisma.comment.delete({
+        where: { id: input.commentId },
+      });
+
+      return { success: true };
+    }),
+
+  // 批量硬删除评论
+  batchHardDeleteComments: adminProcedure
+    .input(z.object({ commentIds: z.array(z.string()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+      if (!canManage) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+      }
+
+      // 先删除所有子评论
+      await ctx.prisma.comment.deleteMany({
+        where: { parentId: { in: input.commentIds } },
+      });
+
+      // 删除评论的所有反应
+      await ctx.prisma.commentReaction.deleteMany({
+        where: { commentId: { in: input.commentIds } },
+      });
+
+      // 删除评论
+      const result = await ctx.prisma.comment.deleteMany({
+        where: { id: { in: input.commentIds } },
+      });
+
+      return { success: true, count: result.count };
     }),
 });
