@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Header } from "./header";
 import { Sidebar } from "./sidebar";
 import { Footer } from "./footer";
+import { BottomNav } from "./bottom-nav";
 import { cn } from "@/lib/utils";
 import { useIsMounted } from "@/components/motion";
 
@@ -64,13 +65,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           className={cn(
             "flex-1 flex flex-col min-h-[calc(100vh-4rem)]",
             // 桌面端始终使用收起状态的边距，侧边栏展开时覆盖在内容上方
-            showSidebar && "md:ml-[72px]"
+            showSidebar && "md:ml-[72px]",
+            // 移动端为底部导航栏留出空间
+            "pb-16 md:pb-0"
           )}
         >
           <div className="flex-1">{children}</div>
           <Footer />
         </main>
       </div>
+
+      {/* 移动端底部导航栏 */}
+      {showSidebar && <BottomNav />}
     </div>
   );
 }
