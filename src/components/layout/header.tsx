@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSession, signOut } from "next-auth/react";
+import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -35,11 +35,11 @@ import {
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { SettingsPanel } from "./settings-panel";
+import { MobileSidebarContent } from "./sidebar";
 import { useIsMounted } from "@/components/motion";
 import { trpc } from "@/lib/trpc";
-import { useDebounce } from "@/lib/hooks";
+import { useDebounce, useStableSession } from "@/lib/hooks";
 
 const SEARCH_HISTORY_KEY = "acgn-flow-search-history";
 const MAX_HISTORY_ITEMS = 10;
@@ -87,13 +87,17 @@ function clearSearchHistory() {
   }
 }
 
-export function Header() {
-  const { data: session, status } = useSession();
+interface HeaderProps {
+  onMenuClick?: () => void;
+}
+
+export function Header({ onMenuClick }: HeaderProps) {
+  const { session, isLoading: sessionLoading } = useStableSession();
   const [searchQuery, setSearchQuery] = useState("");
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
-    // 使用 lazy initialization 在客户端初始化搜索历史
     if (typeof window !== "undefined") {
       return getSearchHistory();
     }
@@ -103,6 +107,8 @@ export function Header() {
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const mounted = useIsMounted();
   const router = useRouter();
+
+  const isLoading = !mounted || sessionLoading;
 
   // 防抖搜索
   const debouncedQuery = useDebounce(searchQuery, 300);
@@ -119,7 +125,7 @@ export function Header() {
   // 获取热搜
   const { data: hotSearches } = trpc.video.getHotSearches.useQuery(
     { limit: 8 },
-    { staleTime: 300000 } // 5 分钟
+    { staleTime: 300000 }
   );
 
   // 点击外部关闭建议
@@ -147,7 +153,6 @@ export function Header() {
       const trimmed = query.trim();
       addSearchHistory(trimmed);
       setSearchHistory(getSearchHistory());
-      // 异步记录搜索
       recordSearchMutation.mutate({ keyword: trimmed });
       router.push(`/search?q=${encodeURIComponent(trimmed)}`);
       setShowMobileSearch(false);
@@ -188,30 +193,40 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center">
-        {/* Left Section */}
-        <div className="flex items-center gap-4 flex-1">
+      <div className="flex h-16 items-center px-4">
+        {/* Left Section - Menu & Logo */}
+        <div className="flex items-center gap-2">
+          {/* Desktop Menu Toggle */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden md:flex"
+            onClick={onMenuClick}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+
           {/* Mobile Menu */}
-          <Sheet>
+          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
             <SheetTrigger asChild className="md:hidden">
               <Button variant="ghost" size="icon">
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-72">
-              <SheetHeader>
-                <VisuallyHidden>
-                  <SheetTitle>导航菜单</SheetTitle>
-                </VisuallyHidden>
+            <SheetContent side="left" className="w-72 p-0">
+              <SheetHeader className="border-b px-4 py-4">
+                <SheetTitle>
+                  <Link 
+                    href="/" 
+                    className="flex items-center gap-1 font-bold text-xl"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <span className="text-gradient-anime">ACGN</span>
+                    <span>Flow</span>
+                  </Link>
+                </SheetTitle>
               </SheetHeader>
-              <nav className="flex flex-col gap-4 mt-4">
-                <Link href="/" className="text-lg font-semibold">
-                  首页
-                </Link>
-                <Link href="/comments" className="text-lg">
-                  留言
-                </Link>
-              </nav>
+              <MobileSidebarContent onClose={() => setMobileMenuOpen(false)} />
             </SheetContent>
           </Sheet>
 
@@ -220,41 +235,40 @@ export function Header() {
             <span className="text-gradient-anime transition-transform duration-200 hover:scale-105 active:scale-95">
               ACGN
             </span>
-            <span className="text-foreground group-hover:text-primary transition-colors">
+            <span className="text-foreground group-hover:text-primary transition-colors hidden sm:inline">
               Flow
             </span>
           </Link>
-
-          {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-6 ml-6">
-            <Link
-              href="/comments"
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              留言
-            </Link>
-          </nav>
         </div>
 
-        {/* Center Section - Search (Desktop) */}
-        <form onSubmit={handleSearchSubmit} className="hidden md:flex w-full max-w-md mx-4">
+        {/* Center Section - Search */}
+        <form onSubmit={handleSearchSubmit} className="hidden md:flex flex-1 max-w-2xl mx-4 lg:mx-8">
           <div className="relative w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              ref={searchInputRef}
-              type="search"
-              placeholder="搜索视频、标签..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setShowSuggestions(true)}
-              className="pl-10 w-full text-sm md:text-base"
-              autoComplete="off"
-            />
+            <div className="flex">
+              <Input
+                ref={searchInputRef}
+                type="search"
+                placeholder="搜索"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setShowSuggestions(true)}
+                className="rounded-r-none border-r-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                autoComplete="off"
+              />
+              <Button 
+                type="submit" 
+                variant="secondary" 
+                className="rounded-l-none border border-input border-l-0 px-6"
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+            </div>
+            
             {/* 搜索建议/历史/热搜下拉 */}
             {showSuggestions && (hasSuggestions || showHistoryOrHot) && (
               <div
                 ref={suggestionsRef}
-                className="absolute top-full left-0 right-0 mt-1 bg-background border rounded-md shadow-lg z-50 overflow-hidden max-h-[400px] overflow-y-auto"
+                className="absolute top-full left-0 right-0 mt-1 bg-background border rounded-lg shadow-lg z-50 overflow-hidden max-h-[400px] overflow-y-auto"
               >
                 {/* 有输入时显示搜索建议 */}
                 {debouncedQuery.length >= 2 && hasSuggestions && (
@@ -267,9 +281,9 @@ export function Header() {
                             key={tag.id}
                             type="button"
                             onClick={() => handleSuggestionClick("tag", tag.slug)}
-                            className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent rounded-sm text-left"
+                            className="w-full flex items-center gap-2 px-2 py-2 text-sm hover:bg-accent rounded-md text-left"
                           >
-                            <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                            <Tag className="h-4 w-4 text-muted-foreground" />
                             <span>#{tag.name}</span>
                           </button>
                         ))}
@@ -283,9 +297,9 @@ export function Header() {
                             key={video.id}
                             type="button"
                             onClick={() => handleSuggestionClick("video", video.id)}
-                            className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent rounded-sm text-left"
+                            className="w-full flex items-center gap-2 px-2 py-2 text-sm hover:bg-accent rounded-md text-left"
                           >
-                            <Film className="h-3.5 w-3.5 text-muted-foreground" />
+                            <Film className="h-4 w-4 text-muted-foreground" />
                             <span className="truncate">{video.title}</span>
                           </button>
                         ))}
@@ -315,12 +329,12 @@ export function Header() {
                             key={query}
                             type="button"
                             onClick={() => handleSearch(query)}
-                            className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent rounded-sm text-left group"
+                            className="w-full flex items-center gap-2 px-2 py-2 text-sm hover:bg-accent rounded-md text-left group"
                           >
-                            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                            <Clock className="h-4 w-4 text-muted-foreground" />
                             <span className="flex-1 truncate">{query}</span>
                             <X
-                              className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+                              className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
                               onClick={(e) => handleRemoveHistory(e, query)}
                             />
                           </button>
@@ -340,16 +354,16 @@ export function Header() {
                             key={item.keyword}
                             type="button"
                             onClick={() => handleSearch(item.keyword)}
-                            className="w-full flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-accent rounded-sm text-left"
+                            className="w-full flex items-center gap-3 px-2 py-2 text-sm hover:bg-accent rounded-md text-left"
                           >
-                            <span className={`w-4 text-center text-xs font-bold ${
+                            <span className={`w-5 text-center text-xs font-bold ${
                               index < 3 ? "text-primary" : "text-muted-foreground"
                             }`}>
                               {index + 1}
                             </span>
                             <span className="truncate flex-1">{item.keyword}</span>
                             {item.isHot && (
-                              <span className="text-[10px] px-1 py-0.5 rounded bg-red-500/10 text-red-500 font-medium">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 font-medium">
                                 热
                               </span>
                             )}
@@ -365,7 +379,7 @@ export function Header() {
         </form>
 
         {/* Right Section */}
-        <div className="flex items-center gap-1 sm:gap-2 flex-1 justify-end">
+        <div className="flex items-center gap-1 ml-auto">
           {/* Settings Panel */}
           <SettingsPanel />
 
@@ -380,12 +394,12 @@ export function Header() {
             <Search className="h-5 w-5" />
           </Button>
 
-          {!mounted || status === "loading" ? (
+          {isLoading ? (
             <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
           ) : session?.user ? (
             <>
               {/* Upload Button */}
-              <Button variant="ghost" size="icon" asChild>
+              <Button variant="ghost" size="icon" asChild className="hidden sm:flex">
                 <Link href="/upload">
                   <Upload className="h-5 w-5" />
                 </Link>
@@ -471,7 +485,7 @@ export function Header() {
               </DropdownMenu>
             </>
           ) : (
-            <div className="flex items-center gap-1 sm:gap-2">
+            <div className="flex items-center gap-1">
               <Button variant="ghost" size="sm" asChild className="px-2 sm:px-4">
                 <Link href="/login">
                   <LogIn className="h-4 w-4 sm:hidden" />
@@ -488,23 +502,31 @@ export function Header() {
           )}
         </div>
       </div>
-      {/* Mobile Search - use CSS to avoid hydration mismatch */}
+      
+      {/* Mobile Search */}
       <div
         className={`border-t bg-background/95 md:hidden overflow-hidden transition-all duration-200 ${
           showMobileSearch ? "max-h-16 opacity-100" : "max-h-0 opacity-0"
         }`}
       >
-        <form onSubmit={handleSearchSubmit} className="container py-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <form onSubmit={handleSearchSubmit} className="p-2">
+          <div className="relative flex">
             <Input
               type="search"
-              placeholder="搜索视频、标签..."
+              placeholder="搜索"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-full text-sm"
+              className="rounded-r-none border-r-0 text-sm"
               autoComplete="off"
             />
+            <Button 
+              type="submit" 
+              variant="secondary" 
+              size="sm"
+              className="rounded-l-none border border-input border-l-0"
+            >
+              <Search className="h-4 w-4" />
+            </Button>
           </div>
         </form>
       </div>

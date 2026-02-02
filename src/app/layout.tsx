@@ -7,8 +7,7 @@ import "@fontsource/noto-sans-jp/500.css";
 import "@fontsource/noto-sans-jp/700.css";
 import "./globals.css";
 import { Providers } from "@/components/providers";
-import { Header } from "@/components/layout/header";
-import { Footer } from "@/components/layout/footer";
+import { AppLayout } from "@/components/layout/app-layout";
 
 const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 const siteName = process.env.NEXT_PUBLIC_APP_NAME || "ACGN Flow";
@@ -109,11 +108,7 @@ export default function RootLayout({
       </head>
       <body className="font-sans" suppressHydrationWarning>
         <Providers>
-          <div className="relative min-h-screen flex flex-col">
-            <Header />
-            <main className="flex-1">{children}</main>
-            <Footer />
-          </div>
+          <AppLayout>{children}</AppLayout>
         </Providers>
       </body>
     </html>

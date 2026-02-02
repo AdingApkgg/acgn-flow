@@ -84,23 +84,17 @@ export default function HomePage() {
 
   const videos = data?.pages.flatMap((page) => page.videos) ?? [];
 
-  // 排序/筛选选项
-  const filterOptions = [
-    { id: null, label: "全部", isSort: false },
-    { id: "recommend", label: "推荐", isSort: true },
-    { id: "latest", label: "最新", isSort: true },
-    { id: "views", label: "热门", isSort: true },
-    { id: "likes", label: "高赞", isSort: true },
+  // 排序选项
+  const sortOptions: { id: SortBy; label: string }[] = [
+    { id: "recommend", label: "推荐" },
+    { id: "latest", label: "最新" },
+    { id: "views", label: "热门" },
+    { id: "likes", label: "高赞" },
   ];
 
-  const handleFilterClick = (id: string | null, isSort: boolean) => {
-    if (isSort && id) {
-      setSortBy(id as SortBy);
-      setSelectedTag(null);
-    } else {
-      setSelectedTag(null);
-      setSortBy("recommend");
-    }
+  const handleSortClick = (id: SortBy) => {
+    setSortBy(id);
+    setSelectedTag(null);
   };
 
   const handleTagClick = (tagId: string) => {
@@ -109,13 +103,6 @@ export default function HomePage() {
     } else {
       setSelectedTag(tagId);
     }
-  };
-
-  const isFilterActive = (id: string | null, isSort: boolean) => {
-    if (isSort) {
-      return selectedTag === null && sortBy === id;
-    }
-    return selectedTag === null && sortBy === "recommend" && id === null;
   };
 
   return (
@@ -176,14 +163,14 @@ export default function HomePage() {
               className="flex gap-2 overflow-x-auto scrollbar-none scroll-smooth px-1 py-1"
               style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
             >
-              {/* 排序/筛选按钮 */}
-              {filterOptions.map((option) => (
+              {/* 排序按钮 */}
+              {sortOptions.map((option) => (
                 <button
-                  key={option.id || "all"}
-                  onClick={() => handleFilterClick(option.id, option.isSort)}
+                  key={option.id}
+                  onClick={() => handleSortClick(option.id)}
                   className={cn(
                     "shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap",
-                    isFilterActive(option.id, option.isSort)
+                    selectedTag === null && sortBy === option.id
                       ? "bg-foreground text-background"
                       : "bg-muted hover:bg-muted/80 text-foreground"
                   )}

@@ -16,6 +16,9 @@ const EXCLUDED_EXTENSIONS = /\.(?:mp4|webm|mkv|avi|mov|wmv|flv|m4v|mp3|wav|ogg|f
 // 不缓存的路径
 const EXCLUDED_PATHS = /\/uploads\//i;
 
+// Auth 相关路径 - 永不缓存
+const AUTH_PATHS = /\/api\/auth\//i;
+
 const serwist = new Serwist({
   // 禁用预缓存，只使用运行时缓存（避免路径不匹配问题）
   precacheEntries: self.__SW_MANIFEST || [],
@@ -70,6 +73,11 @@ const serwist = new Serwist({
           }),
         ],
       }),
+    },
+    // Auth 相关 API - 永不缓存，确保 session 状态实时
+    {
+      matcher: ({ url }) => AUTH_PATHS.test(url.pathname),
+      handler: new NetworkOnly(),
     },
     // API 请求 - 网络优先（只缓存成功响应）
     {
