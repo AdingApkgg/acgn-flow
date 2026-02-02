@@ -47,6 +47,10 @@ model User {
   commentRepliesTo Comment[]         @relation("CommentReplyTo")
   commentReactions CommentReaction[]
   devices          UserDevice[]
+  guestbooks       Guestbook[]       @relation("GuestbookAuthor")
+  guestbookRepliesTo Guestbook[]     @relation("GuestbookReplyTo")
+  guestbookReactions GuestbookReaction[]
+  searchRecords    SearchRecord[]
 
   @@index([email])
   @@index([username])
@@ -367,4 +371,73 @@ model CommentReaction {
 
   @@unique([userId, commentId])
   @@index([commentId])
+}
+
+// ==================== 留言板 ====================
+
+model Guestbook {
+  id           String   @id @default(cuid())
+  content      String   @db.Text
+  userId       String
+  parentId     String?  // 回复的父留言 ID
+  replyToUserId String? // 回复的目标用户
+  ipv4Address  String?
+  ipv4Location String?
+  ipv6Address  String?
+  ipv6Location String?
+  gpsLocation  String?
+  deviceInfo   Json?
+  userAgent    String?
+  
+  likes    Int @default(0)
+  dislikes Int @default(0)
+  
+  isEdited  Boolean @default(false)
+  isPinned  Boolean @default(false)
+  isDeleted Boolean @default(false)
+  isHidden  Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User         @relation("GuestbookAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  parent      Guestbook?   @relation("GuestbookReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies     Guestbook[]  @relation("GuestbookReplies")
+  replyToUser User?        @relation("GuestbookReplyTo", fields: [replyToUserId], references: [id], onDelete: SetNull)
+  reactions   GuestbookReaction[]
+
+  @@index([createdAt])
+  @@index([likes])
+  @@index([userId])
+  @@index([parentId])
+}
+
+model GuestbookReaction {
+  id          String   @id @default(cuid())
+  userId      String
+  guestbookId String
+  isLike      Boolean
+  createdAt   DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guestbook Guestbook @relation(fields: [guestbookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, guestbookId])
+  @@index([guestbookId])
+}
+
+// ==================== 搜索记录 ====================
+
+model SearchRecord {
+  id        String   @id @default(cuid())
+  keyword   String
+  userId    String?  // 可选，匿名用户也可以记录
+  resultCount Int    @default(0) // 搜索结果数量
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([keyword])
+  @@index([createdAt])
+  @@index([userId])
 }

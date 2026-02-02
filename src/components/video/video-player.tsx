@@ -47,6 +47,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useIsMounted } from "@/components/motion";
 import dynamic from "next/dynamic";
 
 // 动态导入 ReactPlayer 避免 SSR 问题
@@ -623,6 +624,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     const gestureStartValueRef = useRef<number>(0);
     const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isLongPressingRef = useRef(false);
+    const previousPlaybackRateRef = useRef<number>(1); // 保存长按前的播放速度
     
     // 手势提示状态
     const [gestureHint, setGestureHint] = useState<{ type: string; value: string; icon?: string } | null>(null);
@@ -632,11 +634,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     const isMobile = useIsMobile();
 
     // 客户端挂载状态
-    const [isMounted, setIsMounted] = useState(false);
-    useEffect(() => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsMounted(true);
-    }, []);
+    const isMounted = useIsMounted();
 
     // 播放器状态
     const [isReady, setIsReady] = useState(false);
@@ -913,7 +911,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 全屏变化监听
     useEffect(() => {
       const handleFullscreenChange = () => {
-        setIsFullscreen(!!document.fullscreenElement);
+        const isNowFullscreen = !!document.fullscreenElement;
+        setIsFullscreen(isNowFullscreen);
+        // 退出全屏时重置锁定状态，防止用户无法交互
+        if (!isNowFullscreen) {
+          setIsLocked(false);
+        }
       };
       document.addEventListener("fullscreenchange", handleFullscreenChange);
       return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
@@ -1208,10 +1211,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       // 长按检测（快进模式）
       longPressTimerRef.current = setTimeout(() => {
         isLongPressingRef.current = true;
+        previousPlaybackRateRef.current = playbackRate; // 保存当前播放速度
         setPlaybackRate(2);
         showGestureHint("speed", "2x 快进中...", "fastforward");
       }, 500);
-    }, [playedSeconds, isLocked, showGestureHint]);
+    }, [playedSeconds, isLocked, showGestureHint, playbackRate]);
 
     // 触摸移动
     const handleTouchMove = useCallback((e: React.TouchEvent) => {
@@ -1297,7 +1301,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       // 结束长按快进
       if (isLongPressingRef.current) {
         isLongPressingRef.current = false;
-        setPlaybackRate(1);
+        setPlaybackRate(previousPlaybackRateRef.current); // 恢复之前的播放速度
         setGestureHint(null);
         touchStartRef.current = null;
         touchMoveRef.current = null;

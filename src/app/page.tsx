@@ -3,41 +3,27 @@
 import { trpc } from "@/lib/trpc";
 import { VideoGrid } from "@/components/video/video-grid";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useInView } from "react-intersection-observer";
-import { AlertTriangle, X, Clock, TrendingUp, Heart, Sparkles, Calendar, Filter, RotateCcw } from "lucide-react";
+import { AlertTriangle, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { WebsiteJsonLd, OrganizationJsonLd } from "@/components/seo/json-ld";
 import { SiteStats } from "@/components/stats/site-stats";
-import Link from "next/link";
-import { PageWrapper, FadeIn, motion } from "@/components/motion";
+import { PageWrapper, FadeIn } from "@/components/motion";
+import { cn } from "@/lib/utils";
 
 type SortBy = "recommend" | "latest" | "views" | "likes";
-type TimeRange = "all" | "today" | "week" | "month";
-
-const sortOptions = [
-  { value: "recommend", label: "推荐", icon: Sparkles },
-  { value: "latest", label: "最新", icon: Clock },
-  { value: "views", label: "热门", icon: TrendingUp },
-  { value: "likes", label: "点赞", icon: Heart },
-] as const;
-
-const timeOptions = [
-  { value: "all", label: "全部" },
-  { value: "today", label: "今天" },
-  { value: "week", label: "本周" },
-  { value: "month", label: "本月" },
-] as const;
 
 export default function HomePage() {
   const [sortBy, setSortBy] = useState<SortBy>("recommend");
-  const [timeRange, setTimeRange] = useState<TimeRange>("all");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [showAnnouncement, setShowAnnouncement] = useState(true);
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { ref, inView } = useInView();
 
   // 获取热门标签
-  const { data: tagsData } = trpc.tag.list.useQuery({ limit: 10 });
+  const { data: tagsData } = trpc.tag.list.useQuery({ limit: 30 });
 
   const {
     data,
@@ -49,7 +35,6 @@ export default function HomePage() {
     { 
       limit: 20, 
       sortBy, 
-      timeRange,
       tagId: selectedTag || undefined,
     },
     {
@@ -63,14 +48,74 @@ export default function HomePage() {
     }
   }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const videos = data?.pages.flatMap((page) => page.videos) ?? [];
-  const hasFilters =
-    sortBy !== "recommend" || timeRange !== "all" || selectedTag !== null;
+  // 检查滚动箭头显示状态
+  const checkScrollArrows = () => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    
+    setShowLeftArrow(container.scrollLeft > 0);
+    setShowRightArrow(
+      container.scrollLeft < container.scrollWidth - container.clientWidth - 10
+    );
+  };
 
-  const resetFilters = () => {
-    setSortBy("recommend");
-    setTimeRange("all");
-    setSelectedTag(null);
+  useEffect(() => {
+    checkScrollArrows();
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.addEventListener("scroll", checkScrollArrows);
+      window.addEventListener("resize", checkScrollArrows);
+      return () => {
+        container.removeEventListener("scroll", checkScrollArrows);
+        window.removeEventListener("resize", checkScrollArrows);
+      };
+    }
+  }, [tagsData]);
+
+  const scroll = (direction: "left" | "right") => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const scrollAmount = 200;
+    container.scrollBy({
+      left: direction === "left" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+  };
+
+  const videos = data?.pages.flatMap((page) => page.videos) ?? [];
+
+  // 排序/筛选选项
+  const filterOptions = [
+    { id: null, label: "全部", isSort: false },
+    { id: "recommend", label: "推荐", isSort: true },
+    { id: "latest", label: "最新", isSort: true },
+    { id: "views", label: "热门", isSort: true },
+    { id: "likes", label: "高赞", isSort: true },
+  ];
+
+  const handleFilterClick = (id: string | null, isSort: boolean) => {
+    if (isSort && id) {
+      setSortBy(id as SortBy);
+      setSelectedTag(null);
+    } else {
+      setSelectedTag(null);
+      setSortBy("recommend");
+    }
+  };
+
+  const handleTagClick = (tagId: string) => {
+    if (selectedTag === tagId) {
+      setSelectedTag(null);
+    } else {
+      setSelectedTag(tagId);
+    }
+  };
+
+  const isFilterActive = (id: string | null, isSort: boolean) => {
+    if (isSort) {
+      return selectedTag === null && sortBy === id;
+    }
+    return selectedTag === null && sortBy === "recommend" && id === null;
   };
 
   return (
@@ -79,10 +124,10 @@ export default function HomePage() {
       <WebsiteJsonLd />
       <OrganizationJsonLd />
 
-      <div className="container py-6">
-        {/* 公告横幅 - 使用 CSS 过渡避免水合错误 */}
+      <div className="container py-4">
+        {/* 公告横幅 */}
         <div 
-          className={`mb-6 relative overflow-hidden transition-all duration-300 ${
+          className={`mb-4 relative overflow-hidden transition-all duration-300 ${
             showAnnouncement ? "max-h-20 opacity-100" : "max-h-0 opacity-0"
           }`}
         >
@@ -102,144 +147,105 @@ export default function HomePage() {
 
         {/* 网站统计 */}
         <FadeIn delay={0.1}>
-          <section className="mb-8">
+          <section className="mb-4">
             <SiteStats />
           </section>
         </FadeIn>
 
-        <section className="mb-8">
-          {/* 标题和筛选区域 */}
-          <FadeIn delay={0.2} className="space-y-4 mb-6">
-            {/* 第一行：标题和排序 */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
-                <Sparkles className="h-6 w-6 text-primary" />
-                发现视频
-              </h1>
-              
-              {/* 排序按钮组 */}
-              <div className="flex items-center gap-2">
-                <div className="flex bg-muted rounded-lg p-1 gap-0.5 sm:gap-0">
-                  {sortOptions.map((option) => {
-                    const Icon = option.icon;
-                    const isActive = sortBy === option.value;
-                    return (
-                      <motion.button
-                        key={option.value}
-                        onClick={() => setSortBy(option.value)}
-                        className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${
-                          isActive 
-                            ? "bg-background text-foreground shadow-sm" 
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                      >
-                        <Icon className="h-4 w-4" />
-                        <span className="hidden sm:inline">{option.label}</span>
-                      </motion.button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* 第二行：时间范围和标签筛选 */}
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              {/* 时间范围 */}
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <div className="flex gap-1">
-                  {timeOptions.map((option) => (
-                    <motion.button
-                      key={option.value}
-                      onClick={() => setTimeRange(option.value)}
-                      className={`px-2 py-1 rounded-md text-[10px] sm:text-xs font-medium transition-colors ${
-                        timeRange === option.value
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80"
-                      }`}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      {option.label}
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 分隔线 */}
-              <div className="h-5 w-px bg-border hidden sm:block" />
-
-              {/* 热门标签 */}
-              {tagsData && tagsData.length > 0 && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Filter className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex gap-1.5 flex-wrap">
-                    {tagsData.slice(0, 6).map((tag, index) => (
-                      <div
-                        key={tag.id}
-                        className={`transition-transform hover:scale-105 active:scale-95 ${index >= 4 ? "hidden sm:inline-flex" : ""}`}
-                      >
-                        <Badge
-                          variant={selectedTag === tag.id ? "default" : "outline"}
-                          className="cursor-pointer text-xs"
-                          onClick={() => setSelectedTag(selectedTag === tag.id ? null : tag.id)}
-                        >
-                          {tag.name}
-                        </Badge>
-                      </div>
-                    ))}
-                    <Link href="/tags">
-                      <Badge variant="ghost" className="cursor-pointer text-xs hover:bg-muted">
-                        更多...
-                      </Badge>
-                    </Link>
-                  </div>
-                </div>
-              )}
-
-              {/* 重置筛选 */}
-              {hasFilters && (
-                <button
-                  onClick={resetFilters}
-                  className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        {/* YouTube 风格的标签栏 */}
+        <FadeIn delay={0.15}>
+          <div className="relative mb-6">
+            {/* 左侧渐变和箭头 */}
+            {showLeftArrow && (
+              <div className="absolute left-0 top-0 bottom-0 z-10 flex items-center">
+                <div className="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-background to-transparent pointer-events-none" />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full bg-background shadow-md hover:bg-accent relative z-10"
+                  onClick={() => scroll("left")}
                 >
-                  <RotateCcw className="h-3 w-3" />
-                  重置
-                </button>
-              )}
-            </div>
-
-            {/* 当前筛选状态 */}
-            {selectedTag && tagsData && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>正在筛选：</span>
-                <Badge variant="secondary" className="gap-1">
-                  {tagsData.find(t => t.id === selectedTag)?.name}
-                  <button onClick={() => setSelectedTag(null)}>
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
               </div>
             )}
-          </FadeIn>
 
-          <div key={`${sortBy}-${timeRange}-${selectedTag}`}>
+            {/* 标签滚动容器 */}
+            <div
+              ref={scrollContainerRef}
+              className="flex gap-2 overflow-x-auto scrollbar-none scroll-smooth px-1 py-1"
+              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+            >
+              {/* 排序/筛选按钮 */}
+              {filterOptions.map((option) => (
+                <button
+                  key={option.id || "all"}
+                  onClick={() => handleFilterClick(option.id, option.isSort)}
+                  className={cn(
+                    "shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap",
+                    isFilterActive(option.id, option.isSort)
+                      ? "bg-foreground text-background"
+                      : "bg-muted hover:bg-muted/80 text-foreground"
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+
+              {/* 分隔线 */}
+              <div className="shrink-0 w-px bg-border my-1" />
+
+              {/* 标签按钮 */}
+              {tagsData?.map((tag) => (
+                <button
+                  key={tag.id}
+                  onClick={() => handleTagClick(tag.id)}
+                  className={cn(
+                    "shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap",
+                    selectedTag === tag.id
+                      ? "bg-foreground text-background"
+                      : "bg-muted hover:bg-muted/80 text-foreground"
+                  )}
+                >
+                  {tag.name}
+                </button>
+              ))}
+            </div>
+
+            {/* 右侧渐变和箭头 */}
+            {showRightArrow && (
+              <div className="absolute right-0 top-0 bottom-0 z-10 flex items-center">
+                <div className="absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-background to-transparent pointer-events-none" />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-full bg-background shadow-md hover:bg-accent relative z-10"
+                  onClick={() => scroll("right")}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+        </FadeIn>
+
+        {/* 视频网格 */}
+        <section>
+          <div key={`${sortBy}-${selectedTag}`}>
             <VideoGrid videos={videos} isLoading={isLoading} />
             
             {/* 无结果提示 */}
             {!isLoading && videos.length === 0 && (
               <div className="text-center py-16">
                 <div className="text-muted-foreground mb-4">
-                  <Filter className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="text-lg font-medium">没有找到符合条件的视频</p>
-                  <p className="text-sm mt-1">尝试调整筛选条件</p>
+                  <p className="text-lg font-medium">没有找到视频</p>
+                  <p className="text-sm mt-1">
+                    {selectedTag ? "尝试选择其他标签" : "暂无视频内容"}
+                  </p>
                 </div>
-                {hasFilters && (
-                  <Button variant="outline" onClick={resetFilters} className="mt-4">
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    重置筛选
+                {selectedTag && (
+                  <Button variant="outline" onClick={() => setSelectedTag(null)} className="mt-4">
+                    清除筛选
                   </Button>
                 )}
               </div>

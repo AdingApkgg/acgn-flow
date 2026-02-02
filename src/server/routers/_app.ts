@@ -4,6 +4,7 @@ import { videoRouter } from "./video";
 import { tagRouter } from "./tag";
 import { adminRouter } from "./admin";
 import { commentRouter } from "./comment";
+import { guestbookRouter } from "./guestbook";
 
 export const appRouter = router({
   user: userRouter,
@@ -11,6 +12,7 @@ export const appRouter = router({
   tag: tagRouter,
   admin: adminRouter,
   comment: commentRouter,
+  guestbook: guestbookRouter,
 });
 
 export type AppRouter = typeof appRouter;

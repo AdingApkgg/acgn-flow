@@ -1,10 +1,10 @@
 "use client";
 
-/* eslint-disable react-hooks/set-state-in-effect */
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useIsMounted } from "@/components/motion";
 
 interface CaptchaInputProps {
   value: string;
@@ -13,14 +13,8 @@ interface CaptchaInputProps {
 }
 
 export function CaptchaInput({ value, onChange, error }: CaptchaInputProps) {
-  const [captchaKey, setCaptchaKey] = useState<number | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  // 只在客户端初始化 captchaKey
-  useEffect(() => {
-    setMounted(true);
-    setCaptchaKey(Date.now());
-  }, []);
+  const mounted = useIsMounted();
+  const [captchaKey, setCaptchaKey] = useState<number>(() => Date.now());
 
   const refreshCaptcha = useCallback(() => {
     setCaptchaKey(Date.now());

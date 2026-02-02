@@ -24,8 +24,8 @@ import {
   Shield,
   MessageSquare,
   Menu,
-  Home,
   Sparkles,
+  ChevronLeft,
 } from "lucide-react";
 
 const menuItems = [
@@ -108,8 +108,8 @@ function SidebarContent({
   return (
     <div className="flex flex-col h-full">
       {/* Logo / 标题 */}
-      <div className="p-4 border-b">
-        <Link href="/" className="flex items-center gap-2 text-lg font-semibold">
+      <div className="h-16 flex items-center px-4 border-b">
+        <Link href="/dashboard" className="flex items-center gap-2 text-lg font-semibold">
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
             <Shield className="h-4 w-4 text-primary-foreground" />
           </div>
@@ -118,8 +118,8 @@ function SidebarContent({
       </div>
 
       {/* 导航菜单 */}
-      <ScrollArea className="flex-1 p-3">
-        <nav className="space-y-1">
+      <ScrollArea className="flex-1 py-4">
+        <nav className="px-3 space-y-1">
           {visibleMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
@@ -169,7 +169,7 @@ function SidebarContent({
         {/* 返回首页 */}
         <Button variant="outline" size="sm" asChild className="w-full">
           <Link href="/">
-            <Home className="mr-2 h-4 w-4" />
+            <ChevronLeft className="mr-2 h-4 w-4" />
             返回首页
           </Link>
         </Button>
@@ -207,21 +207,26 @@ export default function DashboardLayout({
 
   if (status === "loading" || permissionsLoading) {
     return (
-      <div className="min-h-screen bg-muted/30">
-        <div className="flex">
+      <div className="fixed inset-0 z-50 bg-background">
+        <div className="flex h-full">
           {/* 桌面端侧边栏骨架 */}
-          <div className="hidden lg:block w-64 border-r bg-background">
-            <div className="p-4 space-y-4">
+          <div className="hidden lg:block w-64 border-r bg-card">
+            <div className="h-16 flex items-center px-4 border-b">
               <Skeleton className="h-8 w-32" />
-              <div className="space-y-2">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
+            </div>
+            <div className="p-4 space-y-2">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
             </div>
           </div>
+          {/* 移动端头部骨架 */}
+          <div className="lg:hidden fixed top-0 left-0 right-0 h-16 border-b bg-card flex items-center px-4">
+            <Skeleton className="h-8 w-8" />
+            <Skeleton className="h-6 w-24 ml-4" />
+          </div>
           {/* 内容骨架 */}
-          <div className="flex-1 p-6">
+          <div className="flex-1 p-6 pt-20 lg:pt-6">
             <Skeleton className="h-8 w-48 mb-6" />
             <Skeleton className="h-[400px] w-full" />
           </div>
@@ -235,15 +240,15 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-muted/30">
-      <div className="flex">
+    <div className="fixed inset-0 z-50 bg-background">
+      <div className="flex h-full">
         {/* 桌面端侧边栏 */}
-        <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 border-r bg-background">
+        <aside className="hidden lg:flex lg:flex-col w-64 border-r bg-card shrink-0">
           <SidebarContent permissions={permissions} pathname={pathname} />
         </aside>
 
         {/* 移动端头部 */}
-        <div className="lg:hidden fixed top-0 left-0 right-0 z-40 h-14 border-b bg-background flex items-center px-4 gap-4">
+        <div className="lg:hidden fixed top-0 left-0 right-0 z-50 h-16 border-b bg-card flex items-center px-4 gap-4">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon">
@@ -265,8 +270,8 @@ export default function DashboardLayout({
         </div>
 
         {/* 主内容区 */}
-        <main className="flex-1 lg:pl-64">
-          <div className="p-4 lg:p-6 pt-[72px] lg:pt-6">
+        <main className="flex-1 overflow-auto">
+          <div className="p-4 lg:p-6 pt-20 lg:pt-6 min-h-full">
             {children}
           </div>
         </main>

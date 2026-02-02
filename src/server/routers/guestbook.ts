@@ -5,77 +5,21 @@ import { Prisma } from "@/generated/prisma/client";
 import { getIpLocation } from "@/lib/ip-location";
 import { parseDeviceInfo, type DeviceInfo } from "@/lib/device-info";
 
-// 排序类型
 const SortType = z.enum(["newest", "oldest", "popular"]);
 
-export const commentRouter = router({
-  // 获取全站最新评论流
-  listRecent: publicProcedure
-    .input(
-      z.object({
-        cursor: z.string().optional(),
-        limit: z.number().min(1).max(50).default(10),
-      })
-    )
-    .query(async ({ ctx, input }) => {
-      const { cursor, limit } = input;
-
-      const comments = await ctx.prisma.comment.findMany({
-        where: {
-          isDeleted: false,
-          isHidden: false,
-          video: {
-            status: "PUBLISHED",
-          },
-        },
-        take: limit + 1,
-        cursor: cursor ? { id: cursor } : undefined,
-        orderBy: { createdAt: "desc" },
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              nickname: true,
-              avatar: true,
-            },
-          },
-          video: {
-            select: {
-              id: true,
-              title: true,
-              coverUrl: true,
-            },
-          },
-        },
-      });
-
-      let nextCursor: string | undefined;
-      if (comments.length > limit) {
-        const nextItem = comments.pop();
-        nextCursor = nextItem?.id;
-      }
-
-      return {
-        comments,
-        nextCursor,
-      };
-    }),
-
-  // 获取视频评论列表
+export const guestbookRouter = router({
+  // 获取留言列表
   list: publicProcedure
     .input(
       z.object({
-        videoId: z.string(),
         sort: SortType.default("newest"),
         cursor: z.string().optional(),
         limit: z.number().min(1).max(50).default(20),
       })
     )
     .query(async ({ ctx, input }) => {
-      const { videoId, sort, cursor, limit } = input;
+      const { sort, cursor, limit } = input;
 
-      // 构建排序条件
       const orderBy = (() => {
         switch (sort) {
           case "oldest":
@@ -87,10 +31,8 @@ export const commentRouter = router({
         }
       })();
 
-      // 查询顶级评论（parentId 为 null）
-      const comments = await ctx.prisma.comment.findMany({
+      const messages = await ctx.prisma.guestbook.findMany({
         where: {
-          videoId,
           parentId: null,
           isDeleted: false,
           isHidden: false,
@@ -127,39 +69,38 @@ export const commentRouter = router({
       });
 
       let nextCursor: string | undefined;
-      if (comments.length > limit) {
-        const nextItem = comments.pop();
+      if (messages.length > limit) {
+        const nextItem = messages.pop();
         nextCursor = nextItem?.id;
       }
 
-      // 处理用户反应状态
-      const commentsWithReaction = comments.map((comment) => ({
-        ...comment,
-        userReaction: comment.reactions?.[0]?.isLike ?? null,
+      const messagesWithReaction = messages.map((msg) => ({
+        ...msg,
+        userReaction: msg.reactions?.[0]?.isLike ?? null,
         reactions: undefined,
       }));
 
       return {
-        comments: commentsWithReaction,
+        messages: messagesWithReaction,
         nextCursor,
       };
     }),
 
-  // 获取评论的回复
+  // 获取留言的回复
   getReplies: publicProcedure
     .input(
       z.object({
-        commentId: z.string(),
+        messageId: z.string(),
         cursor: z.string().optional(),
         limit: z.number().min(1).max(50).default(10),
       })
     )
     .query(async ({ ctx, input }) => {
-      const { commentId, cursor, limit } = input;
+      const { messageId, cursor, limit } = input;
 
-      const replies = await ctx.prisma.comment.findMany({
+      const replies = await ctx.prisma.guestbook.findMany({
         where: {
-          parentId: commentId,
+          parentId: messageId,
           isDeleted: false,
           isHidden: false,
         },
@@ -209,28 +150,24 @@ export const commentRouter = router({
       };
     }),
 
-  // 获取评论数量
-  getCount: publicProcedure
-    .input(z.object({ videoId: z.string() }))
-    .query(async ({ ctx, input }) => {
-      const count = await ctx.prisma.comment.count({
-        where: {
-          videoId: input.videoId,
-          isDeleted: false,
-          isHidden: false,
-        },
-      });
-      return count;
-    }),
+  // 获取留言数量
+  getCount: publicProcedure.query(async ({ ctx }) => {
+    const count = await ctx.prisma.guestbook.count({
+      where: {
+        isDeleted: false,
+        isHidden: false,
+      },
+    });
+    return count;
+  }),
 
-  // 发表评论
+  // 发表留言
   create: protectedProcedure
     .input(
       z.object({
-        videoId: z.string(),
         content: z.string().min(1).max(2000),
         parentId: z.string().optional(),
-        replyToUserId: z.string().optional(), // 回复的目标用户
+        replyToUserId: z.string().optional(),
         gpsLocation: z.string().optional(),
         deviceInfo: z
           .object({
@@ -253,20 +190,16 @@ export const commentRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { videoId, content, parentId, replyToUserId, gpsLocation, deviceInfo } = input;
+      const { content, parentId, replyToUserId, gpsLocation, deviceInfo } = input;
       const userId = ctx.session.user.id;
-      
-      // 获取 IPv4 和 IPv6 位置
+
       const [ipv4Location, ipv6Location] = await Promise.all([
         getIpLocation(ctx.ipv4Address),
         getIpLocation(ctx.ipv6Address),
       ]);
-      
-      // 如果客户端传递了设备信息（包含高精度版本），直接使用
-      // 否则用 User-Agent 解析（精度较低）
+
       let normalizedDeviceInfo: DeviceInfo;
       if (deviceInfo && deviceInfo.os && deviceInfo.osVersion) {
-        // 客户端传递了完整的高精度设备信息，直接使用
         normalizedDeviceInfo = {
           deviceType: deviceInfo.deviceType || "desktop",
           os: deviceInfo.os,
@@ -284,43 +217,27 @@ export const commentRouter = router({
           fingerprint: deviceInfo.fingerprint || "unknown",
         };
       } else {
-        // 回退到 User-Agent 解析
         normalizedDeviceInfo = parseDeviceInfo(ctx.userAgent, deviceInfo);
       }
 
-      // 验证视频存在
-      const video = await ctx.prisma.video.findUnique({
-        where: { id: videoId },
-        select: { id: true, status: true },
-      });
-
-      if (!video || video.status !== "PUBLISHED") {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "视频不存在",
-        });
-      }
-
-      // 如果是回复，验证父评论存在
       if (parentId) {
-        const parentComment = await ctx.prisma.comment.findUnique({
+        const parentMessage = await ctx.prisma.guestbook.findUnique({
           where: { id: parentId },
-          select: { id: true, videoId: true, isDeleted: true, userId: true },
+          select: { id: true, isDeleted: true },
         });
 
-        if (!parentComment || parentComment.isDeleted || parentComment.videoId !== videoId) {
+        if (!parentMessage || parentMessage.isDeleted) {
           throw new TRPCError({
             code: "NOT_FOUND",
-            message: "评论不存在",
+            message: "留言不存在",
           });
         }
       }
 
-      const comment = await ctx.prisma.comment.create({
+      const message = await ctx.prisma.guestbook.create({
         data: {
           content,
           userId,
-          videoId,
           parentId,
           replyToUserId,
           ipv4Address: ctx.ipv4Address,
@@ -353,7 +270,6 @@ export const commentRouter = router({
         },
       });
 
-      // 更新用户最近位置（优先使用 IPv4，其次 IPv6）
       const lastIpLocation = ipv4Location || ipv6Location;
       await ctx.prisma.user.update({
         where: { id: userId },
@@ -363,7 +279,6 @@ export const commentRouter = router({
         },
       });
 
-      // 记录设备历史
       await ctx.prisma.userDevice.upsert({
         where: {
           userId_fingerprint: {
@@ -407,12 +322,12 @@ export const commentRouter = router({
       });
 
       return {
-        ...comment,
+        ...message,
         userReaction: null,
       };
     }),
 
-  // 编辑评论
+  // 编辑留言
   update: protectedProcedure
     .input(
       z.object({
@@ -424,26 +339,26 @@ export const commentRouter = router({
       const { id, content } = input;
       const userId = ctx.session.user.id;
 
-      const comment = await ctx.prisma.comment.findUnique({
+      const message = await ctx.prisma.guestbook.findUnique({
         where: { id },
         select: { userId: true, isDeleted: true },
       });
 
-      if (!comment || comment.isDeleted) {
+      if (!message || message.isDeleted) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "评论不存在",
+          message: "留言不存在",
         });
       }
 
-      if (comment.userId !== userId) {
+      if (message.userId !== userId) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "无权编辑此评论",
+          message: "无权编辑此留言",
         });
       }
 
-      const updated = await ctx.prisma.comment.update({
+      const updated = await ctx.prisma.guestbook.update({
         where: { id },
         data: {
           content,
@@ -454,38 +369,36 @@ export const commentRouter = router({
       return updated;
     }),
 
-  // 删除评论
+  // 删除留言
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const userRole = ctx.session.user.role;
 
-      const comment = await ctx.prisma.comment.findUnique({
+      const message = await ctx.prisma.guestbook.findUnique({
         where: { id: input.id },
         select: { userId: true, isDeleted: true },
       });
 
-      if (!comment || comment.isDeleted) {
+      if (!message || message.isDeleted) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "评论不存在",
+          message: "留言不存在",
         });
       }
 
-      // 只有评论作者或管理员可以删除
-      const isOwner = comment.userId === userId;
+      const isOwner = message.userId === userId;
       const isAdmin = userRole === "ADMIN" || userRole === "OWNER";
 
       if (!isOwner && !isAdmin) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "无权删除此评论",
+          message: "无权删除此留言",
         });
       }
 
-      // 软删除
-      await ctx.prisma.comment.update({
+      await ctx.prisma.guestbook.update({
         where: { id: input.id },
         data: { isDeleted: true },
       });
@@ -493,34 +406,33 @@ export const commentRouter = router({
       return { success: true };
     }),
 
-  // 点赞/踩评论
+  // 点赞/踩留言
   react: protectedProcedure
     .input(
       z.object({
-        commentId: z.string(),
-        isLike: z.boolean().nullable(), // null = 取消反应
+        messageId: z.string(),
+        isLike: z.boolean().nullable(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { commentId, isLike } = input;
+      const { messageId, isLike } = input;
       const userId = ctx.session.user.id;
 
-      const comment = await ctx.prisma.comment.findUnique({
-        where: { id: commentId },
+      const message = await ctx.prisma.guestbook.findUnique({
+        where: { id: messageId },
         select: { id: true, likes: true, dislikes: true, isDeleted: true },
       });
 
-      if (!comment || comment.isDeleted) {
+      if (!message || message.isDeleted) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "评论不存在",
+          message: "留言不存在",
         });
       }
 
-      // 查找现有反应
-      const existingReaction = await ctx.prisma.commentReaction.findUnique({
+      const existingReaction = await ctx.prisma.guestbookReaction.findUnique({
         where: {
-          userId_commentId: { userId, commentId },
+          userId_guestbookId: { userId, guestbookId: messageId },
         },
       });
 
@@ -528,18 +440,16 @@ export const commentRouter = router({
       let dislikeDelta = 0;
 
       if (isLike === null) {
-        // 取消反应
         if (existingReaction) {
-          await ctx.prisma.commentReaction.delete({
+          await ctx.prisma.guestbookReaction.delete({
             where: { id: existingReaction.id },
           });
           likeDelta = existingReaction.isLike ? -1 : 0;
           dislikeDelta = existingReaction.isLike ? 0 : -1;
         }
       } else if (existingReaction) {
-        // 更新反应
         if (existingReaction.isLike !== isLike) {
-          await ctx.prisma.commentReaction.update({
+          await ctx.prisma.guestbookReaction.update({
             where: { id: existingReaction.id },
             data: { isLike },
           });
@@ -547,18 +457,16 @@ export const commentRouter = router({
           dislikeDelta = isLike ? -1 : 1;
         }
       } else {
-        // 创建新反应
-        await ctx.prisma.commentReaction.create({
-          data: { userId, commentId, isLike },
+        await ctx.prisma.guestbookReaction.create({
+          data: { userId, guestbookId: messageId, isLike },
         });
         likeDelta = isLike ? 1 : 0;
         dislikeDelta = isLike ? 0 : 1;
       }
 
-      // 更新评论的点赞/踩计数
       if (likeDelta !== 0 || dislikeDelta !== 0) {
-        await ctx.prisma.comment.update({
-          where: { id: commentId },
+        await ctx.prisma.guestbook.update({
+          where: { id: messageId },
           data: {
             likes: { increment: likeDelta },
             dislikes: { increment: dislikeDelta },
@@ -567,65 +475,52 @@ export const commentRouter = router({
       }
 
       return {
-        likes: comment.likes + likeDelta,
-        dislikes: comment.dislikes + dislikeDelta,
+        likes: message.likes + likeDelta,
+        dislikes: message.dislikes + dislikeDelta,
         userReaction: isLike,
       };
     }),
 
-  // 置顶评论（仅视频上传者/管理员）
+  // 置顶留言（仅管理员）
   pin: protectedProcedure
     .input(
       z.object({
-        commentId: z.string(),
+        messageId: z.string(),
         isPinned: z.boolean(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { commentId, isPinned } = input;
-      const userId = ctx.session.user.id;
+      const { messageId, isPinned } = input;
       const userRole = ctx.session.user.role;
 
-      const comment = await ctx.prisma.comment.findUnique({
-        where: { id: commentId },
-        include: {
-          video: {
-            select: { uploaderId: true },
-          },
-        },
-      });
-
-      if (!comment || comment.isDeleted) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "评论不存在",
-        });
-      }
-
-      // 只有视频上传者或管理员可以置顶
-      const isUploader = comment.video.uploaderId === userId;
       const isAdmin = userRole === "ADMIN" || userRole === "OWNER";
-
-      if (!isUploader && !isAdmin) {
+      if (!isAdmin) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "无权置顶评论",
+          message: "无权置顶留言",
         });
       }
 
-      // 如果要置顶，先取消其他置顶
+      const message = await ctx.prisma.guestbook.findUnique({
+        where: { id: messageId },
+      });
+
+      if (!message || message.isDeleted) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "留言不存在",
+        });
+      }
+
       if (isPinned) {
-        await ctx.prisma.comment.updateMany({
-          where: {
-            videoId: comment.videoId,
-            isPinned: true,
-          },
+        await ctx.prisma.guestbook.updateMany({
+          where: { isPinned: true },
           data: { isPinned: false },
         });
       }
 
-      await ctx.prisma.comment.update({
-        where: { id: commentId },
+      await ctx.prisma.guestbook.update({
+        where: { id: messageId },
         data: { isPinned },
       });
 

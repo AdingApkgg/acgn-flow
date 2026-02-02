@@ -25,13 +25,13 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/tags" className="hover:text-foreground transition-colors">
-                  标签
+                <Link href="/search" className="hover:text-foreground transition-colors">
+                  搜索
                 </Link>
               </li>
               <li>
-                <Link href="/search" className="hover:text-foreground transition-colors">
-                  搜索
+                <Link href="/comments" className="hover:text-foreground transition-colors">
+                  留言
                 </Link>
               </li>
             </ul>
@@ -61,11 +61,6 @@ export function Footer() {
           <div>
             <h3 className="font-semibold mb-4">更多</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li>
-                <Link href="/comments" className="hover:text-foreground transition-colors">
-                  留言板
-                </Link>
-              </li>
               <li>
                 <Link href="/feed.xml" className="hover:text-foreground transition-colors">
                   RSS 订阅

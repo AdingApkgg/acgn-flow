@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
-import { CacheFirst, ExpirationPlugin, NetworkFirst, NetworkOnly, Serwist, StaleWhileRevalidate } from "serwist";
+import { CacheableResponsePlugin, CacheFirst, ExpirationPlugin, NetworkFirst, NetworkOnly, Serwist, StaleWhileRevalidate } from "serwist";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -34,6 +34,7 @@ const serwist = new Serwist({
       handler: new CacheFirst({
         cacheName: "static-assets",
         plugins: [
+          new CacheableResponsePlugin({ statuses: [0, 200] }),
           new ExpirationPlugin({
             maxEntries: 100,
             maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
@@ -47,6 +48,7 @@ const serwist = new Serwist({
       handler: new CacheFirst({
         cacheName: "images",
         plugins: [
+          new CacheableResponsePlugin({ statuses: [0, 200] }),
           new ExpirationPlugin({
             maxEntries: 50,
             maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
@@ -61,6 +63,7 @@ const serwist = new Serwist({
       handler: new CacheFirst({
         cacheName: "fonts",
         plugins: [
+          new CacheableResponsePlugin({ statuses: [0, 200] }),
           new ExpirationPlugin({
             maxEntries: 20,
             maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
@@ -68,12 +71,13 @@ const serwist = new Serwist({
         ],
       }),
     },
-    // API 请求 - 网络优先
+    // API 请求 - 网络优先（只缓存成功响应）
     {
       matcher: /\/api\/.*/i,
       handler: new NetworkFirst({
         cacheName: "api",
         plugins: [
+          new CacheableResponsePlugin({ statuses: [200] }),
           new ExpirationPlugin({
             maxEntries: 30,
             maxAgeSeconds: 60 * 5, // 5 minutes
@@ -88,6 +92,7 @@ const serwist = new Serwist({
       handler: new NetworkFirst({
         cacheName: "pages",
         plugins: [
+          new CacheableResponsePlugin({ statuses: [200] }),
           new ExpirationPlugin({
             maxEntries: 30,
             maxAgeSeconds: 60 * 60 * 24, // 1 day
@@ -102,6 +107,7 @@ const serwist = new Serwist({
       handler: new StaleWhileRevalidate({
         cacheName: "js-css",
         plugins: [
+          new CacheableResponsePlugin({ statuses: [0, 200] }),
           new ExpirationPlugin({
             maxEntries: 50,
             maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days

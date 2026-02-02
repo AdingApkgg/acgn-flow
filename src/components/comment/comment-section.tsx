@@ -20,6 +20,7 @@ import { CommentItem } from "./comment-item";
 import Link from "next/link";
 import { parseDeviceInfo, getHighEntropyDeviceInfo, mergeDeviceInfo, type DeviceInfo } from "@/lib/device-info";
 import { getGpsLocation, formatGpsLocation } from "@/lib/geolocation";
+import { useIsMounted } from "@/components/motion";
 
 interface CommentSectionProps {
   videoId: string;
@@ -32,17 +33,11 @@ export function CommentSection({ videoId }: CommentSectionProps) {
   const [sort, setSort] = useState<SortType>("newest");
   const [newComment, setNewComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
+  const isMounted = useIsMounted();
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [gpsLocation, setGpsLocation] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
-
-  // 客户端挂载检测，避免 hydration mismatch
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsMounted(true);
-  }, []);
 
   // 初始化设备信息（包括高精度版本获取）
   useEffect(() => {

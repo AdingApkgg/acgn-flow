@@ -126,9 +126,11 @@ export const adminRouter = router({
   getGrowthTrend: protectedProcedure
     .input(z.object({ days: z.number().min(7).max(90).default(30) }))
     .query(async ({ ctx, input }) => {
-      const since = new Date();
-      since.setDate(since.getDate() - input.days);
-      since.setHours(0, 0, 0, 0);
+      // 使用本地日期避免时区问题
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const since = new Date(today);
+      since.setDate(since.getDate() - input.days + 1); // +1 确保包含今天
 
       // 获取每日用户注册数
       const users = await ctx.prisma.user.findMany({
@@ -142,30 +144,35 @@ export const adminRouter = router({
         select: { createdAt: true },
       });
 
-      // 按日期分组
+      // 按日期分组（使用本地日期格式）
       const trend: Record<string, { users: number; videos: number }> = {};
 
       for (let i = 0; i < input.days; i++) {
         const date = new Date(since);
         date.setDate(date.getDate() + i);
-        const key = date.toISOString().split("T")[0];
+        // 使用本地日期格式 YYYY-MM-DD
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
         trend[key] = { users: 0, videos: 0 };
       }
 
       users.forEach((u) => {
-        const key = u.createdAt.toISOString().split("T")[0];
+        const d = new Date(u.createdAt);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         if (trend[key]) trend[key].users++;
       });
 
       videos.forEach((v) => {
-        const key = v.createdAt.toISOString().split("T")[0];
+        const d = new Date(v.createdAt);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         if (trend[key]) trend[key].videos++;
       });
 
-      return Object.entries(trend).map(([date, data]) => ({
-        date,
-        ...data,
-      }));
+      return Object.entries(trend)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, data]) => ({
+          date,
+          ...data,
+        }));
     }),
 
   // ========== 用户管理（站长专用）==========

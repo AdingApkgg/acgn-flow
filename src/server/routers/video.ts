@@ -10,6 +10,134 @@ const STATS_CACHE_TTL = 15; // 15 seconds - 短缓存，仅防止并发请求
 const SEARCH_SUGGESTIONS_CACHE_TTL = 300; // 5 minutes
 
 export const videoRouter = router({
+  // 记录搜索
+  recordSearch: publicProcedure
+    .input(z.object({
+      keyword: z.string().min(1).max(100),
+      resultCount: z.number().default(0),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // 标准化关键词
+      const keyword = input.keyword.trim().toLowerCase();
+      if (keyword.length < 2) return { success: true };
+
+      await ctx.prisma.searchRecord.create({
+        data: {
+          keyword,
+          userId: ctx.session?.user?.id,
+          resultCount: input.resultCount,
+        },
+      });
+
+      // 清除热搜缓存
+      await deleteCachePattern("search:hot*");
+
+      return { success: true };
+    }),
+
+  // 热搜榜
+  getHotSearches: publicProcedure
+    .input(z.object({ limit: z.number().min(1).max(20).default(10) }))
+    .query(async ({ ctx, input }) => {
+      const cacheKey = "search:hot";
+      const cached = await getCache<{ keyword: string; score: number; isHot: boolean }[]>(cacheKey);
+      if (cached) return cached;
+
+      // 获取最近 7 天的搜索记录
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      // 1. 基于实际搜索记录的热度（时间衰减）
+      const searchRecords = await ctx.prisma.searchRecord.groupBy({
+        by: ["keyword"],
+        where: {
+          createdAt: { gte: sevenDaysAgo },
+        },
+        _count: { keyword: true },
+        orderBy: { _count: { keyword: "desc" } },
+        take: 50,
+      });
+
+      // 2. 基于热门视频的标签
+      const hotVideos = await ctx.prisma.video.findMany({
+        where: { 
+          status: "PUBLISHED",
+          createdAt: { gte: sevenDaysAgo },
+        },
+        select: { 
+          views: true,
+          tags: {
+            include: { tag: { select: { name: true } } },
+            take: 3,
+          },
+        },
+        orderBy: { views: "desc" },
+        take: 30,
+      });
+
+      // 3. 合并计算热度分数
+      const scoreMap = new Map<string, { score: number; searchCount: number }>();
+
+      // 搜索记录权重（主要来源）
+      searchRecords.forEach((record) => {
+        const keyword = record.keyword;
+        const searchScore = record._count.keyword * 10; // 每次搜索 10 分
+        const existing = scoreMap.get(keyword) || { score: 0, searchCount: 0 };
+        scoreMap.set(keyword, {
+          score: existing.score + searchScore,
+          searchCount: record._count.keyword,
+        });
+      });
+
+      // 热门视频标签权重
+      hotVideos.forEach((video) => {
+        video.tags.forEach((t) => {
+          const tagName = t.tag.name.toLowerCase();
+          const tagScore = Math.log10(video.views + 1) * 5; // 播放量对数权重
+          const existing = scoreMap.get(tagName) || { score: 0, searchCount: 0 };
+          scoreMap.set(tagName, {
+            score: existing.score + tagScore,
+            searchCount: existing.searchCount,
+          });
+        });
+      });
+
+      // 4. 过滤和排序
+      const hotSearches = Array.from(scoreMap.entries())
+        .filter(([keyword]) => keyword.length >= 2 && keyword.length <= 20)
+        .sort((a, b) => b[1].score - a[1].score)
+        .slice(0, input.limit)
+        .map(([keyword, data], index) => ({
+          keyword,
+          score: Math.round(data.score),
+          isHot: index < 3 && data.searchCount > 5, // 前 3 且搜索次数 > 5 标记为热门
+        }));
+
+      // 5. 如果没有搜索记录，回退到标签热度
+      if (hotSearches.length < input.limit) {
+        const topTags = await ctx.prisma.tag.findMany({
+          select: { name: true },
+          orderBy: { videos: { _count: "desc" } },
+          take: input.limit - hotSearches.length,
+        });
+
+        const existingKeywords = new Set(hotSearches.map(h => h.keyword.toLowerCase()));
+        topTags.forEach((tag) => {
+          if (!existingKeywords.has(tag.name.toLowerCase())) {
+            hotSearches.push({
+              keyword: tag.name,
+              score: 0,
+              isHot: false,
+            });
+          }
+        });
+      }
+
+      await setCache(cacheKey, hotSearches, 1800); // 缓存 30 分钟
+
+      return hotSearches;
+    }),
+
   // 搜索建议
   searchSuggestions: publicProcedure
     .input(
@@ -140,9 +268,10 @@ export const videoRouter = router({
         const userId = ctx.session?.user?.id;
         let preferredTagIds: string[] = [];
         let excludeVideoIds: string[] = [];
+        let searchKeywords: string[] = [];
 
         if (userId) {
-          const [history, likes, favorites] = await Promise.all([
+          const [history, likes, favorites, searchRecords] = await Promise.all([
             ctx.prisma.watchHistory.findMany({
               where: { userId },
               select: { videoId: true },
@@ -161,7 +290,31 @@ export const videoRouter = router({
               orderBy: { createdAt: "desc" },
               take: 50,
             }),
+            // 获取用户最近的搜索历史
+            ctx.prisma.searchRecord.findMany({
+              where: { userId },
+              select: { keyword: true, createdAt: true },
+              orderBy: { createdAt: "desc" },
+              take: 30,
+              distinct: ["keyword"],
+            }),
           ]);
+
+          // 提取搜索关键词（按时间衰减加权）
+          const now = Date.now();
+          const keywordWeights = new Map<string, number>();
+          searchRecords.forEach((record) => {
+            const daysSince = (now - record.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+            const weight = 1 / (1 + daysSince * 0.1); // 时间衰减
+            const currentWeight = keywordWeights.get(record.keyword) || 0;
+            keywordWeights.set(record.keyword, currentWeight + weight);
+          });
+          
+          // 取权重最高的关键词
+          searchKeywords = Array.from(keywordWeights.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([keyword]) => keyword);
 
           excludeVideoIds = history.map((item) => item.videoId);
           const interactionVideoIds = Array.from(
@@ -187,6 +340,27 @@ export const videoRouter = router({
               .sort((a, b) => b[1] - a[1])
               .slice(0, 10)
               .map(([tagId]) => tagId);
+          }
+
+          // 根据搜索关键词匹配标签
+          if (searchKeywords.length > 0) {
+            const matchingTags = await ctx.prisma.tag.findMany({
+              where: {
+                OR: searchKeywords.map(keyword => ({
+                  name: { contains: keyword, mode: "insensitive" as const },
+                })),
+              },
+              select: { id: true },
+              take: 10,
+            });
+            
+            // 合并搜索关键词匹配的标签（权重较高）
+            matchingTags.forEach(tag => {
+              if (!preferredTagIds.includes(tag.id)) {
+                preferredTagIds.unshift(tag.id); // 放在前面，优先级更高
+              }
+            });
+            preferredTagIds = preferredTagIds.slice(0, 15);
           }
         }
 
@@ -244,13 +418,25 @@ export const videoRouter = router({
               : 0;
           const tagBonus = tagMatchCount * 50;
 
+          // 搜索关键词匹配加分
+          let searchBonus = 0;
+          if (searchKeywords.length > 0) {
+            const titleLower = video.title.toLowerCase();
+            searchKeywords.forEach((keyword, index) => {
+              if (titleLower.includes(keyword)) {
+                // 匹配标题，按关键词优先级加分
+                searchBonus += 30 * (1 - index * 0.1);
+              }
+            });
+          }
+
           const baseScore =
             (video.views + likesCount * 5 + favoritesCount * 10) * decay;
 
           const randomFactor =
             0.9 + (hashString(`${video.id}-${hourSeed}`) % 21) / 100;
 
-          return { video, score: (baseScore + tagBonus) * randomFactor };
+          return { video, score: (baseScore + tagBonus + searchBonus) * randomFactor };
         });
 
         const ranked = scored
