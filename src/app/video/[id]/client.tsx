@@ -28,11 +28,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { formatViews, formatRelativeTime } from "@/lib/format";
 import { toast } from "sonner";
 import Link from "next/link";
-import { ArtalkComments } from "@/components/comment/artalk-comments";
+import { CommentSection } from "@/components/comment/comment-section";
 import { VideoJsonLd, BreadcrumbJsonLd } from "@/components/seo/json-ld";
 import type { SerializedVideo } from "./page";
 
@@ -58,16 +58,36 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
   const displayVideo = video || initialVideo;
 
   // 分P状态管理
+  const searchParams = useSearchParams();
   const hasPages = displayVideo?.pages && Array.isArray(displayVideo.pages) && displayVideo.pages.length > 1;
   
-  // 从URL中提取当前分P
-  const getInitialPage = () => {
-    if (!displayVideo?.videoUrl) return 1;
-    const match = displayVideo.videoUrl.match(/[?&]p=(\d+)/);
-    return match ? parseInt(match[1], 10) : 1;
-  };
+  // 从 URL 参数读取当前分P
+  const urlPage = searchParams.get("p");
+  const initialPage = urlPage ? parseInt(urlPage, 10) : 1;
   
-  const [currentPage, setCurrentPage] = useState(getInitialPage);
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  
+  // URL 参数变化时同步状态
+  useEffect(() => {
+    const p = searchParams.get("p");
+    const pageNum = p ? parseInt(p, 10) : 1;
+    if (pageNum !== currentPage && pageNum >= 1) {
+      setCurrentPage(pageNum);
+    }
+  }, [searchParams, currentPage]);
+  
+  // 切换分P时更新 URL
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+    // 更新 URL 但不刷新页面
+    const url = new URL(window.location.href);
+    if (page > 1) {
+      url.searchParams.set("p", String(page));
+    } else {
+      url.searchParams.delete("p");
+    }
+    window.history.replaceState({}, "", url.toString());
+  }, []);
   
   // 计算当前视频URL
   const currentVideoUrl = useMemo(() => {
@@ -426,11 +446,8 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
 
           <Separator className="my-6" />
 
-          {/* Artalk 评论区 */}
-          <ArtalkComments
-            pageKey={`/video/${id}`}
-            pageTitle={displayVideo.title}
-          />
+          {/* 评论区 */}
+          <CommentSection videoId={id} />
         </div>
 
         {/* 侧边栏 */}
@@ -449,7 +466,7 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
                 {(displayVideo.pages as { page: number; title: string }[]).map((page) => (
                   <button
                     key={page.page}
-                    onClick={() => setCurrentPage(page.page)}
+                    onClick={() => handlePageChange(page.page)}
                     className={`w-full flex items-center gap-2 p-2 rounded text-left text-sm transition-colors ${
                       currentPage === page.page
                         ? "bg-primary text-primary-foreground"

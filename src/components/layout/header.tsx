@@ -36,7 +36,7 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { SettingsPanel } from "./settings-panel";
 import { useIsMounted } from "@/components/motion";
 import { trpc } from "@/lib/trpc";
-import { useDebounce } from "@/lib/utils";
+import { useDebounce } from "@/lib/hooks";
 
 export function Header() {
   const { data: session, status } = useSession();

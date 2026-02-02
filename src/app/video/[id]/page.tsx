@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { VideoPageClient } from "./client";
-import { cache } from "react";
+import { cache, Suspense } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface VideoPageProps {
   params: Promise<{ id: string }>;
@@ -127,5 +128,27 @@ export default async function VideoPage({ params }: VideoPageProps) {
   // 在服务端序列化数据，传递给客户端
   const serializedVideo = serializeVideo(video);
 
-  return <VideoPageClient id={id} initialVideo={serializedVideo} />;
+  return (
+    <Suspense fallback={<VideoPageSkeleton />}>
+      <VideoPageClient id={id} initialVideo={serializedVideo} />
+    </Suspense>
+  );
+}
+
+function VideoPageSkeleton() {
+  return (
+    <div className="container py-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <Skeleton className="aspect-video w-full rounded-lg" />
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+        <div className="lg:col-span-1 space-y-4">
+          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-24 w-full rounded-lg" />
+        </div>
+      </div>
+    </div>
+  );
 }

@@ -21,8 +21,6 @@ export const env = createEnv({
   client: {
     NEXT_PUBLIC_APP_URL: z.string().url(),
     NEXT_PUBLIC_APP_NAME: z.string().default("ACGN Flow"),
-    NEXT_PUBLIC_ARTALK_SERVER: z.string().optional(),
-    NEXT_PUBLIC_ARTALK_SITE: z.string().optional(),
   },
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
@@ -40,8 +38,6 @@ export const env = createEnv({
     GOOGLE_PRIVATE_KEY: process.env.GOOGLE_PRIVATE_KEY,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
-    NEXT_PUBLIC_ARTALK_SERVER: process.env.NEXT_PUBLIC_ARTALK_SERVER,
-    NEXT_PUBLIC_ARTALK_SITE: process.env.NEXT_PUBLIC_ARTALK_SITE,
   },
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
   emptyStringAsUndefined: true,

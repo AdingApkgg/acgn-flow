@@ -9,7 +9,6 @@
          v
 内网机 (Rathole Client)
     |-- Next.js (:3000)
-    |-- Artalk (:8080)
     |-- PostgreSQL (:5432)
     |-- Redis (:6379)
 ```
@@ -19,7 +18,6 @@
 - **前端**: Next.js 16, React 19, TypeScript, Tailwind CSS v4, shadcn/ui, Three.js
 - **后端**: tRPC, Prisma 7, NextAuth.js v5
 - **数据库**: PostgreSQL, Redis
-- **评论**: Artalk
 - **部署**: Podman/Docker, Nginx, Rathole
 
 ## 内网机部署

@@ -177,12 +177,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // 从数据库获取最新的用户信息
         const dbUser = await prisma.user.findUnique({
           where: { id: token.sub },
-          select: { nickname: true, avatar: true, username: true },
+          select: { nickname: true, avatar: true, username: true, role: true },
         });
         
         if (dbUser) {
           session.user.name = dbUser.nickname || dbUser.username;
           session.user.image = dbUser.avatar;
+          session.user.role = dbUser.role;
         }
       }
       return session;
@@ -214,6 +215,7 @@ declare module "next-auth" {
       email?: string | null;
       name?: string | null;
       image?: string | null;
+      role?: "USER" | "ADMIN" | "OWNER";
     };
   }
 }

@@ -627,11 +627,22 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     const danmakuContainerRef = useRef<HTMLDivElement>(null);
     const danmakuRendererRef = useRef<DanmakuRenderer | null>(null);
     const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    
+    // 触摸操作相关
+    const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+    const touchMoveRef = useRef<{ x: number; y: number } | null>(null);
+    const lastTapRef = useRef<{ time: number; x: number } | null>(null);
+    const gestureActiveRef = useRef<"none" | "progress" | "volume" | "brightness">("none");
+    const gestureStartValueRef = useRef<number>(0);
+    
+    // 手势提示状态
+    const [gestureHint, setGestureHint] = useState<{ type: string; value: string } | null>(null);
+    const gestureHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // 客户端挂载状态（避免 hydration mismatch）
     const [isMounted, setIsMounted] = useState(false);
     useEffect(() => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 标准模式，用于检测客户端挂载
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsMounted(true);
     }, []);
 
@@ -678,7 +689,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
     // URL 变化时重置状态
     useEffect(() => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 必要的，用于在 URL 变化时重置播放器状态
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsReady(false);
       setHasError(false);
       setPlayed(0);
@@ -706,13 +717,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 加载弹幕数据
     useEffect(() => {
       if (danmakuList) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- 从 props 加载弹幕数据
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setDanmakuData(danmakuList);
         return;
       }
 
       if (!danmakuUrl) {
-         
         setDanmakuData([]);
         return;
       }
@@ -814,7 +824,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 加载字幕数据
     useEffect(() => {
       if (!currentSubtitle?.url) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- 清空字幕数据
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSubtitleCues([]);
         return;
       }
@@ -837,7 +847,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 更新当前显示的字幕
     useEffect(() => {
       if (!subtitlesEnabled || subtitleCues.length === 0) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- 清空当前字幕
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCurrentCue("");
         return;
       }
@@ -1032,15 +1042,318 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       [duration, getVideoElement]
     );
 
-    // 快进/快退
-    const skip = useCallback((seconds: number) => {
-      const video = containerRef.current?.querySelector("video");
-      if (video) {
-        video.currentTime = Math.max(0, Math.min(video.currentTime + seconds, video.duration));
+    // 显示手势提示
+    const showGestureHint = useCallback((type: string, value: string) => {
+      if (gestureHintTimeoutRef.current) {
+        clearTimeout(gestureHintTimeoutRef.current);
       }
+      setGestureHint({ type, value });
+      gestureHintTimeoutRef.current = setTimeout(() => {
+        setGestureHint(null);
+      }, 1000);
     }, []);
 
+    // 快进/快退
+    const skip = useCallback((seconds: number, showHint = false) => {
+      const video = containerRef.current?.querySelector("video");
+      if (video) {
+        const newTime = Math.max(0, Math.min(video.currentTime + seconds, video.duration));
+        video.currentTime = newTime;
+        if (showHint) {
+          const sign = seconds > 0 ? "+" : "";
+          showGestureHint("progress", `${sign}${seconds}秒`);
+        }
+      }
+    }, [showGestureHint]);
+
+    // 调整音量
+    const adjustVolume = useCallback((delta: number) => {
+      setVolume((prev) => {
+        const newVol = Math.max(0, Math.min(1, prev + delta));
+        if (newVol > 0) setIsMuted(false);
+        showGestureHint("volume", `${Math.round(newVol * 100)}%`);
+        return newVol;
+      });
+    }, [showGestureHint]);
+
+    // 键盘快捷键
+    useEffect(() => {
+      if (!showPlayer || !isReady) return;
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        // 忽略在输入框中的按键
+        if (
+          e.target instanceof HTMLInputElement ||
+          e.target instanceof HTMLTextAreaElement ||
+          (e.target as HTMLElement).isContentEditable
+        ) {
+          return;
+        }
+
+        // 只有当播放器容器或其子元素获得焦点时才响应
+        const container = containerRef.current;
+        if (!container) return;
+
+        // 检查是否在全屏模式或焦点在播放器内
+        const isPlayerFocused = 
+          document.fullscreenElement === container ||
+          container.contains(document.activeElement) ||
+          document.activeElement === document.body;
+
+        if (!isPlayerFocused) return;
+
+        switch (e.key) {
+          case " ": // 空格：播放/暂停
+          case "k": // K 键：播放/暂停（YouTube 风格）
+            e.preventDefault();
+            setIsPlaying((prev) => !prev);
+            break;
+          case "ArrowLeft": // 左箭头：快退
+            e.preventDefault();
+            skip(e.shiftKey ? -10 : -5, true);
+            break;
+          case "ArrowRight": // 右箭头：快进
+            e.preventDefault();
+            skip(e.shiftKey ? 10 : 5, true);
+            break;
+          case "ArrowUp": // 上箭头：音量增加
+            e.preventDefault();
+            adjustVolume(0.1);
+            break;
+          case "ArrowDown": // 下箭头：音量减少
+            e.preventDefault();
+            adjustVolume(-0.1);
+            break;
+          case "m": // M 键：静音切换
+          case "M":
+            e.preventDefault();
+            setIsMuted((prev) => !prev);
+            break;
+          case "f": // F 键：全屏切换
+          case "F":
+            e.preventDefault();
+            toggleFullscreen();
+            break;
+          case "Escape": // ESC 键：退出全屏
+            if (document.fullscreenElement) {
+              document.exitFullscreen();
+            }
+            break;
+          case "j": // J 键：快退 10 秒（YouTube 风格）
+          case "J":
+            e.preventDefault();
+            skip(-10, true);
+            break;
+          case "l": // L 键：快进 10 秒（YouTube 风格）
+          case "L":
+            e.preventDefault();
+            skip(10, true);
+            break;
+          case "0":
+          case "1":
+          case "2":
+          case "3":
+          case "4":
+          case "5":
+          case "6":
+          case "7":
+          case "8":
+          case "9":
+            // 数字键：跳转到对应百分比
+            e.preventDefault();
+            const percent = parseInt(e.key) / 10;
+            const video = getVideoElement();
+            if (video && video.duration) {
+              video.currentTime = video.duration * percent;
+              showGestureHint("progress", `${parseInt(e.key) * 10}%`);
+            }
+            break;
+          case ",": // < 键：降低播放速度
+            e.preventDefault();
+            setPlaybackRate((prev) => {
+              const rates = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
+              const idx = rates.indexOf(prev);
+              const newRate = rates[Math.max(0, idx - 1)] || prev;
+              showGestureHint("speed", `${newRate}x`);
+              return newRate;
+            });
+            break;
+          case ".": // > 键：提高播放速度
+            e.preventDefault();
+            setPlaybackRate((prev) => {
+              const rates = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
+              const idx = rates.indexOf(prev);
+              const newRate = rates[Math.min(rates.length - 1, idx + 1)] || prev;
+              showGestureHint("speed", `${newRate}x`);
+              return newRate;
+            });
+            break;
+        }
+      };
+
+      window.addEventListener("keydown", handleKeyDown);
+      return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [showPlayer, isReady, skip, adjustVolume, toggleFullscreen, getVideoElement, showGestureHint]);
+
     const handlePlay = useCallback(() => setShowPlayer(true), []);
+
+    // 鼠标双击处理
+    const lastClickRef = useRef<number>(0);
+    const handleVideoClick = useCallback((e: React.MouseEvent) => {
+      // 忽略控制栏区域的点击
+      if ((e.target as HTMLElement).closest("[data-controls]")) return;
+      
+      const now = Date.now();
+      const timeSinceLastClick = now - lastClickRef.current;
+      
+      if (timeSinceLastClick < 300) {
+        // 双击：全屏切换
+        toggleFullscreen();
+        lastClickRef.current = 0; // 重置防止三击
+      } else {
+        // 单击：播放/暂停（延迟执行，等待可能的双击）
+        lastClickRef.current = now;
+        setTimeout(() => {
+          if (Date.now() - lastClickRef.current >= 300) {
+            setIsPlaying((prev) => !prev);
+          }
+        }, 300);
+      }
+    }, [toggleFullscreen]);
+
+    // 触摸开始
+    const handleTouchStart = useCallback((e: React.TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+      touchMoveRef.current = null;
+      gestureActiveRef.current = "none";
+      
+      // 获取当前值用于手势计算
+      gestureStartValueRef.current = playedSeconds;
+    }, [playedSeconds]);
+
+    // 触摸移动
+    const handleTouchMove = useCallback((e: React.TouchEvent) => {
+      if (!touchStartRef.current || e.touches.length !== 1) return;
+      
+      const touch = e.touches[0];
+      const container = containerRef.current;
+      if (!container) return;
+      
+      const rect = container.getBoundingClientRect();
+      const startX = touchStartRef.current.x;
+      const startY = touchStartRef.current.y;
+      const deltaX = touch.clientX - startX;
+      const deltaY = touch.clientY - startY;
+      
+      // 确定手势类型（仅在首次超过阈值时确定）
+      if (gestureActiveRef.current === "none") {
+        const threshold = 15;
+        if (Math.abs(deltaX) > threshold && Math.abs(deltaX) > Math.abs(deltaY)) {
+          // 水平滑动：调整进度
+          gestureActiveRef.current = "progress";
+          gestureStartValueRef.current = playedSeconds;
+        } else if (Math.abs(deltaY) > threshold && Math.abs(deltaY) > Math.abs(deltaX)) {
+          // 垂直滑动：左侧调整亮度，右侧调整音量
+          const isLeftSide = startX < rect.left + rect.width / 2;
+          if (isLeftSide) {
+            gestureActiveRef.current = "brightness"; // 亮度（当前不实现，仅显示提示）
+          } else {
+            gestureActiveRef.current = "volume";
+            gestureStartValueRef.current = volume;
+          }
+        }
+      }
+      
+      touchMoveRef.current = { x: touch.clientX, y: touch.clientY };
+      
+      // 执行手势操作
+      if (gestureActiveRef.current === "progress") {
+        // 进度调整：每 100px 对应 30 秒
+        const seekDelta = (deltaX / 100) * 30;
+        const newTime = Math.max(0, Math.min(duration, gestureStartValueRef.current + seekDelta));
+        const video = getVideoElement();
+        if (video) {
+          video.currentTime = newTime;
+        }
+        const sign = seekDelta >= 0 ? "+" : "";
+        showGestureHint("progress", `${formatTime(newTime)} (${sign}${Math.round(seekDelta)}秒)`);
+      } else if (gestureActiveRef.current === "volume") {
+        // 音量调整：每 100px 对应 50%
+        const volumeDelta = -(deltaY / 100) * 0.5;
+        const newVol = Math.max(0, Math.min(1, gestureStartValueRef.current + volumeDelta));
+        setVolume(newVol);
+        if (newVol > 0) setIsMuted(false);
+        showGestureHint("volume", `${Math.round(newVol * 100)}%`);
+      } else if (gestureActiveRef.current === "brightness") {
+        // 亮度调整（仅显示提示，实际亮度调整需要 CSS filter）
+        const brightnessDelta = -(deltaY / 100) * 50;
+        const newBrightness = Math.max(0, Math.min(100, 50 + brightnessDelta));
+        showGestureHint("brightness", `${Math.round(newBrightness)}%`);
+      }
+      
+      e.preventDefault(); // 阻止页面滚动
+    }, [duration, playedSeconds, volume, getVideoElement, showGestureHint]);
+
+    // 触摸结束
+    const handleTouchEnd = useCallback(() => {
+      const touchStart = touchStartRef.current;
+      const touchMove = touchMoveRef.current;
+      
+      if (!touchStart) return;
+      
+      const now = Date.now();
+      const touchDuration = now - touchStart.time;
+      
+      // 如果没有移动且是快速点击，检测双击
+      if (!touchMove && touchDuration < 300) {
+        const lastTap = lastTapRef.current;
+        
+        if (lastTap && now - lastTap.time < 300) {
+          // 双击检测
+          const container = containerRef.current;
+          if (container) {
+            const rect = container.getBoundingClientRect();
+            const tapX = touchStart.x - rect.left;
+            const width = rect.width;
+            
+            if (tapX < width / 3) {
+              // 双击左侧：快退 10 秒
+              skip(-10, true);
+            } else if (tapX > (width * 2) / 3) {
+              // 双击右侧：快进 10 秒
+              skip(10, true);
+            } else {
+              // 双击中间：全屏切换
+              toggleFullscreen();
+            }
+          }
+          lastTapRef.current = null;
+        } else {
+          // 单击：显示/隐藏控制栏
+          lastTapRef.current = { time: now, x: touchStart.x };
+          setTimeout(() => {
+            if (lastTapRef.current && Date.now() - lastTapRef.current.time >= 300) {
+              setShowControls((prev) => !prev);
+              lastTapRef.current = null;
+            }
+          }, 300);
+        }
+      }
+      
+      touchStartRef.current = null;
+      touchMoveRef.current = null;
+      gestureActiveRef.current = "none";
+      
+      // 延迟清除手势提示
+      if (gestureHintTimeoutRef.current) {
+        clearTimeout(gestureHintTimeoutRef.current);
+      }
+      gestureHintTimeoutRef.current = setTimeout(() => {
+        setGestureHint(null);
+      }, 500);
+    }, [skip, toggleFullscreen]);
 
     const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -1098,11 +1411,16 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       <div
         ref={containerRef}
         className={cn(
-          "relative aspect-video bg-black rounded-lg overflow-hidden group",
+          "relative aspect-video bg-black rounded-lg overflow-hidden group select-none",
           isFullscreen && "rounded-none"
         )}
+        tabIndex={0}
         onMouseMove={resetControlsTimeout}
         onMouseLeave={() => isPlaying && setShowControls(false)}
+        onClick={handleVideoClick}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         {/* 加载骨架屏 */}
         <div
@@ -1206,31 +1524,46 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           </div>
         )}
 
+        {/* 手势提示 */}
+        {gestureHint && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
+            <div className="bg-black/75 text-white px-4 py-2 rounded-lg text-center">
+              <div className="text-sm opacity-75 mb-1">
+                {gestureHint.type === "progress" && "进度"}
+                {gestureHint.type === "volume" && "音量"}
+                {gestureHint.type === "brightness" && "亮度"}
+                {gestureHint.type === "speed" && "速度"}
+              </div>
+              <div className="text-lg font-medium">{gestureHint.value}</div>
+            </div>
+          </div>
+        )}
+
         {/* 缓冲指示器 */}
         {isBuffering && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
             <Loader2 className="w-12 h-12 text-white animate-spin" />
           </div>
         )}
 
         {/* 中央播放按钮 */}
         {!isPlaying && isReady && (
-          <button
-            onClick={() => setIsPlaying(true)}
-            className="absolute inset-0 flex items-center justify-center bg-black/20"
-          >
-            <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center hover:scale-110 transition-transform">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center">
               <Play className="w-8 h-8 text-black ml-1" />
             </div>
-          </button>
+          </div>
         )}
 
         {/* 控制栏 */}
         <div
+          data-controls
           className={cn(
             "absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity duration-300",
             showControls || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
           )}
+          onClick={(e) => e.stopPropagation()} // 阻止事件冒泡到容器
+          onTouchEnd={(e) => e.stopPropagation()}
         >
           {/* 进度条 */}
           <div className="mb-3">

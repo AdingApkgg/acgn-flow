@@ -29,15 +29,18 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts      Account[]
-  sessions      Session[]
-  videos        Video[]
-  favorites     Favorite[]
-  watchHistory  WatchHistory[]
-  likes         Like[]
-  dislikes      Dislike[]
-  confused      Confused[]
-  playlists     Playlist[]
+  accounts         Account[]
+  sessions         Session[]
+  videos           Video[]
+  favorites        Favorite[]
+  watchHistory     WatchHistory[]
+  likes            Like[]
+  dislikes         Dislike[]
+  confused         Confused[]
+  playlists        Playlist[]
+  comments         Comment[]         @relation("CommentAuthor")
+  commentRepliesTo Comment[]         @relation("CommentReplyTo")
+  commentReactions CommentReaction[]
 
   @@index([email])
   @@index([username])
@@ -137,6 +140,7 @@ model Video {
   dislikes      Dislike[]
   confused      Confused[]
   playlistItems PlaylistItem[]
+  comments      Comment[]
 
   @@index([uploaderId])
   @@index([status])
@@ -275,4 +279,51 @@ model PlaylistItem {
   @@unique([playlistId, videoId])
   @@index([playlistId])
   @@index([videoId])
+}
+
+// ==================== 评论系统 ====================
+
+model Comment {
+  id            String   @id @default(cuid())
+  content       String   @db.Text
+  userId        String
+  videoId       String
+  parentId      String?  // 回复的父评论 ID（顶级评论的 ID）
+  replyToUserId String?  // 回复的目标用户 ID（用于 @用户名 显示）
+  
+  likes     Int      @default(0)
+  dislikes  Int      @default(0)
+  
+  isEdited  Boolean  @default(false)
+  isPinned  Boolean  @default(false)
+  isDeleted Boolean  @default(false) // 软删除
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User          @relation("CommentAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  video       Video         @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  parent      Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies     Comment[]     @relation("CommentReplies")
+  replyToUser User?         @relation("CommentReplyTo", fields: [replyToUserId], references: [id], onDelete: SetNull)
+  reactions   CommentReaction[]
+
+  @@index([videoId, createdAt])
+  @@index([videoId, likes])
+  @@index([userId])
+  @@index([parentId])
+}
+
+model CommentReaction {
+  id        String   @id @default(cuid())
+  userId    String
+  commentId String
+  isLike    Boolean  // true = 赞, false = 踩
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId])
+  @@index([commentId])
 }

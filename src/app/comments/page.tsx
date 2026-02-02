@@ -1,26 +1,9 @@
-"use client";
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageCircle } from "lucide-react";
-import { ArtalkComments } from "@/components/comment/artalk-comments";
+import { MessageCircle, Construction } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 export default function CommentsPage() {
-  const server = process.env.NEXT_PUBLIC_ARTALK_SERVER;
-  const site = process.env.NEXT_PUBLIC_ARTALK_SITE;
-
-  if (!server || !site) {
-    return (
-      <div className="container py-6 max-w-4xl">
-        <Card>
-          <CardContent className="py-12 text-center">
-            <MessageCircle className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">评论系统未配置</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="container py-6 max-w-4xl">
       <div className="flex items-center gap-3 mb-6">
@@ -35,16 +18,21 @@ export default function CommentsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">发表留言</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Construction className="h-5 w-5" />
+            功能升级中
+          </CardTitle>
           <CardDescription>
-            分享您对 ACGN Flow 的看法，或者提出功能建议
+            留言板功能正在升级，即将上线全新体验
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <ArtalkComments
-            pageKey="/comments"
-            pageTitle="留言板 - ACGN Flow"
-          />
+        <CardContent className="space-y-4">
+          <p className="text-muted-foreground">
+            您可以在视频页面下方发表评论，与其他用户交流讨论。
+          </p>
+          <Button asChild>
+            <Link href="/">浏览视频</Link>
+          </Button>
         </CardContent>
       </Card>
     </div>

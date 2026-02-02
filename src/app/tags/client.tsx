@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, X, Tags, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useDebounce } from "@/lib/utils";
+import { useDebounce } from "@/lib/hooks";
 
 interface TagData {
   id: string;

@@ -17,8 +17,6 @@ services:
       - AUTH_URL=${AUTH_URL}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
       - NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME}
-      - NEXT_PUBLIC_ARTALK_SERVER=${NEXT_PUBLIC_ARTALK_SERVER}
-      - NEXT_PUBLIC_ARTALK_SITE=${NEXT_PUBLIC_ARTALK_SITE}
     volumes:
       - ../uploads:/app/uploads
     depends_on:
