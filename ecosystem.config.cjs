@@ -26,7 +26,6 @@ module.exports = {
       min_uptime: "30s", // 增加最小运行时间判定
       // 优雅关闭
       kill_timeout: 5000, // 给 5 秒时间优雅关闭
-      listen_timeout: 10000, // 启动后 10 秒内需要监听端口
       // 自动重启
       autorestart: true,
     },
