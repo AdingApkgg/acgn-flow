@@ -374,19 +374,6 @@ function intToHexColor(value: number): string {
   return hex;
 }
 
-// 内联 varint 解码（避免函数调用开销）
-function readVarint(data: Uint8Array, offset: number): [number, number] {
-  let value = 0;
-  let shift = 0;
-  while (offset < data.length) {
-    const byte = data[offset++];
-    value |= (byte & 0x7f) << shift;
-    if ((byte & 0x80) === 0) break;
-    shift += 7;
-  }
-  return [value, offset];
-}
-
 /**
  * 解析 protobuf 格式的弹幕数据（优化版）
  * 使用预分配数组、复用 TextDecoder、避免 slice 操作

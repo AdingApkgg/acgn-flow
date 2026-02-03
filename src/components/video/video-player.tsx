@@ -987,7 +987,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       getCurrentTime: () => playedSeconds,
       getDuration: () => duration,
       getDanmakuData: () => danmakuData,
-    }), [playedSeconds, duration, danmakuData]);
+    }), [playedSeconds, duration, danmakuData, getVideoElement]);
 
     // 加载弹幕数据
     useEffect(() => {

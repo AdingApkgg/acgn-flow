@@ -8,6 +8,7 @@ import type { Provider } from "next-auth/providers";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import { nanoid } from "nanoid";
 
 const loginSchema = z.object({
   identifier: z.string().min(1), // 可以是邮箱或用户名
@@ -171,8 +172,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true;
     },
     async session({ session, token }) {
+      // 检查会话是否被撤销
+      if ((token as { isRevoked?: boolean }).isRevoked) {
+        // 会话已被撤销，清空用户信息
+        session.user = null as unknown as typeof session.user;
+        return session;
+      }
+      
       if (token.sub && session.user) {
         session.user.id = token.sub;
+        session.jti = token.jti as string;
         
         // 从数据库获取最新的用户信息
         const dbUser = await prisma.user.findUnique({
@@ -201,7 +210,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         } else {
           token.sub = user.id;
         }
+        
+        // 首次登录时生成 jti（JWT ID）
+        if (!token.jti) {
+          token.jti = nanoid(16);
+        }
       }
+      
+      // 检查会话是否被撤销
+      if (token.jti && token.sub) {
+        const loginSession = await prisma.loginSession.findUnique({
+          where: { jti: token.jti as string },
+          select: { isRevoked: true },
+        });
+        
+        if (loginSession?.isRevoked) {
+          // 会话已被撤销，返回空 token 使其失效
+          return { ...token, isRevoked: true };
+        }
+      }
+      
       return token;
     },
   },
@@ -217,5 +245,6 @@ declare module "next-auth" {
       image?: string | null;
       role?: "USER" | "ADMIN" | "OWNER";
     };
+    jti?: string; // JWT ID，用于会话管理
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { Header } from "./header";
 import { Sidebar } from "./sidebar";
@@ -35,18 +35,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isNoSidebarPage = shouldHideSidebar(pathname);
   
   // YouTube 风格：默认展开侧边栏
-  const [sidebarExpanded, setSidebarExpanded] = useState(true);
-  
-  // 客户端挂载后从 localStorage 读取
-  useEffect(() => {
+  // 使用惰性初始化避免 effect 中 setState
+  const [sidebarExpanded, setSidebarExpanded] = useState(() => {
+    if (typeof window === "undefined") return true;
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-    if (saved !== null) {
-      setSidebarExpanded(saved !== "true");
-    }
-  }, []);
+    return saved === null ? true : saved !== "true";
+  });
   
   // 视频页面独立的展开状态（默认隐藏）
   const [videoPageSidebarOpen, setVideoPageSidebarOpen] = useState(false);
+  
+  // 追踪上一次的 pathname 来重置视频页面侧边栏
+  const prevPathnameRef = useRef(pathname);
 
   // 当 localStorage 变化时同步状态
   useEffect(() => {
@@ -61,7 +61,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   
   // 切换页面时重置视频页面的侧边栏状态
   useEffect(() => {
-    setVideoPageSidebarOpen(false);
+    if (prevPathnameRef.current !== pathname) {
+      prevPathnameRef.current = pathname;
+      // 使用 requestAnimationFrame 避免同步 setState
+      requestAnimationFrame(() => setVideoPageSidebarOpen(false));
+    }
   }, [pathname]);
 
   const toggleSidebar = () => {

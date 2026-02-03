@@ -4,6 +4,8 @@ import bcrypt from "bcryptjs";
 import { TRPCError } from "@trpc/server";
 import { getIpLocation } from "@/lib/ip-location";
 import { parseDeviceInfo, type DeviceInfo } from "@/lib/device-info";
+import { nanoid } from "nanoid";
+import { SignJWT, jwtVerify } from "jose";
 
 export const userRouter = router({
   // 注册
@@ -144,6 +146,61 @@ export const userRouter = router({
 
     return user;
   }),
+
+  // 生成账号切换令牌（类似 GitHub 的快速切换）
+  generateSwitchToken: protectedProcedure.mutation(async ({ ctx }) => {
+    const secret = new TextEncoder().encode(process.env.AUTH_SECRET || "fallback-secret");
+    const tokenId = nanoid(16);
+    
+    // 创建一个短期令牌，包含用户ID和随机标识
+    const token = await new SignJWT({
+      sub: ctx.session.user.id,
+      jti: tokenId,
+      type: "switch",
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("30d") // 30天有效期
+      .sign(secret);
+
+    return { token };
+  }),
+
+  // 验证切换令牌并返回用户信息（用于快速登录）
+  verifySwitchToken: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const secret = new TextEncoder().encode(process.env.AUTH_SECRET || "fallback-secret");
+        const { payload } = await jwtVerify(input.token, secret);
+
+        if (payload.type !== "switch" || !payload.sub) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "无效的令牌" });
+        }
+
+        const user = await ctx.prisma.user.findUnique({
+          where: { id: payload.sub },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            nickname: true,
+            avatar: true,
+          },
+        });
+
+        if (!user) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+        }
+
+        return {
+          valid: true,
+          user,
+        };
+      } catch {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "令牌已过期或无效" });
+      }
+    }),
 
   // 更新个人信息
   updateProfile: protectedProcedure
@@ -337,6 +394,96 @@ export const userRouter = router({
       await ctx.prisma.userDevice.delete({ where: { id: input.id } });
       return { success: true };
     }),
+
+  // 获取登录会话列表
+  getLoginSessions: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(50).default(20),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const sessions = await ctx.prisma.loginSession.findMany({
+        where: { 
+          userId: ctx.session.user.id,
+          isRevoked: false,
+          expiresAt: { gt: new Date() }, // 只返回未过期的会话
+        },
+        orderBy: { lastActiveAt: "desc" },
+        take: input?.limit || 20,
+        select: {
+          id: true,
+          jti: true,
+          deviceType: true,
+          os: true,
+          osVersion: true,
+          browser: true,
+          browserVersion: true,
+          brand: true,
+          model: true,
+          ipv4Location: true,
+          ipv6Location: true,
+          gpsLocation: true,
+          createdAt: true,
+          lastActiveAt: true,
+        },
+      });
+
+      // 当前会话的 jti
+      const currentJti = ctx.session.jti;
+
+      return {
+        sessions,
+        currentJti,
+      };
+    }),
+
+  // 撤销会话（登出其他设备）
+  revokeLoginSession: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const loginSession = await ctx.prisma.loginSession.findUnique({
+        where: { id: input.id },
+        select: { userId: true, jti: true },
+      });
+
+      if (!loginSession || loginSession.userId !== ctx.session.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无权限撤销该会话" });
+      }
+
+      // 不允许撤销当前会话（应该用正常登出）
+      if (loginSession.jti === ctx.session.jti) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "不能撤销当前会话，请使用登出功能" });
+      }
+
+      // 标记为已撤销
+      await ctx.prisma.loginSession.update({
+        where: { id: input.id },
+        data: { 
+          isRevoked: true,
+          revokedAt: new Date(),
+        },
+      });
+      
+      return { success: true };
+    }),
+
+  // 撤销所有其他会话
+  revokeAllOtherSessions: protectedProcedure.mutation(async ({ ctx }) => {
+    const result = await ctx.prisma.loginSession.updateMany({
+      where: {
+        userId: ctx.session.user.id,
+        isRevoked: false,
+        NOT: { jti: ctx.session.jti },
+      },
+      data: {
+        isRevoked: true,
+        revokedAt: new Date(),
+      },
+    });
+
+    return { count: result.count };
+  }),
 
   // 更新账户信息（用户名、邮箱）
   updateAccount: protectedProcedure

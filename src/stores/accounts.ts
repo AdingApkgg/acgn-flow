@@ -8,6 +8,8 @@ export interface SavedAccount {
   nickname?: string | null;
   avatar?: string | null;
   lastLoginAt: number;
+  // 快速切换令牌（加密存储）
+  switchToken?: string;
 }
 
 interface AccountsState {
@@ -16,6 +18,8 @@ interface AccountsState {
   removeAccount: (id: string) => void;
   updateAccount: (id: string, data: Partial<SavedAccount>) => void;
   getAccount: (id: string) => SavedAccount | undefined;
+  setSwitchToken: (id: string, token: string) => void;
+  getSwitchToken: (id: string) => string | undefined;
 }
 
 export const useAccountsStore = create<AccountsState>()(
@@ -62,6 +66,18 @@ export const useAccountsStore = create<AccountsState>()(
 
       getAccount: (id) => {
         return get().accounts.find((a) => a.id === id);
+      },
+
+      setSwitchToken: (id, token) => {
+        set((state) => ({
+          accounts: state.accounts.map((a) =>
+            a.id === id ? { ...a, switchToken: token } : a
+          ),
+        }));
+      },
+
+      getSwitchToken: (id) => {
+        return get().accounts.find((a) => a.id === id)?.switchToken;
       },
     }),
     {

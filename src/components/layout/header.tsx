@@ -434,9 +434,9 @@ export function Header({ onMenuClick }: HeaderProps) {
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link href="/profile">
+                    <Link href="/settings">
                       <User className="mr-2 h-4 w-4" />
-                      个人信息
+                      个人设置
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>

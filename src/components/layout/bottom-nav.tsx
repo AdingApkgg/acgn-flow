@@ -25,7 +25,7 @@ const navItems: NavItem[] = [
   { href: "/search", icon: Search, label: "搜索" },
   { href: "/upload", icon: Upload, label: "上传", auth: true, loginHref: "/login" },
   { href: "/favorites", icon: Heart, label: "收藏", auth: true, loginHref: "/login" },
-  { href: "/profile", icon: User, label: "我的", auth: true, loginHref: "/login" },
+  { href: "/settings", icon: User, label: "我的", auth: true, loginHref: "/login" },
 ];
 
 export function BottomNav() {

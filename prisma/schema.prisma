@@ -36,6 +36,7 @@ model User {
 
   accounts         Account[]
   sessions         Session[]
+  loginSessions    LoginSession[]
   videos           Video[]
   series           Series[]
   favorites        Favorite[]
@@ -91,6 +92,41 @@ model Session {
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// 登录会话追踪（用于 JWT 策略下的会话管理）
+model LoginSession {
+  id             String   @id @default(cuid())
+  userId         String
+  jti            String   @unique // JWT ID，用于撤销
+  
+  // 登录信息
+  deviceType     String?  // desktop, mobile, tablet
+  os             String?  // Windows, iOS, Android
+  osVersion      String?
+  browser        String?  // Chrome, Safari, Firefox
+  browserVersion String?
+  brand          String?  // Apple, Samsung
+  model          String?  // iPhone 15
+  userAgent      String?
+  ipv4Address    String?
+  ipv4Location   String?
+  ipv6Address    String?
+  ipv6Location   String?
+  gpsLocation    String?
+  
+  isRevoked      Boolean  @default(false) // 是否已撤销
+  revokedAt      DateTime?
+  
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  lastActiveAt   DateTime @default(now())
+  
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([jti])
+  @@index([lastActiveAt])
 }
 
 model VerificationToken {

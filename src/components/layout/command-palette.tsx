@@ -176,9 +176,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <History className="mr-2 h-4 w-4" />
               观看历史
             </CommandItem>
-            <CommandItem onSelect={() => runCommand(() => router.push("/profile"))}>
+            <CommandItem onSelect={() => runCommand(() => router.push("/settings"))}>
               <User className="mr-2 h-4 w-4" />
-              个人资料
+              个人设置
             </CommandItem>
             <CommandItem onSelect={() => runCommand(() => router.push("/settings"))}>
               <Settings className="mr-2 h-4 w-4" />

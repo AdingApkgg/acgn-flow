@@ -132,7 +132,7 @@ importers:
         specifier: ^17.2.3
         version: 17.2.3
       framer-motion:
-        specifier: ^12.30.0
+        specifier: ^12.31.0
         version: 12.31.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       handlebars:
         specifier: ^4.7.8
@@ -207,7 +207,7 @@ importers:
         specifier: ^3.4.0
         version: 3.4.0
       ua-parser-js:
-        specifier: ^2.0.8
+        specifier: ^2.0.9
         version: 2.0.9
       usehooks-ts:
         specifier: ^3.1.1
