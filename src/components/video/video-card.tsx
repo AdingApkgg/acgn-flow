@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import Link from "next/link";
 import { VideoCover } from "./video-cover";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -33,7 +34,7 @@ interface VideoCardProps {
   index?: number;
 }
 
-export function VideoCard({ video, index = 0 }: VideoCardProps) {
+function VideoCardComponent({ video, index = 0 }: VideoCardProps) {
   const uploaderName = video.uploader.nickname || video.uploader.username;
   
   return (
@@ -156,3 +157,14 @@ export function VideoCard({ video, index = 0 }: VideoCardProps) {
     </div>
   );
 }
+
+// 使用 memo 优化，避免不必要的重渲染
+export const VideoCard = memo(VideoCardComponent, (prevProps, nextProps) => {
+  // 仅当视频 ID 或关键数据变化时才重新渲染
+  return (
+    prevProps.video.id === nextProps.video.id &&
+    prevProps.video.views === nextProps.video.views &&
+    prevProps.video._count.likes === nextProps.video._count.likes &&
+    prevProps.index === nextProps.index
+  );
+});

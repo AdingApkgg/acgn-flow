@@ -202,6 +202,7 @@ export function Header({ onMenuClick }: HeaderProps) {
             size="icon"
             className="hidden md:flex"
             onClick={onMenuClick}
+            aria-label="切换侧边栏"
           >
             <Menu className="h-5 w-5" />
           </Button>
@@ -209,7 +210,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           {/* Mobile Menu */}
           <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
             <SheetTrigger asChild className="md:hidden">
-              <Button variant="ghost" size="icon">
+              <Button variant="ghost" size="icon" aria-label="打开菜单">
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>

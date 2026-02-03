@@ -2,10 +2,10 @@ module.exports = {
   apps: [
     {
       name: "acgn-flow",
-      script: "node_modules/next/dist/bin/next",
-      args: "start",
+      script: "deno",
+      args: "run -A node_modules/next/dist/bin/next start",
       cwd: "/home/i/acgn-flow",
-      interpreter: "bun",
+      interpreter: "none",
       instances: 1,
       exec_mode: "fork",
       env: {

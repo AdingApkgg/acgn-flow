@@ -3,13 +3,13 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { trpc } from "@/lib/trpc";
-import { VideoPlayer } from "@/components/video/video-player";
+import { VideoPlayer, type VideoPlayerRef, type DanmakuItem } from "@/components/video/video-player";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Heart, ThumbsDown, HelpCircle, Star, Share2, Eye, Calendar, Edit, MoreVertical, Trash2, List, Play } from "lucide-react";
+import { Heart, ThumbsDown, HelpCircle, Star, Share2, Eye, Calendar, Edit, MoreVertical, Trash2, List, Play, MessageSquareText, ChevronDown, ChevronUp } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,6 +44,13 @@ interface VideoPageClientProps {
 export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
   const { data: session } = useSession();
   const router = useRouter();
+  const playerRef = useRef<VideoPlayerRef>(null);
+  
+  // 弹幕列表状态
+  const [showDanmakuList, setShowDanmakuList] = useState(true);
+  const [danmakuData, setDanmakuData] = useState<DanmakuItem[]>([]);
+  const [currentTime, setCurrentTime] = useState(0);
+  const danmakuListRef = useRef<HTMLDivElement>(null);
 
   // 客户端获取视频数据（用于交互后刷新）
   const { data: video } = trpc.video.getById.useQuery(
@@ -56,6 +63,32 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
 
   // 优先使用客户端数据（包含最新的点赞等），然后是服务端数据
   const displayVideo = video || initialVideo;
+  
+  // 直接加载弹幕数据（独立于播放器）
+  useEffect(() => {
+    const danmakuUrl = displayVideo?.danmakuUrl || `/uploads/danmaku/${id}.json`;
+    
+    const loadDanmaku = async () => {
+      try {
+        const response = await fetch(danmakuUrl);
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setDanmakuData(data.map((item: DanmakuItem) => ({
+            text: item.text || "",
+            time: item.time || 0,
+            color: item.color || "#FFFFFF",
+            mode: item.mode ?? 0,
+          })));
+        }
+      } catch (error) {
+        console.error("加载弹幕失败:", error);
+      }
+    };
+    
+    loadDanmaku();
+  }, [id, displayVideo?.danmakuUrl]);
 
   // 分P状态管理
   const searchParams = useSearchParams();
@@ -147,6 +180,9 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
   const lastProgressUpdateRef = useRef(0);
   const handleProgress = useCallback(
     (progress: { played: number; playedSeconds: number }) => {
+      // 更新当前时间（用于弹幕列表）
+      setCurrentTime(progress.playedSeconds);
+      
       if (!session) return;
       const now = Date.now();
       // 每 30 秒更新一次进度
@@ -160,6 +196,27 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
     },
     [id, session, recordHistoryMutation]
   );
+
+  // 弹幕列表自动滚动到当前播放位置（每 3 秒检查一次）
+  const scrollInterval = Math.floor(currentTime / 3);
+  useEffect(() => {
+    if (!showDanmakuList || !danmakuListRef.current || danmakuData.length === 0) return;
+    
+    // 找到当前时间最近的弹幕索引
+    const sortedDanmaku = danmakuData.slice().sort((a, b) => a.time - b.time);
+    let nearestIdx = 0;
+    for (let i = 0; i < sortedDanmaku.length; i++) {
+      if (sortedDanmaku[i].time > currentTime) {
+        nearestIdx = Math.max(0, i - 1);
+        break;
+      }
+      nearestIdx = i;
+    }
+    
+    const itemHeight = 36;
+    const scrollTop = Math.max(0, nearestIdx * itemHeight - 72);
+    danmakuListRef.current.scrollTo({ top: scrollTop, behavior: "smooth" });
+  }, [showDanmakuList, scrollInterval, danmakuData, currentTime]);
 
   const handleLike = async () => {
     if (!session) {
@@ -269,11 +326,12 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
             <VideoPlayer
+              ref={playerRef}
               url={currentVideoUrl || displayVideo.videoUrl}
               poster={displayVideo.coverUrl}
               onProgress={handleProgress}
               subtitles={displayVideo.subtitleUrl ? [{ url: displayVideo.subtitleUrl, name: "字幕", default: true }] : []}
-              danmakuUrl={displayVideo.danmakuUrl || undefined}
+              danmakuUrl={displayVideo.danmakuUrl || `/uploads/danmaku/${displayVideo.id}.json`}
             />
 
           <div>
@@ -283,7 +341,7 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
               {isOwner && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
+                    <Button variant="ghost" size="icon" aria-label="更多操作">
                       <MoreVertical className="h-5 w-5" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -486,6 +544,62 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
             </div>
           )}
 
+          {/* 弹幕列表 */}
+          {danmakuData.length > 0 && (
+            <div className="border rounded-lg overflow-hidden">
+              <button
+                onClick={() => setShowDanmakuList(!showDanmakuList)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-muted/50 hover:bg-muted transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <MessageSquareText className="h-4 w-4" />
+                  <span className="font-medium text-sm">弹幕列表</span>
+                  <span className="text-xs text-muted-foreground">({danmakuData.length})</span>
+                </div>
+                {showDanmakuList ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
+              </button>
+              {showDanmakuList && (
+                <div
+                  ref={danmakuListRef}
+                  className="overflow-y-auto max-h-[300px]"
+                >
+                  {danmakuData
+                    .slice()
+                    .sort((a, b) => a.time - b.time)
+                    .map((danmaku, idx) => {
+                      const isNear = Math.abs(danmaku.time - currentTime) < 3;
+                      const isPast = danmaku.time < currentTime;
+                      return (
+                        <button
+                          key={idx}
+                          className={`w-full px-4 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-start gap-2 border-t border-border/50 ${
+                            isNear ? "bg-primary/10" : ""
+                          } ${isPast && !isNear ? "text-muted-foreground" : ""}`}
+                          onClick={() => {
+                            playerRef.current?.seekTo(danmaku.time);
+                          }}
+                        >
+                          <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0 w-10">
+                            {formatDanmakuTime(danmaku.time)}
+                          </span>
+                          <span
+                            className="truncate"
+                            style={{ color: danmaku.color || undefined }}
+                          >
+                            {danmaku.text}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 推荐视频 */}
           <RecommendedVideosContent videoId={id} />
         </div>
@@ -493,6 +607,13 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
     </div>
     </>
   );
+}
+
+// 格式化弹幕时间
+function formatDanmakuTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 // 推荐视频组件

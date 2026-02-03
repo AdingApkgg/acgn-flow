@@ -10,13 +10,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormLabel } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { Loader2, Upload, X, Plus, Eye, EyeOff, Import } from "lucide-react";
+import { Loader2, Upload, Import } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import Link from "next/link";
-import { VideoPlayer } from "@/components/video/video-player";
+import { VideoFormFields } from "@/components/video/video-form-fields";
+import { TagSelector } from "@/components/video/tag-selector";
 import {
   Dialog,
   DialogContent,
@@ -546,10 +548,10 @@ export default function UploadPage() {
   const { data: session, status } = useSession();
   const [isLoading, setIsLoading] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [newTagInput, setNewTagInput] = useState("");
   const [newTags, setNewTags] = useState<string[]>([]);
-  const [showPreview, setShowPreview] = useState(false);
   const [biliAid, setBiliAid] = useState<number | null>(null); // B站AV号，用于自定义视频ID
+  const [biliBvid, setBiliBvid] = useState<string | null>(null); // B站BV号，用于获取弹幕
+  const [biliCid, setBiliCid] = useState<number | null>(null); // B站CID，用于获取弹幕
   const [biliDuration, setBiliDuration] = useState<number | null>(null); // B站视频时长
   const [biliPages, setBiliPages] = useState<{ page: number; title: string; cid?: number }[] | null>(null); // B站分P信息
   const [batchQueue, setBatchQueue] = useState<BilibiliVideoInfo[]>([]); // 批量导入队列
@@ -580,24 +582,29 @@ export default function UploadPage() {
     form.setValue("description", data.description || "");
     form.setValue("coverUrl", data.coverUrl || "");
     form.setValue("videoUrl", data.videoUrl);
-    // 保存AV号、时长和分P信息
+    // 保存AV号、BV号、CID、时长和分P信息
     setBiliAid(data.aid);
+    setBiliBvid(data.bvid);
+    setBiliCid(data.cid || null);
     setBiliDuration(data.duration);
     setBiliPages(data.pages || null);
   };
 
-  // 批量导入处理
+  // 批量提交 IndexNow
+  const submitIndexNowMutation = trpc.video.submitBatchToIndexNow.useMutation();
+
+  // 批量导入处理（并发优化）
   const handleBatchImport = async (videos: BilibiliVideoInfo[]) => {
     setBatchQueue(videos);
     setBatchProgress({ current: 0, total: videos.length });
 
-    let successCount = 0;
-    let failCount = 0;
+    // 保存成功导入的视频信息（包含弹幕需要的 cid/bvid）
+    const successVideos: Array<{ videoId: string; cid?: number; bvid: string }> = [];
+    let completed = 0;
+    const CONCURRENCY = 5; // 并发数限制
 
-    for (let i = 0; i < videos.length; i++) {
-      const video = videos[i];
-      setBatchProgress({ current: i + 1, total: videos.length });
-
+    // 创建单个视频的导入任务
+    const importVideo = async (video: BilibiliVideoInfo): Promise<{ success: boolean; id?: string; video: BilibiliVideoInfo }> => {
       try {
         // 匹配标签
         const matchedTagIds: string[] = [];
@@ -614,7 +621,7 @@ export default function UploadPage() {
           }
         });
 
-        await createMutation.mutateAsync({
+        const result = await createMutation.mutateAsync({
           customId: video.customId || `av${video.aid}`,
           duration: video.duration,
           title: video.title,
@@ -624,13 +631,71 @@ export default function UploadPage() {
           subtitleUrl: "",
           danmakuUrl: "",
           tagIds: matchedTagIds,
-          tagNames: newTagNames.slice(0, 5), // 限制新标签数量
+          tagNames: newTagNames.slice(0, 5),
+          skipIndexNow: true,
         });
-        successCount++;
+        return { success: true, id: result.id, video };
       } catch (error) {
         console.error(`导入视频 ${video.title} 失败:`, error);
-        failCount++;
+        return { success: false, video };
+      } finally {
+        completed++;
+        setBatchProgress({ current: completed, total: videos.length });
       }
+    };
+
+    // 并发控制执行
+    const chunks: BilibiliVideoInfo[][] = [];
+    for (let i = 0; i < videos.length; i += CONCURRENCY) {
+      chunks.push(videos.slice(i, i + CONCURRENCY));
+    }
+
+    for (const chunk of chunks) {
+      const results = await Promise.all(chunk.map(importVideo));
+      results.forEach((r) => {
+        if (r.success && r.id) {
+          successVideos.push({
+            videoId: r.id,
+            cid: r.video.cid,
+            bvid: r.video.bvid,
+          });
+        }
+      });
+    }
+
+    const successCount = successVideos.length;
+    const failCount = videos.length - successCount;
+    const successVideoIds = successVideos.map((v) => v.videoId);
+
+    // 批量完成后一次性提交 IndexNow
+    if (successVideoIds.length > 0) {
+      submitIndexNowMutation.mutate({ videoIds: successVideoIds });
+    }
+
+    // 异步获取弹幕（使用 keepalive 确保页面跳转后请求不会被取消）
+    // 即使部分视频导入失败，也尝试为所有有 cid/bvid 的视频获取弹幕
+    const allVideosForDanmaku = videos
+      .filter((v) => v.cid || v.bvid)
+      .map((v) => ({
+        // 优先使用成功导入的 videoId，否则使用 customId 或 av 号
+        videoId: successVideos.find((s) => s.bvid === v.bvid)?.videoId 
+          || v.customId 
+          || `av${v.aid}`,
+        cid: v.cid,
+        bvid: v.bvid,
+        duration: v.duration, // 传递时长以获取完整弹幕
+      }));
+
+    if (allVideosForDanmaku.length > 0) {
+      console.log("[弹幕导入] 开始获取弹幕:", allVideosForDanmaku);
+      fetch("/api/bilibili/danmaku", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videos: allVideosForDanmaku }),
+        keepalive: true, // 确保页面跳转后请求继续执行
+      }).then((res) => res.json())
+        .then((data) => console.log("[弹幕导入] 完成:", data))
+        .catch((err) => console.error("[弹幕导入] 失败:", err));
     }
 
     setBatchProgress(null);
@@ -641,26 +706,6 @@ export default function UploadPage() {
       router.push("/my-videos");
     } else {
       toast.error("所有视频导入失败");
-    }
-  };
-
-  const handleAddNewTag = () => {
-    const tag = newTagInput.trim();
-    if (tag && !newTags.includes(tag)) {
-      setNewTags([...newTags, tag]);
-      setNewTagInput("");
-    }
-  };
-
-  const handleRemoveNewTag = (tag: string) => {
-    setNewTags(newTags.filter((t) => t !== tag));
-  };
-
-  const handleToggleExistingTag = (tagId: string) => {
-    if (selectedTags.includes(tagId)) {
-      setSelectedTags(selectedTags.filter((id) => id !== tagId));
-    } else {
-      setSelectedTags([...selectedTags, tagId]);
     }
   };
 
@@ -681,6 +726,22 @@ export default function UploadPage() {
         tagIds: selectedTags,
         tagNames: newTags,
       });
+      
+      // 如果是从B站导入的，异步获取弹幕
+      if (biliBvid || biliCid) {
+        console.log("[弹幕导入] 单个视频，开始获取弹幕:", { videoId: result.id, bvid: biliBvid, cid: biliCid, duration: biliDuration });
+        fetch("/api/bilibili/danmaku", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            videos: [{ videoId: result.id, bvid: biliBvid, cid: biliCid, duration: biliDuration }],
+          }),
+          keepalive: true,
+        }).then((res) => res.json())
+          .then((d) => console.log("[弹幕导入] 完成:", d))
+          .catch((err) => console.error("[弹幕导入] 失败:", err));
+      }
+      
       toast.success("发布成功");
       router.push(`/video/${result.id}`);
     } catch {
@@ -688,6 +749,8 @@ export default function UploadPage() {
     } finally {
       setIsLoading(false);
       setBiliAid(null); // 重置
+      setBiliBvid(null);
+      setBiliCid(null);
       setBiliDuration(null);
       setBiliPages(null);
     }
@@ -715,42 +778,55 @@ export default function UploadPage() {
 
   // 批量导入进度显示
   if (batchProgress) {
+    const percentage = Math.round((batchProgress.current / batchProgress.total) * 100);
+    const currentVideo = batchQueue[Math.min(batchProgress.current, batchQueue.length - 1)];
+    
     return (
-      <div className="container py-12 max-w-md">
+      <div className="container py-12 max-w-lg">
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              批量导入中
-            </CardTitle>
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 relative">
+              <div className="w-20 h-20 rounded-full border-4 border-muted flex items-center justify-center">
+                <span className="text-2xl font-bold">{percentage}%</span>
+              </div>
+              <Loader2 className="absolute -top-1 -right-1 h-6 w-6 animate-spin text-primary" />
+            </div>
+            <CardTitle>批量导入中</CardTitle>
             <CardDescription>
-              正在导入第 {batchProgress.current} / {batchProgress.total} 个视频
+              正在导入 {batchProgress.current} / {batchProgress.total} 个视频
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="w-full bg-muted rounded-full h-2">
-              <div
-                className="bg-primary h-2 rounded-full transition-all"
-                style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
-              />
-            </div>
-            {batchQueue[batchProgress.current - 1] && (
-              <div className="flex items-center gap-3">
-                {batchQueue[batchProgress.current - 1].coverUrl && (
-                  <div className="w-16 h-10 rounded overflow-hidden bg-muted shrink-0">
+            <Progress value={percentage} className="h-2" />
+            
+            {/* 当前处理的视频 */}
+            {currentVideo && (
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                {currentVideo.coverUrl && (
+                  <div className="w-20 h-12 rounded overflow-hidden bg-muted shrink-0">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={batchQueue[batchProgress.current - 1].coverUrl}
+                      src={currentVideo.coverUrl}
                       alt=""
                       className="w-full h-full object-cover"
                     />
                   </div>
                 )}
-                <p className="text-sm line-clamp-1">
-                  {batchQueue[batchProgress.current - 1].title}
-                </p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium line-clamp-1">
+                    {currentVideo.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {currentVideo.uploader}
+                  </p>
+                </div>
               </div>
             )}
+
+            {/* 预计时间 */}
+            <p className="text-xs text-center text-muted-foreground">
+              请勿关闭此页面，导入完成后将自动跳转
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -783,212 +859,23 @@ export default function UploadPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="title"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>标题 *</FormLabel>
-                    <FormControl>
-                      <Input placeholder="输入视频标题" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="videoUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>视频链接 *</FormLabel>
-                    <div className="flex gap-2">
-                      <FormControl>
-                        <Input
-                          placeholder="https://example.com/video.mp4"
-                          {...field}
-                        />
-                      </FormControl>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        onClick={() => setShowPreview(!showPreview)}
-                        disabled={!field.value}
-                      >
-                        {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
-                    </div>
-                    <FormDescription>
-                      支持 .mp4, .webm, .m3u8 格式
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* 视频预览 */}
-              {showPreview && form.watch("videoUrl") && (
-                <div className="space-y-2">
-                  <FormLabel>视频预览</FormLabel>
-                  <VideoPlayer
-                    url={form.watch("videoUrl")}
-                    poster={form.watch("coverUrl") || undefined}
-                    autoStart={false}
-                    subtitles={form.watch("subtitleUrl") ? [{ url: form.watch("subtitleUrl")!, name: "字幕", default: true }] : []}
-                    danmakuUrl={form.watch("danmakuUrl") || undefined}
-                  />
-                </div>
-              )}
-
-              <FormField
-                control={form.control}
-                name="coverUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>封面链接 (可选)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="https://example.com/cover.jpg"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      不填则显示为默认封面
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="subtitleUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>字幕链接 (可选)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="https://example.com/subtitle.vtt"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      支持 VTT、SRT、ASS 格式字幕文件
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="danmakuUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>弹幕链接 (可选)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="https://example.com/danmaku.xml"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      支持 B站 XML 格式或 JSON 格式弹幕文件
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* 使用共享的表单字段组件 */}
+              <VideoFormFields form={form} />
 
               {/* 标签选择 */}
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <FormLabel>标签</FormLabel>
-                
-                {/* 已选标签 */}
-                {(selectedTags.length > 0 || newTags.length > 0) && (
-                  <div className="flex flex-wrap gap-2">
-                    {selectedTags.map((tagId) => {
-                      const tag = allTags?.find((t) => t.id === tagId);
-                      return tag ? (
-                        <Badge
-                          key={tagId}
-                          variant="default"
-                          className="cursor-pointer"
-                          onClick={() => handleToggleExistingTag(tagId)}
-                        >
-                          {tag.name}
-                          <X className="h-3 w-3 ml-1" />
-                        </Badge>
-                      ) : null;
-                    })}
-                    {newTags.map((tag) => (
-                      <Badge
-                        key={tag}
-                        variant="secondary"
-                        className="cursor-pointer"
-                        onClick={() => handleRemoveNewTag(tag)}
-                      >
-                        {tag} (新)
-                        <X className="h-3 w-3 ml-1" />
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-
-                {/* 添加新标签 */}
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="输入新标签"
-                    value={newTagInput}
-                    onChange={(e) => setNewTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddNewTag();
-                      }
-                    }}
-                  />
-                  <Button type="button" variant="outline" onClick={handleAddNewTag}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                {/* 已有标签列表 */}
-                {allTags && allTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 border rounded-md">
-                    {allTags.map((tag) => (
-                      <Badge
-                        key={tag.id}
-                        variant={selectedTags.includes(tag.id) ? "default" : "outline"}
-                        className="cursor-pointer text-xs"
-                        onClick={() => handleToggleExistingTag(tag.id)}
-                      >
-                        {tag.name}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
+                <TagSelector
+                  allTags={allTags}
+                  selectedTags={selectedTags.map((id) => {
+                    const tag = allTags?.find((t) => t.id === id);
+                    return tag ? { id: tag.id, name: tag.name } : null;
+                  }).filter((t): t is { id: string; name: string } => t !== null)}
+                  newTags={newTags}
+                  onSelectedTagsChange={(tags) => setSelectedTags(tags.map((t) => t.id))}
+                  onNewTagsChange={setNewTags}
+                />
               </div>
-
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>简介</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="输入视频简介..."
-                        className="min-h-[120px]"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
 
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

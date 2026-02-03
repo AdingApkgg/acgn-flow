@@ -11,6 +11,7 @@ interface BilibiliVideoInfo {
   uploader: string;
   bvid: string;
   aid: number;
+  cid?: number; // 用于获取弹幕
   videoUrl: string; // 解析后的视频直链
 }
 
@@ -52,6 +53,7 @@ async function getVideoDetails(bvid: string, baseUrl: string): Promise<Omit<Bili
       uploader: video.owner?.name || "",
       bvid: video.bvid,
       aid: video.aid, // 直接使用API返回的AV号
+      cid: video.cid || 0, // 用于获取弹幕
     };
   } catch (error) {
     console.error("获取B站视频信息失败:", error);

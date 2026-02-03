@@ -6,6 +6,7 @@ import { Header } from "./header";
 import { Sidebar } from "./sidebar";
 import { Footer } from "./footer";
 import { BottomNav } from "./bottom-nav";
+import { CommandPalette } from "./command-palette";
 import { cn } from "@/lib/utils";
 import { useIsMounted } from "@/components/motion";
 
@@ -77,6 +78,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* 移动端底部导航栏 */}
       {showSidebar && <BottomNav />}
+
+      {/* 全局命令面板 */}
+      <CommandPalette />
     </div>
   );
 }

@@ -251,7 +251,7 @@ export default function DashboardLayout({
         <div className="lg:hidden fixed top-0 left-0 right-0 z-50 h-16 border-b bg-card flex items-center px-4 gap-4">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon">
+              <Button variant="ghost" size="icon" aria-label="打开菜单">
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>

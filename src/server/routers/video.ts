@@ -3,7 +3,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { router, publicProcedure, protectedProcedure, adminProcedure } from "../trpc";
 import { TRPCError } from "@trpc/server";
 import { getCache, setCache, deleteCachePattern } from "@/lib/redis";
-import { submitVideoToIndexNow } from "@/lib/indexnow";
+import { submitVideoToIndexNow, submitVideosToIndexNow } from "@/lib/indexnow";
 
 const VIDEO_CACHE_TTL = 60; // 1 minute
 const STATS_CACHE_TTL = 15; // 15 seconds - 短缓存，仅防止并发请求
@@ -590,6 +590,14 @@ export const videoRouter = router({
       return { success: true };
     }),
 
+  // 批量提交 IndexNow（用于批量导入完成后）
+  submitBatchToIndexNow: protectedProcedure
+    .input(z.object({ videoIds: z.array(z.string()) }))
+    .mutation(async ({ input }) => {
+      const result = await submitVideosToIndexNow(input.videoIds);
+      return result;
+    }),
+
   // 创建视频
   create: protectedProcedure
     .input(
@@ -609,10 +617,11 @@ export const videoRouter = router({
           title: z.string(),
           cid: z.number().optional(),
         })).optional(), // B站分P信息
+        skipIndexNow: z.boolean().optional(), // 批量导入时跳过 IndexNow
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { customId, tagIds, tagNames, coverUrl, subtitleUrl, danmakuUrl, pages, ...data } = input;
+      const { customId, tagIds, tagNames, coverUrl, subtitleUrl, danmakuUrl, pages, skipIndexNow, ...data } = input;
 
       // 如果提供了自定义ID，检查是否已存在
       if (customId) {
@@ -627,28 +636,33 @@ export const videoRouter = router({
         }
       }
 
-      // 处理新标签
+      // 处理新标签（使用 upsert 避免并发冲突）
       const allTagIds: string[] = [...(tagIds || [])];
       if (tagNames && tagNames.length > 0) {
         for (const tagName of tagNames) {
           const slug = tagName
             .toLowerCase()
             .replace(/\s+/g, "-")
-            .replace(/[^a-z0-9\u4e00-\u9fa5-]/g, "");
+            .replace(/[^a-z0-9\u4e00-\u9fa5-]/g, "") || `tag-${Date.now()}`;
           
-          const existingTag = await ctx.prisma.tag.findFirst({
-            where: { OR: [{ name: tagName }, { slug }] },
-          });
-          
-          if (existingTag) {
-            if (!allTagIds.includes(existingTag.id)) {
+          try {
+            // 使用 upsert 避免并发创建冲突
+            const tag = await ctx.prisma.tag.upsert({
+              where: { name: tagName },
+              update: {}, // 已存在则不更新
+              create: { name: tagName, slug },
+            });
+            if (!allTagIds.includes(tag.id)) {
+              allTagIds.push(tag.id);
+            }
+          } catch {
+            // 如果 upsert 失败（slug 冲突），尝试查找已存在的标签
+            const existingTag = await ctx.prisma.tag.findFirst({
+              where: { OR: [{ name: tagName }, { slug }] },
+            });
+            if (existingTag && !allTagIds.includes(existingTag.id)) {
               allTagIds.push(existingTag.id);
             }
-          } else {
-            const newTag = await ctx.prisma.tag.create({
-              data: { name: tagName, slug: slug || `tag-${Date.now()}` },
-            });
-            allTagIds.push(newTag.id);
           }
         }
       }
@@ -676,8 +690,10 @@ export const videoRouter = router({
         },
       });
 
-      // 异步提交到 IndexNow（不阻塞响应）
-      submitVideoToIndexNow(video.id).catch(() => {});
+      // 异步提交到 IndexNow（不阻塞响应，批量导入时跳过）
+      if (!skipIndexNow) {
+        submitVideoToIndexNow(video.id).catch(() => {});
+      }
 
       return video;
     }),

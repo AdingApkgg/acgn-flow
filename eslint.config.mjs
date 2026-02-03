@@ -14,6 +14,9 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Auto-generated service worker
     "public/sw.js",
+    // Third-party libraries
+    "public/ccl.js",
+    "public/ccl.min.js",
   ]),
 ]);
 

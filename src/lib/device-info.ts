@@ -179,3 +179,137 @@ export function mergeDeviceInfo(base: DeviceInfo, highEntropy: Partial<DeviceInf
 
   return merged;
 }
+
+// ==================== 服务端设备信息处理 ====================
+
+/**
+ * 客户端提交的设备信息（来自 API 请求）
+ */
+export interface ClientDeviceInput {
+  userAgent?: string;
+  screenResolution?: string;
+  timezone?: string;
+  language?: string;
+  platform?: string;
+  cookiesEnabled?: boolean;
+  doNotTrack?: boolean;
+  touchSupport?: boolean;
+  colorDepth?: number;
+  deviceMemory?: number | null;
+  hardwareConcurrency?: number | null;
+  connectionType?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  gpsAccuracy?: number | null;
+}
+
+/**
+ * 规范化的设备信息（用于数据库存储）
+ */
+export interface NormalizedDeviceInfo {
+  deviceType: string;
+  os: string | null;
+  osVersion: string | null;
+  browser: string | null;
+  browserVersion: string | null;
+  brand: string | null;
+  model: string | null;
+  screen: string | null;
+  timezone: string | null;
+  language: string | null;
+  fingerprint: string;
+}
+
+/**
+ * 位置信息（用于数据库存储）
+ */
+export interface LocationInfo {
+  ipv4: string | null;
+  ipv6: string | null;
+  ipv4Location: string | null;
+  ipv6Location: string | null;
+  gpsLatitude: number | null;
+  gpsLongitude: number | null;
+  gpsAccuracy: number | null;
+}
+
+/**
+ * 规范化客户端提交的设备信息
+ * 用于 comment.ts, guestbook.ts, user.ts 等多处重复使用的逻辑
+ */
+export function normalizeDeviceInfo(
+  input: ClientDeviceInput | undefined,
+  headerUserAgent?: string
+): NormalizedDeviceInfo {
+  const userAgent = input?.userAgent || headerUserAgent || "";
+  const parser = new UAParser(userAgent);
+  const result = parser.getResult();
+
+  const deviceType = result.device.type || "desktop";
+  const os = result.os.name || null;
+  const osVersion = result.os.version || null;
+  const browser = result.browser.name || null;
+  const browserVersion = result.browser.version || null;
+  const brand = result.device.vendor || null;
+  const model = result.device.model || null;
+
+  const fingerprintParts = [
+    deviceType,
+    os,
+    osVersion,
+    browser,
+    browserVersion,
+    brand,
+    model,
+    input?.screenResolution,
+    input?.timezone,
+    input?.language,
+  ]
+    .filter(Boolean)
+    .join("|")
+    .toLowerCase();
+
+  return {
+    deviceType,
+    os,
+    osVersion,
+    browser,
+    browserVersion,
+    brand,
+    model,
+    screen: input?.screenResolution || null,
+    timezone: input?.timezone || null,
+    language: input?.language || null,
+    fingerprint: fingerprintParts || "unknown",
+  };
+}
+
+/**
+ * 创建位置信息对象
+ * 注意：IP 位置需要在服务端使用 getIpLocation 获取后传入
+ */
+export function createLocationInfo(
+  ipv4: string | null,
+  ipv6: string | null,
+  ipv4Location: string | null,
+  ipv6Location: string | null,
+  gpsData?: { latitude?: number | null; longitude?: number | null; accuracy?: number | null }
+): LocationInfo {
+  return {
+    ipv4,
+    ipv6,
+    ipv4Location,
+    ipv6Location,
+    gpsLatitude: gpsData?.latitude ?? null,
+    gpsLongitude: gpsData?.longitude ?? null,
+    gpsAccuracy: gpsData?.accuracy ?? null,
+  };
+}
+
+/**
+ * 格式化位置字符串（用于显示）
+ */
+export function formatLocationString(location: LocationInfo): string | null {
+  // 优先使用 IPv4 位置，然后是 IPv6
+  return location.ipv4Location || location.ipv6Location || null;
+}

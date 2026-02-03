@@ -19,25 +19,38 @@ const EXCLUDED_PATHS = /\/uploads\//i;
 // Auth 相关路径 - 永不缓存
 const AUTH_PATHS = /\/api\/auth\//i;
 
+// 跨域资源 - 不缓存（避免 opaque 响应导致 Cache.put 失败）
+const isCrossOrigin = (url: URL) => url.origin !== self.location.origin;
+
 const serwist = new Serwist({
   // 禁用预缓存，只使用运行时缓存（避免路径不匹配问题）
-  precacheEntries: self.__SW_MANIFEST || [],
+  precacheEntries: [],
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
   runtimeCaching: [
+    // 跨域请求 - 不缓存（opaque 响应无法通过 Cache.put 缓存）
+    {
+      matcher: ({ url }) => isCrossOrigin(url),
+      handler: new NetworkOnly(),
+    },
     // 视频、音频、大文件 - 不缓存，直接走网络
     {
       matcher: ({ url }) => EXCLUDED_EXTENSIONS.test(url.pathname) || EXCLUDED_PATHS.test(url.pathname),
       handler: new NetworkOnly(),
     },
-    // 静态资源 - 缓存优先
+    // Auth 相关 API - 永不缓存，确保 session 状态实时
+    {
+      matcher: ({ url }) => AUTH_PATHS.test(url.pathname),
+      handler: new NetworkOnly(),
+    },
+    // 静态资源 - 缓存优先（仅同源）
     {
       matcher: /\/_next\/static\/.*/i,
       handler: new CacheFirst({
         cacheName: "static-assets",
         plugins: [
-          new CacheableResponsePlugin({ statuses: [0, 200] }),
+          new CacheableResponsePlugin({ statuses: [200] }),
           new ExpirationPlugin({
             maxEntries: 100,
             maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
@@ -45,13 +58,13 @@ const serwist = new Serwist({
         ],
       }),
     },
-    // 图片 - 缓存优先（限制大小）
+    // 图片 - 缓存优先（仅同源，限制大小）
     {
       matcher: /\.(?:jpg|jpeg|gif|png|svg|ico|webp|avif)$/i,
       handler: new CacheFirst({
         cacheName: "images",
         plugins: [
-          new CacheableResponsePlugin({ statuses: [0, 200] }),
+          new CacheableResponsePlugin({ statuses: [200] }),
           new ExpirationPlugin({
             maxEntries: 50,
             maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
@@ -60,24 +73,19 @@ const serwist = new Serwist({
         ],
       }),
     },
-    // 字体 - 缓存优先
+    // 字体 - 缓存优先（仅同源）
     {
       matcher: /\.(?:woff|woff2|ttf|otf|eot)$/i,
       handler: new CacheFirst({
         cacheName: "fonts",
         plugins: [
-          new CacheableResponsePlugin({ statuses: [0, 200] }),
+          new CacheableResponsePlugin({ statuses: [200] }),
           new ExpirationPlugin({
             maxEntries: 20,
             maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
           }),
         ],
       }),
-    },
-    // Auth 相关 API - 永不缓存，确保 session 状态实时
-    {
-      matcher: ({ url }) => AUTH_PATHS.test(url.pathname),
-      handler: new NetworkOnly(),
     },
     // API 请求 - 网络优先（只缓存成功响应）
     {
@@ -109,13 +117,13 @@ const serwist = new Serwist({
         ],
       }),
     },
-    // JS/CSS 资源 - 旧缓存优先
+    // JS/CSS 资源 - 旧缓存优先（仅同源）
     {
       matcher: /\.(?:js|css)$/i,
       handler: new StaleWhileRevalidate({
         cacheName: "js-css",
         plugins: [
-          new CacheableResponsePlugin({ statuses: [0, 200] }),
+          new CacheableResponsePlugin({ statuses: [200] }),
           new ExpirationPlugin({
             maxEntries: 50,
             maxAgeSeconds: 60 * 60 * 24 * 7, // 7 days
