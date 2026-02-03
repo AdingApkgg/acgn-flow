@@ -12,44 +12,78 @@ import { useIsMounted } from "@/components/motion";
 
 const SIDEBAR_COLLAPSED_KEY = "acgn-flow-sidebar-collapsed";
 
-// 这些页面不显示侧边栏（全屏体验）
-const fullscreenPaths = ["/video/", "/login", "/register", "/forgot-password"];
+// 这些页面侧边栏覆盖模式（展开时覆盖内容，不推移）
+const overlaySidebarPaths = ["/video/"];
 
-function isFullscreenPage(pathname: string): boolean {
-  return fullscreenPaths.some(path => pathname.startsWith(path));
+// 这些页面完全不显示侧边栏
+const noSidebarPaths = ["/login", "/register", "/forgot-password"];
+
+function isOverlaySidebarPage(pathname: string): boolean {
+  return overlaySidebarPaths.some(path => pathname.startsWith(path));
+}
+
+function shouldHideSidebar(pathname: string): boolean {
+  return noSidebarPaths.some(path => pathname.startsWith(path));
 }
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const mounted = useIsMounted();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    // 使用 lazy initialization 从 localStorage 读取侧边栏状态
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-      return saved !== null ? saved === "true" : true;
+  
+  // 判断页面类型
+  const isOverlayMode = isOverlaySidebarPage(pathname);
+  const isNoSidebarPage = shouldHideSidebar(pathname);
+  
+  // YouTube 风格：默认展开侧边栏
+  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  
+  // 客户端挂载后从 localStorage 读取
+  useEffect(() => {
+    const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    if (saved !== null) {
+      setSidebarExpanded(saved !== "true");
     }
-    return true;
-  });
+  }, []);
+  
+  // 视频页面独立的展开状态（默认隐藏）
+  const [videoPageSidebarOpen, setVideoPageSidebarOpen] = useState(false);
 
-  // 当 localStorage 变化时同步状态（用于多标签页同步）
+  // 当 localStorage 变化时同步状态
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
       if (e.key === SIDEBAR_COLLAPSED_KEY && e.newValue !== null) {
-        setSidebarCollapsed(e.newValue === "true");
+        setSidebarExpanded(e.newValue !== "true");
       }
     };
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
+  
+  // 切换页面时重置视频页面的侧边栏状态
+  useEffect(() => {
+    setVideoPageSidebarOpen(false);
+  }, [pathname]);
 
   const toggleSidebar = () => {
-    const newState = !sidebarCollapsed;
-    setSidebarCollapsed(newState);
-    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(newState));
+    if (isOverlayMode) {
+      // 视频页面只切换临时覆盖状态
+      setVideoPageSidebarOpen(prev => !prev);
+    } else {
+      // 其他页面切换全局状态并保存
+      const newState = !sidebarExpanded;
+      setSidebarExpanded(newState);
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(!newState));
+    }
   };
 
-  const isFullscreen = isFullscreenPage(pathname);
-  const showSidebar = mounted && !isFullscreen;
+  // 是否显示侧边栏组件（非覆盖模式始终显示，覆盖模式需等待挂载）
+  const showSidebar = isOverlayMode ? (mounted && !isNoSidebarPage) : !isNoSidebarPage;
+  
+  // 侧边栏是否展开
+  const isExpanded = isOverlayMode ? videoPageSidebarOpen : sidebarExpanded;
+  
+  // 是否使用覆盖模式
+  const useOverlayMode = isOverlayMode;
 
   return (
     <div className="relative min-h-screen flex flex-col overflow-x-hidden">
@@ -58,17 +92,24 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1">
         {/* 桌面端侧边栏 */}
         {showSidebar && (
-          <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
+          <Sidebar 
+            collapsed={!isExpanded} 
+            onToggle={toggleSidebar}
+            overlay={useOverlayMode}
+          />
         )}
         
         {/* 主内容区 */}
         <main
           className={cn(
-            "flex-1 flex flex-col min-h-[calc(100vh-4rem)] min-w-0 overflow-x-hidden",
-            // 桌面端始终使用收起状态的边距，侧边栏展开时覆盖在内容上方
-            showSidebar && "md:ml-[72px]",
+            "flex-1 flex flex-col min-h-[calc(100vh-4rem)] min-w-0 overflow-x-hidden transition-[margin] duration-300",
+            // YouTube 风格：展开时内容区推移（非覆盖模式）
+            showSidebar && !useOverlayMode && isExpanded && "md:ml-[240px]",
+            showSidebar && !useOverlayMode && !isExpanded && "md:ml-[72px]",
+            // 覆盖模式：固定小边距
+            showSidebar && useOverlayMode && "md:ml-0",
             // 移动端为底部导航栏留出空间
-            "pb-16 md:pb-0"
+            !isOverlayMode && "pb-16 md:pb-0"
           )}
         >
           <div className="flex-1">{children}</div>
@@ -77,7 +118,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* 移动端底部导航栏 */}
-      {showSidebar && <BottomNav />}
+      {showSidebar && !isOverlayMode && <BottomNav />}
 
       {/* 全局命令面板 */}
       <CommandPalette />

@@ -111,7 +111,7 @@ export default function HomePage() {
       <WebsiteJsonLd />
       <OrganizationJsonLd />
 
-      <div className="container py-4 max-w-full overflow-x-hidden">
+      <div className="px-4 md:px-6 py-4 overflow-x-hidden">
         {/* 公告横幅 */}
         <div 
           className={`mb-4 relative overflow-hidden transition-all duration-300 ${

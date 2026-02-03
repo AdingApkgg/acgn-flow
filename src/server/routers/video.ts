@@ -541,7 +541,7 @@ export const videoRouter = router({
           tags: {
             include: { tag: { select: { id: true, name: true, slug: true } } },
           },
-          _count: { select: { likes: true, favorites: true } },
+          _count: { select: { likes: true, favorites: true, comments: true } },
         },
       });
 
@@ -828,6 +828,49 @@ export const videoRouter = router({
 
       await deleteCachePattern(`video:${input.id}`);
       return { success: true };
+    }),
+
+  // 批量删除视频
+  batchDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.string()) }))
+    .mutation(async ({ ctx, input }) => {
+      // 验证所有视频属于当前用户
+      const videos = await ctx.prisma.video.findMany({
+        where: {
+          id: { in: input.ids },
+          uploaderId: ctx.session.user.id,
+        },
+        select: { id: true, tags: { select: { tagId: true } } },
+      });
+
+      if (videos.length === 0) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "没有找到可删除的视频" });
+      }
+
+      const videoIds = videos.map(v => v.id);
+      const tagIds = [...new Set(videos.flatMap(v => v.tags.map(t => t.tagId)))];
+
+      // 批量删除
+      await ctx.prisma.video.deleteMany({
+        where: { id: { in: videoIds } },
+      });
+
+      // 清理空标签
+      if (tagIds.length > 0) {
+        await ctx.prisma.tag.deleteMany({
+          where: {
+            id: { in: tagIds },
+            videos: { none: {} },
+          },
+        });
+      }
+
+      // 清理缓存
+      for (const id of videoIds) {
+        await deleteCachePattern(`video:${id}`);
+      }
+
+      return { success: true, count: videoIds.length };
     }),
 
   // 点赞
@@ -1171,6 +1214,58 @@ export const videoRouter = router({
     });
     return { success: true };
   }),
+
+  // 删除单条历史记录
+  removeHistoryItem: protectedProcedure
+    .input(z.object({ videoId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.prisma.watchHistory.deleteMany({
+        where: {
+          userId: ctx.session.user.id,
+          videoId: input.videoId,
+        },
+      });
+      return { success: true };
+    }),
+
+  // 取消收藏
+  unfavorite: protectedProcedure
+    .input(z.object({ videoId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.prisma.favorite.deleteMany({
+        where: {
+          userId: ctx.session.user.id,
+          videoId: input.videoId,
+        },
+      });
+      return { success: true };
+    }),
+
+  // 批量取消收藏
+  batchUnfavorite: protectedProcedure
+    .input(z.object({ videoIds: z.array(z.string()) }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.prisma.favorite.deleteMany({
+        where: {
+          userId: ctx.session.user.id,
+          videoId: { in: input.videoIds },
+        },
+      });
+      return { success: true, count: input.videoIds.length };
+    }),
+
+  // 批量删除历史记录
+  batchRemoveHistory: protectedProcedure
+    .input(z.object({ videoIds: z.array(z.string()) }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.prisma.watchHistory.deleteMany({
+        where: {
+          userId: ctx.session.user.id,
+          videoId: { in: input.videoIds },
+        },
+      });
+      return { success: true, count: input.videoIds.length };
+    }),
 
   // 获取推荐视频
   getRecommendations: publicProcedure

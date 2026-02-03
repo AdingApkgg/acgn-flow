@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Heart, ThumbsDown, HelpCircle, Star, Share2, Eye, Calendar, Edit, MoreVertical, Trash2, List, Play, MessageSquareText, ChevronDown, ChevronUp } from "lucide-react";
+import { Heart, ThumbsDown, HelpCircle, Star, Share2, Eye, Calendar, Edit, MoreVertical, Trash2, List, Play, MessageSquareText, ChevronDown, ChevronUp, Layers } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -130,6 +130,12 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
     const separator = baseUrl.includes('?') ? '&' : '?';
     return `${baseUrl}${separator}p=${currentPage}`;
   }, [displayVideo?.videoUrl, hasPages, currentPage]);
+
+  // 获取视频所属的合集
+  const { data: seriesData } = trpc.series.getByVideoId.useQuery(
+    { videoId: id },
+    { staleTime: 60000 }
+  );
 
   const { data: status } = trpc.video.getInteractionStatus.useQuery(
     { videoId: id },
@@ -322,7 +328,7 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
         ]}
       />
 
-      <div className="container py-6">
+      <div className="px-4 md:px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
             <VideoPlayer
@@ -510,6 +516,64 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
 
         {/* 侧边栏 */}
         <div className="lg:col-span-1 mt-6 lg:mt-0 space-y-6">
+          {/* 合集选集 */}
+          {seriesData?.series && (
+            <div className="border rounded-lg overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 bg-muted/50 border-b">
+                <Layers className="h-4 w-4 text-primary" />
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium text-sm truncate">{seriesData.series.title}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    第 {seriesData.currentEpisode} 集 / 共 {seriesData.series.episodes.length} 集
+                  </p>
+                </div>
+              </div>
+              <div className="max-h-[300px] overflow-y-auto">
+                {seriesData.series.episodes.map((ep) => {
+                  const isCurrentVideo = ep.video.id === id;
+                  return (
+                    <Link
+                      key={ep.video.id}
+                      href={`/video/${ep.video.id}`}
+                      className={`flex items-center gap-3 p-3 border-b last:border-b-0 transition-colors ${
+                        isCurrentVideo ? "bg-primary/10" : "hover:bg-muted/50"
+                      }`}
+                    >
+                      <div className="relative w-20 h-12 rounded overflow-hidden bg-muted shrink-0">
+                        {ep.video.coverUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={ep.video.coverUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                            <Play className="h-4 w-4" />
+                          </div>
+                        )}
+                        {isCurrentVideo && (
+                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                            <Play className="h-4 w-4 text-white fill-white" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-xs font-medium ${isCurrentVideo ? "text-primary" : "text-muted-foreground"}`}>
+                          第{ep.episodeNum}集
+                        </span>
+                        <p className={`text-sm truncate ${isCurrentVideo ? "font-medium" : ""}`}>
+                          {ep.episodeTitle || ep.video.title}
+                        </p>
+                        {ep.video.duration && (
+                          <p className="text-xs text-muted-foreground">
+                            {Math.floor(ep.video.duration / 60)}:{String(ep.video.duration % 60).padStart(2, "0")}
+                          </p>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* 分P列表 */}
           {hasPages && displayVideo.pages && (
             <div className="space-y-3">

@@ -37,6 +37,7 @@ model User {
   accounts         Account[]
   sessions         Session[]
   videos           Video[]
+  series           Series[]
   favorites        Favorite[]
   watchHistory     WatchHistory[]
   likes            Like[]
@@ -141,6 +142,9 @@ model Video {
   uploaderId  String
   uploader    User        @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
   
+  // 合集关联
+  seriesEpisodes SeriesEpisode[]
+  
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -155,6 +159,44 @@ model Video {
   @@index([uploaderId])
   @@index([status])
   @@index([createdAt])
+}
+
+// 合集/剧集
+model Series {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  coverUrl    String?  // 合集封面
+  
+  creatorId   String
+  creator     User     @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  
+  episodes    SeriesEpisode[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([creatorId])
+  @@index([createdAt])
+}
+
+// 合集-视频关联（剧集）
+model SeriesEpisode {
+  id          String   @id @default(cuid())
+  seriesId    String
+  videoId     String
+  episodeNum  Int      // 集数
+  episodeTitle String? // 集标题（可选，默认使用视频标题）
+  
+  series      Series   @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  video       Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+
+  @@unique([seriesId, videoId])
+  @@unique([seriesId, episodeNum])
+  @@index([seriesId])
+  @@index([videoId])
 }
 
 enum VideoStatus {

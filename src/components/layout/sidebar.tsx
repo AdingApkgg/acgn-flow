@@ -6,28 +6,26 @@ import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
   Home,
-  Search,
   Upload,
   Heart,
   History,
   Video,
-  MessageSquare,
-  Settings,
-  Shield,
-  User,
   ChevronLeft,
   ChevronRight,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useStableSession } from "@/lib/hooks";
 import type { Session } from "next-auth";
 
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  overlay?: boolean; // 覆盖模式（展开时覆盖内容而非推移）
 }
 
 interface NavItem {
@@ -40,7 +38,6 @@ interface NavItem {
 
 const mainNavItems: NavItem[] = [
   { href: "/", icon: Home, label: "首页" },
-  { href: "/search", icon: Search, label: "搜索" },
 ];
 
 const userNavItems: NavItem[] = [
@@ -50,14 +47,7 @@ const userNavItems: NavItem[] = [
 ];
 
 const moreNavItems: NavItem[] = [
-  { href: "/comments", icon: MessageSquare, label: "留言板" },
   { href: "/upload", icon: Upload, label: "上传视频", auth: true },
-];
-
-const settingsNavItems: NavItem[] = [
-  { href: "/profile", icon: User, label: "个人信息", auth: true },
-  { href: "/settings", icon: Settings, label: "设置", auth: true },
-  { href: "/dashboard", icon: Shield, label: "管理面板", auth: true },
 ];
 
 function NavLink({
@@ -139,84 +129,102 @@ function NavGroup({
   );
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+// 用户个人主页链接
+function UserProfileLink({ collapsed, session }: { collapsed: boolean; session: Session }) {
+  const content = (
+    <Link
+      href={`/user/${session.user.id}`}
+      className={cn(
+        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
+        "hover:bg-accent hover:text-accent-foreground text-muted-foreground",
+        collapsed && "justify-center px-2"
+      )}
+    >
+      <Avatar className={cn("shrink-0", collapsed ? "h-5 w-5" : "h-8 w-8")}>
+        <AvatarImage src={session.user.image || undefined} alt={session.user.name || ""} />
+        <AvatarFallback className="text-xs">
+          {session.user.name?.charAt(0).toUpperCase() || <User className="h-3 w-3" />}
+        </AvatarFallback>
+      </Avatar>
+      {!collapsed && (
+        <div className="flex flex-col min-w-0">
+          <span className="truncate">{session.user.name || "我的主页"}</span>
+          <span className="text-xs text-muted-foreground truncate">查看个人主页</span>
+        </div>
+      )}
+    </Link>
+  );
+
+  if (collapsed) {
+    return (
+      <Tooltip delayDuration={0}>
+        <TooltipTrigger asChild>{content}</TooltipTrigger>
+        <TooltipContent side="right" className="font-medium">
+          我的主页
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return content;
+}
+
+export function Sidebar({ collapsed, onToggle, overlay = false }: SidebarProps) {
   const pathname = usePathname();
   const { session } = useStableSession();
 
-  // 侧边栏展开时锁定页面滚动，防止布局抖动
-  useEffect(() => {
-    if (!collapsed) {
-      // 获取滚动条宽度
-      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-      document.body.style.overflow = "hidden";
-      document.body.style.paddingRight = `${scrollbarWidth}px`;
-    } else {
-      document.body.style.overflow = "";
-      document.body.style.paddingRight = "";
-    }
-    return () => {
-      document.body.style.overflow = "";
-      document.body.style.paddingRight = "";
-    };
-  }, [collapsed]);
+  // 覆盖模式展开时不需要特殊处理，侧边栏覆盖在内容上方
 
   return (
     <>
-      {/* 遮罩层 - 展开时显示 */}
-      {!collapsed && (
-        <div 
-          className="fixed inset-0 top-16 z-30 bg-black/50 hidden md:block"
-          onClick={onToggle}
-        />
-      )}
+      {/* 遮罩层 - 覆盖模式展开时显示 */}
+      <div 
+        className={cn(
+          "fixed inset-0 top-16 z-30 bg-black/50 hidden md:block transition-opacity duration-300",
+          overlay && !collapsed ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+        onClick={onToggle}
+      />
       
       <aside
         className={cn(
           "fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] border-r bg-background transition-all duration-300 ease-in-out",
           "hidden md:flex md:flex-col",
-          // 始终显示，展开时宽度更大
-          collapsed ? "w-[72px]" : "w-[240px]"
+          // 覆盖模式：通过 translate 滑入滑出，避免闪烁
+          overlay 
+            ? collapsed ? "w-[240px] -translate-x-full" : "w-[240px] translate-x-0"
+            : collapsed ? "w-[72px]" : "w-[240px]"
         )}
       >
         <ScrollArea className="flex-1 py-4">
-          <div className={cn("space-y-6", collapsed ? "px-2" : "px-3")}>
+          <div className={cn("space-y-4", collapsed ? "px-2" : "px-3")}>
             <NavGroup items={mainNavItems} collapsed={collapsed} pathname={pathname} session={session} />
-            
-            <Separator className={collapsed ? "mx-auto w-8" : ""} />
             
             {session && (
               <>
+                <Separator className={collapsed ? "mx-auto w-8" : ""} />
+                
+                {/* 用户个人主页入口 */}
+                <UserProfileLink collapsed={collapsed} session={session} />
+                
                 <NavGroup
-                  title="你的内容"
+                  title={collapsed ? undefined : "你的内容"}
                   items={userNavItems}
                   collapsed={collapsed}
                   pathname={pathname}
                   session={session}
                 />
-                <Separator className={collapsed ? "mx-auto w-8" : ""} />
               </>
             )}
             
+            <Separator className={collapsed ? "mx-auto w-8" : ""} />
+            
             <NavGroup
-              title="探索"
               items={moreNavItems}
               collapsed={collapsed}
               pathname={pathname}
               session={session}
             />
-            
-            {session && (
-              <>
-                <Separator className={collapsed ? "mx-auto w-8" : ""} />
-                <NavGroup
-                  title="设置"
-                  items={settingsNavItems}
-                  collapsed={collapsed}
-                  pathname={pathname}
-                  session={session}
-                />
-              </>
-            )}
           </div>
         </ScrollArea>
 
@@ -257,7 +265,7 @@ export function MobileSidebarContent({ onClose }: { onClose?: () => void }) {
 
   return (
     <ScrollArea className="h-full py-4">
-      <div className="space-y-6 px-3">
+      <div className="space-y-4 px-3">
         <NavGroupMobile
           items={mainNavItems}
           pathname={pathname}
@@ -265,10 +273,9 @@ export function MobileSidebarContent({ onClose }: { onClose?: () => void }) {
           onClick={handleClick}
         />
         
-        <Separator />
-        
         {session && (
           <>
+            <Separator />
             <NavGroupMobile
               title="你的内容"
               items={userNavItems}
@@ -276,30 +283,17 @@ export function MobileSidebarContent({ onClose }: { onClose?: () => void }) {
               session={session}
               onClick={handleClick}
             />
-            <Separator />
           </>
         )}
         
+        <Separator />
+        
         <NavGroupMobile
-          title="探索"
           items={moreNavItems}
           pathname={pathname}
           session={session}
           onClick={handleClick}
         />
-        
-        {session && (
-          <>
-            <Separator />
-            <NavGroupMobile
-              title="设置"
-              items={settingsNavItems}
-              pathname={pathname}
-              session={session}
-              onClick={handleClick}
-            />
-          </>
-        )}
       </div>
     </ScrollArea>
   );

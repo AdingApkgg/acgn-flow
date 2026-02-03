@@ -17,7 +17,6 @@ import { Input } from "@/components/ui/input";
 import {
   Search,
   Menu,
-  Upload,
   User,
   LogOut,
   Heart,
@@ -35,7 +34,7 @@ import {
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { SettingsPanel } from "./settings-panel";
+import { SettingsPanelInMenu } from "./settings-panel";
 import { MobileSidebarContent } from "./sidebar";
 import { useIsMounted } from "@/components/motion";
 import { trpc } from "@/lib/trpc";
@@ -195,7 +194,7 @@ export function Header({ onMenuClick }: HeaderProps) {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-16 items-center px-4">
         {/* Left Section - Menu & Logo */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Desktop Menu Toggle */}
           <Button
             variant="ghost"
@@ -242,8 +241,9 @@ export function Header({ onMenuClick }: HeaderProps) {
           </Link>
         </div>
 
-        {/* Center Section - Search */}
-        <form onSubmit={handleSearchSubmit} className="hidden md:flex flex-1 max-w-2xl mx-4 lg:mx-8">
+        {/* Center Section - Search (居中) */}
+        <div className="flex-1 flex justify-center px-4 lg:px-8">
+          <form onSubmit={handleSearchSubmit} className="hidden md:flex w-full max-w-xl">
           <div className="relative w-full">
             <div className="flex">
               <Input
@@ -377,13 +377,11 @@ export function Header({ onMenuClick }: HeaderProps) {
               </div>
             )}
           </div>
-        </form>
+          </form>
+        </div>
 
         {/* Right Section */}
-        <div className="flex items-center gap-1 ml-auto">
-          {/* Settings Panel */}
-          <SettingsPanel />
-
+        <div className="flex items-center gap-1 shrink-0">
           {/* Mobile Search Toggle */}
           <Button
             variant="ghost"
@@ -399,13 +397,6 @@ export function Header({ onMenuClick }: HeaderProps) {
             <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
           ) : session?.user ? (
             <>
-              {/* Upload Button */}
-              <Button variant="ghost" size="icon" asChild className="hidden sm:flex">
-                <Link href="/upload">
-                  <Upload className="h-5 w-5" />
-                </Link>
-              </Button>
-
               {/* User Menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -472,6 +463,9 @@ export function Header({ onMenuClick }: HeaderProps) {
                       管理面板
                     </Link>
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {/* 外观设置 */}
+                  <SettingsPanelInMenu />
                   <DropdownMenuSeparator />
                   <AccountSwitcher />
                   <DropdownMenuSeparator />

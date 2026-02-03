@@ -5,6 +5,7 @@ import { tagRouter } from "./tag";
 import { adminRouter } from "./admin";
 import { commentRouter } from "./comment";
 import { guestbookRouter } from "./guestbook";
+import { seriesRouter } from "./series";
 
 export const appRouter = router({
   user: userRouter,
@@ -13,6 +14,7 @@ export const appRouter = router({
   admin: adminRouter,
   comment: commentRouter,
   guestbook: guestbookRouter,
+  series: seriesRouter,
 });
 
 export type AppRouter = typeof appRouter;
