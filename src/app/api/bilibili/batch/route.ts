@@ -186,6 +186,46 @@ async function getUserVideos(
   }
 }
 
+type UserVideoEmptyReason = "no_public_videos" | "invalid_uid" | "upstream_unavailable";
+
+// 诊断“用户投稿为空”的原因，避免把上游故障误报成UID错误
+async function diagnoseUserVideoEmpty(mid: number): Promise<UserVideoEmptyReason> {
+  try {
+    const query = new URLSearchParams({
+      mid: String(mid),
+      pn: "1",
+      ps: "1",
+      order: "pubdate",
+      tid: "0",
+      keyword: "",
+    });
+    const url = `https://api.bilibili.com/x/space/arc/search?${query.toString()}`;
+    const response = await fetch(url, {
+      headers: getBilibiliHeaders(`https://space.bilibili.com/${mid}`),
+    });
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return "upstream_unavailable";
+    }
+
+    const data = await response.json();
+    const code = typeof data?.code === "number" ? data.code : -1;
+
+    if (code === -404) {
+      return "invalid_uid";
+    }
+    if (code !== 0) {
+      return "upstream_unavailable";
+    }
+
+    const count = Number(data?.data?.page?.count ?? 0);
+    return count > 0 ? "upstream_unavailable" : "no_public_videos";
+  } catch {
+    return "upstream_unavailable";
+  }
+}
+
 // 获取收藏夹视频列表（自动分页获取全部）
 async function getFavoriteVideos(
   mediaId: number
@@ -519,6 +559,7 @@ export async function POST(request: NextRequest) {
     })();
 
     let videoList: { bvid: string; aid: number; title: string }[] = [];
+    let useLightweightResponse = false;
 
     switch (type) {
       case "videos": {
@@ -551,6 +592,27 @@ export async function POST(request: NextRequest) {
           );
         }
         videoList = await getUserVideos(mid);
+        if (videoList.length === 0) {
+          const reason = await diagnoseUserVideoEmpty(mid);
+          if (reason === "invalid_uid") {
+            return NextResponse.json(
+              { error: "用户不存在或UID错误" },
+              { status: 404 }
+            );
+          }
+          if (reason === "no_public_videos") {
+            return NextResponse.json(
+              { error: "该用户没有可见的公开投稿视频" },
+              { status: 404 }
+            );
+          }
+          return NextResponse.json(
+            { error: "B站接口暂时不可用，请稍后重试" },
+            { status: 503 }
+          );
+        }
+        // 用户投稿列表可能很大，逐条补详情容易超时导致 502
+        useLightweightResponse = true;
         break;
       }
 
@@ -701,6 +763,28 @@ export async function POST(request: NextRequest) {
         { error: "未找到任何视频，可能是权限不足或ID错误" },
         { status: 404 }
       );
+    }
+
+    // 轻量模式：直接返回列表基础信息，避免大批量详情请求导致网关超时
+    if (useLightweightResponse) {
+      const lightweightResults: BilibiliVideoInfo[] = videoList.map((v) => ({
+        title: v.title || `av${v.aid}`,
+        description: "",
+        coverUrl: "",
+        duration: 0,
+        tags: [],
+        uploader: "",
+        bvid: v.bvid,
+        aid: v.aid,
+        videoUrl: `https://parse.saop.cc/api/bili/${v.bvid}`,
+      }));
+
+      return NextResponse.json({
+        success: true,
+        total: videoList.length,
+        data: lightweightResults,
+        lightweight: true,
+      });
     }
 
     // 获取详细信息（控制并发避免风控）
