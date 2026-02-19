@@ -138,6 +138,48 @@ function BilibiliImportDialog({
     setSelectedPage(1);
   };
 
+  const postBilibiliApi = async (
+    url: string,
+    payload: Record<string, unknown>,
+    fallbackError: string
+  ): Promise<any> => {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(payload),
+    });
+
+    const contentType = response.headers.get("content-type") || "";
+    let result: any = null;
+
+    if (contentType.includes("application/json")) {
+      try {
+        result = await response.json();
+      } catch {
+        result = null;
+      }
+    } else {
+      // 消耗响应体，避免未读取的 body 引发调试干扰
+      await response.text().catch(() => "");
+    }
+
+    if (!response.ok) {
+      const apiError = typeof result?.error === "string"
+        ? result.error
+        : typeof result?.message === "string"
+          ? result.message
+          : `${fallbackError}（HTTP ${response.status}）`;
+      throw new Error(apiError);
+    }
+
+    if (!result) {
+      throw new Error(`${fallbackError}（服务器返回了非 JSON 响应）`);
+    }
+
+    return result;
+  };
+
   const handleParse = async () => {
     if (!inputValue.trim()) {
       toast.error("请输入内容");
@@ -147,35 +189,13 @@ function BilibiliImportDialog({
     setIsLoading(true);
     try {
       if (mode === "single") {
-        const response = await fetch("/api/bilibili/parse", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: inputValue }),
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          toast.error(result.error || "解析失败");
-          return;
-        }
+        const result = await postBilibiliApi("/api/bilibili/parse", { url: inputValue }, "解析失败");
 
         setPreviewData(result.data);
         toast.success("解析成功");
       } else if (mode === "pages") {
         // 分P模式 - 获取分P列表供选择
-        const response = await fetch("/api/bilibili/batch", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "pages", value: inputValue }),
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          toast.error(result.error || "获取失败");
-          return;
-        }
+        const result = await postBilibiliApi("/api/bilibili/batch", { type: "pages", value: inputValue }, "获取失败");
 
         setBatchData(result.data);
         setSelectedPage(1);
@@ -189,18 +209,11 @@ function BilibiliImportDialog({
         toast.success(`找到 ${result.data.length} 个分P`);
       } else {
         // 批量模式
-        const response = await fetch("/api/bilibili/batch", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: mode === "batch" ? "videos" : mode, value: inputValue }),
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          toast.error(result.error || "获取失败");
-          return;
-        }
+        const result = await postBilibiliApi(
+          "/api/bilibili/batch",
+          { type: mode === "batch" ? "videos" : mode, value: inputValue },
+          "获取失败"
+        );
 
         setBatchData(result.data);
         setSelectedVideos(new Set(result.data.map((_: BilibiliVideoInfo, i: number) => i)));
@@ -208,7 +221,7 @@ function BilibiliImportDialog({
       }
     } catch (error) {
       console.error("解析失败:", error);
-      toast.error("解析失败，请稍后重试");
+      toast.error(error instanceof Error ? error.message : "解析失败，请稍后重试");
     } finally {
       setIsLoading(false);
     }
