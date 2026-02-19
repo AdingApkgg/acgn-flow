@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseVideoId, getUserVideosWithWbi } from "@/lib/bilibili";
+import { parseVideoId, getUserVideosFromUploadPage, getUserVideosWithWbi } from "@/lib/bilibili";
 
 // 获取 Bilibili cookie（从环境变量）
 const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";
@@ -182,9 +182,17 @@ async function getUserVideos(
     // 如果刚好卡在50，可能是第二页被风控/分页异常，降级为30再抓一次
     if (videos50.length === 50) {
       const videos30 = await crawlByPageSize(30);
-      if (videos30.length > videos50.length) {
-        return videos30;
+      const base = videos30.length > videos50.length ? videos30 : videos50;
+      // 再尝试从用户上传页面抓取，参考 https://space.bilibili.com/{mid}/upload/video
+      const videosFromPage = await getUserVideosFromUploadPage(mid, maxPages);
+      if (videosFromPage.length > base.length) {
+        return videosFromPage.map((v) => ({
+          bvid: v.bvid,
+          aid: v.aid,
+          title: v.title,
+        }));
       }
+      return base;
     }
 
     return videos50;

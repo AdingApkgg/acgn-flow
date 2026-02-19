@@ -105,7 +105,104 @@ export async function encWbi(params: Record<string, string | number>): Promise<s
 /**
  * 获取用户视频列表（带WBI签名）
  */
-type BilibiliUserVideoItem = { bvid: string; aid: number; title: string; pic: string };
+export type BilibiliUserVideoItem = { bvid: string; aid: number; title: string; pic: string };
+
+function mapToUserVideoItem(v: {
+  bvid?: string;
+  aid?: number;
+  title?: string;
+  pic?: string;
+}): BilibiliUserVideoItem | null {
+  if (!v.bvid || !v.aid) return null;
+  return {
+    bvid: v.bvid,
+    aid: v.aid,
+    title: v.title || "",
+    pic: v.pic || "",
+  };
+}
+
+function extractInitialStateJson(html: string): any | null {
+  const patterns = [
+    /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;\s*\(function/s,
+    /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;\s*<\/script>/s,
+    /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});/s,
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (!match?.[1]) continue;
+    try {
+      return JSON.parse(match[1]);
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function extractUserVideosFromInitialState(state: any): BilibiliUserVideoItem[] {
+  const candidates = [
+    state?.arcList?.list?.vlist,
+    state?.space?.arcList?.list?.vlist,
+    state?.video?.list?.vlist,
+    state?.list?.vlist,
+    state?.vlist,
+  ];
+
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    const videos = candidate
+      .map((v: any) => mapToUserVideoItem(v))
+      .filter((v: BilibiliUserVideoItem | null): v is BilibiliUserVideoItem => !!v);
+    if (videos.length > 0) return videos;
+  }
+
+  return [];
+}
+
+export async function getUserVideosFromUploadPage(
+  mid: number,
+  maxPages: number = 100
+): Promise<BilibiliUserVideoItem[]> {
+  const allVideos: BilibiliUserVideoItem[] = [];
+  const deduped = new Map<string, BilibiliUserVideoItem>();
+
+  for (let page = 1; page <= maxPages; page++) {
+    try {
+      const url = `https://space.bilibili.com/${mid}/upload/video?tid=0&page=${page}&keyword=&order=pubdate`;
+      const response = await fetch(url, {
+        headers: getBilibiliHeaders(`https://space.bilibili.com/${mid}/upload/video`),
+      });
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("text/html")) break;
+
+      const html = await response.text();
+      const initialState = extractInitialStateJson(html);
+      if (!initialState) break;
+
+      const pageVideos = extractUserVideosFromInitialState(initialState);
+      if (pageVideos.length === 0) break;
+
+      for (const v of pageVideos) {
+        if (!deduped.has(v.bvid)) {
+          deduped.set(v.bvid, v);
+          allVideos.push(v);
+        }
+      }
+
+      // 页面默认每页 30 条，低于该值通常已到底
+      if (pageVideos.length < 30) break;
+
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    } catch {
+      break;
+    }
+  }
+
+  return allVideos;
+}
 
 async function getUserVideosWithLegacyApi(
   mid: number,
@@ -180,14 +277,9 @@ export async function getUserVideosWithWbi(
       return await getUserVideosWithLegacyApi(mid, page, pageSize);
     }
 
-    return data.data.list.vlist.map(
-      (v: { bvid: string; aid: number; title: string; pic: string }) => ({
-        bvid: v.bvid,
-        aid: v.aid,
-        title: v.title,
-        pic: v.pic,
-      })
-    );
+    return data.data.list.vlist
+      .map((v: { bvid: string; aid: number; title: string; pic: string }) => mapToUserVideoItem(v))
+      .filter((v: BilibiliUserVideoItem | null): v is BilibiliUserVideoItem => !!v);
   } catch (error) {
     console.error("获取用户视频列表失败:", error);
     return await getUserVideosWithLegacyApi(mid, page, pageSize);
