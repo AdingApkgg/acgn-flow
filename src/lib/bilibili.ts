@@ -105,11 +105,54 @@ export async function encWbi(params: Record<string, string | number>): Promise<s
 /**
  * 获取用户视频列表（带WBI签名）
  */
+type BilibiliUserVideoItem = { bvid: string; aid: number; title: string; pic: string };
+
+async function getUserVideosWithLegacyApi(
+  mid: number,
+  page: number,
+  pageSize: number
+): Promise<BilibiliUserVideoItem[]> {
+  try {
+    const query = new URLSearchParams({
+      mid: String(mid),
+      pn: String(page),
+      ps: String(pageSize),
+      order: "pubdate",
+      tid: "0",
+      keyword: "",
+    });
+    const url = `https://api.bilibili.com/x/space/arc/search?${query.toString()}`;
+    const response = await fetch(url, {
+      headers: getBilibiliHeaders(`https://space.bilibili.com/${mid}`),
+    });
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return [];
+    }
+
+    const data = await response.json();
+    if (data.code !== 0 || !data.data?.list?.vlist) {
+      return [];
+    }
+
+    return data.data.list.vlist.map(
+      (v: { bvid: string; aid: number; title: string; pic: string }) => ({
+        bvid: v.bvid,
+        aid: v.aid,
+        title: v.title,
+        pic: v.pic,
+      })
+    );
+  } catch {
+    return [];
+  }
+}
+
 export async function getUserVideosWithWbi(
   mid: number,
   page: number = 1,
   pageSize: number = 30
-): Promise<{ bvid: string; aid: number; title: string; pic: string }[]> {
+): Promise<BilibiliUserVideoItem[]> {
   try {
     const params = {
       mid,
@@ -124,12 +167,17 @@ export async function getUserVideosWithWbi(
     const response = await fetch(url, {
       headers: getBilibiliHeaders(`https://space.bilibili.com/${mid}`),
     });
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      // 风控或网关回 HTML 时回退旧接口
+      return await getUserVideosWithLegacyApi(mid, page, pageSize);
+    }
 
     const data = await response.json();
 
     if (data.code !== 0 || !data.data?.list?.vlist) {
       console.error("获取用户视频列表失败:", data.message);
-      return [];
+      return await getUserVideosWithLegacyApi(mid, page, pageSize);
     }
 
     return data.data.list.vlist.map(
@@ -142,7 +190,7 @@ export async function getUserVideosWithWbi(
     );
   } catch (error) {
     console.error("获取用户视频列表失败:", error);
-    return [];
+    return await getUserVideosWithLegacyApi(mid, page, pageSize);
   }
 }
 

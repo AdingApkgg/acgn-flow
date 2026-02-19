@@ -121,7 +121,12 @@ async function getUserVideos(
 
   try {
     // 先获取第一页，确定总数
-    const firstPage = await getUserVideosWithWbi(mid, 1, pageSize);
+    let firstPage = await getUserVideosWithWbi(mid, 1, pageSize);
+    // 首次为空时重试一次，降低偶发风控/网关抖动导致的误判
+    if (firstPage.length === 0) {
+      await delay(200);
+      firstPage = await getUserVideosWithWbi(mid, 1, pageSize);
+    }
     if (firstPage.length === 0) return [];
 
     allVideos.push(...firstPage.map((v) => ({
@@ -178,10 +183,24 @@ async function getUserVideos(
       }
     }
 
-    return allVideos;
+    // 去重，避免回退接口或重试场景下重复数据
+    const deduped = new Map<string, { bvid: string; aid: number; title: string }>();
+    for (const video of allVideos) {
+      if (!deduped.has(video.bvid)) {
+        deduped.set(video.bvid, video);
+      }
+    }
+    return Array.from(deduped.values());
   } catch (error) {
     console.error("获取用户视频列表失败:", error);
-    return allVideos.length > 0 ? allVideos : [];
+    if (allVideos.length === 0) return [];
+    const deduped = new Map<string, { bvid: string; aid: number; title: string }>();
+    for (const video of allVideos) {
+      if (!deduped.has(video.bvid)) {
+        deduped.set(video.bvid, video);
+      }
+    }
+    return Array.from(deduped.values());
   }
 }
 
