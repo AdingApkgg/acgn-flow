@@ -138,11 +138,14 @@ function BilibiliImportDialog({
     setSelectedPage(1);
   };
 
-  const postBilibiliApi = async (
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null;
+
+  const postBilibiliApi = async <T extends Record<string, unknown>>(
     url: string,
     payload: Record<string, unknown>,
     fallbackError: string
-  ): Promise<any> => {
+  ): Promise<T> => {
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -151,11 +154,12 @@ function BilibiliImportDialog({
     });
 
     const contentType = response.headers.get("content-type") || "";
-    let result: any = null;
+    let result: T | null = null;
 
     if (contentType.includes("application/json")) {
       try {
-        result = await response.json();
+        const parsed: unknown = await response.json();
+        result = isRecord(parsed) ? (parsed as T) : null;
       } catch {
         result = null;
       }
@@ -189,13 +193,21 @@ function BilibiliImportDialog({
     setIsLoading(true);
     try {
       if (mode === "single") {
-        const result = await postBilibiliApi("/api/bilibili/parse", { url: inputValue }, "解析失败");
+        const result = await postBilibiliApi<{ data: BilibiliVideoInfo }>(
+          "/api/bilibili/parse",
+          { url: inputValue },
+          "解析失败"
+        );
 
         setPreviewData(result.data);
         toast.success("解析成功");
       } else if (mode === "pages") {
         // 分P模式 - 获取分P列表供选择
-        const result = await postBilibiliApi("/api/bilibili/batch", { type: "pages", value: inputValue }, "获取失败");
+        const result = await postBilibiliApi<{ data: BilibiliVideoInfo[]; videoInfo?: BilibiliVideoInfo }>(
+          "/api/bilibili/batch",
+          { type: "pages", value: inputValue },
+          "获取失败"
+        );
 
         setBatchData(result.data);
         setSelectedPage(1);
@@ -209,7 +221,7 @@ function BilibiliImportDialog({
         toast.success(`找到 ${result.data.length} 个分P`);
       } else {
         // 批量模式
-        const result = await postBilibiliApi(
+        const result = await postBilibiliApi<{ data: BilibiliVideoInfo[] }>(
           "/api/bilibili/batch",
           { type: mode === "batch" ? "videos" : mode, value: inputValue },
           "获取失败"

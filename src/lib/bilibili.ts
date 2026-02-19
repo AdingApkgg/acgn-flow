@@ -107,6 +107,10 @@ export async function encWbi(params: Record<string, string | number>): Promise<s
  */
 export type BilibiliUserVideoItem = { bvid: string; aid: number; title: string; pic: string };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function mapToUserVideoItem(v: {
   bvid?: string;
   aid?: number;
@@ -122,7 +126,25 @@ function mapToUserVideoItem(v: {
   };
 }
 
-function extractInitialStateJson(html: string): any | null {
+function mapUnknownToUserVideoItem(value: unknown): BilibiliUserVideoItem | null {
+  if (!isRecord(value)) return null;
+  const bvid = typeof value.bvid === "string" ? value.bvid : undefined;
+  const aid = typeof value.aid === "number" ? value.aid : undefined;
+  const title = typeof value.title === "string" ? value.title : undefined;
+  const pic = typeof value.pic === "string" ? value.pic : undefined;
+  return mapToUserVideoItem({ bvid, aid, title, pic });
+}
+
+function getNestedValue(obj: unknown, path: string[]): unknown {
+  let current: unknown = obj;
+  for (const key of path) {
+    if (!isRecord(current)) return undefined;
+    current = current[key];
+  }
+  return current;
+}
+
+function extractInitialStateJson(html: string): unknown | null {
   const patterns = [
     /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;\s*\(function/,
     /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;\s*<\/script>/,
@@ -142,19 +164,19 @@ function extractInitialStateJson(html: string): any | null {
   return null;
 }
 
-function extractUserVideosFromInitialState(state: any): BilibiliUserVideoItem[] {
+function extractUserVideosFromInitialState(state: unknown): BilibiliUserVideoItem[] {
   const candidates = [
-    state?.arcList?.list?.vlist,
-    state?.space?.arcList?.list?.vlist,
-    state?.video?.list?.vlist,
-    state?.list?.vlist,
-    state?.vlist,
+    getNestedValue(state, ["arcList", "list", "vlist"]),
+    getNestedValue(state, ["space", "arcList", "list", "vlist"]),
+    getNestedValue(state, ["video", "list", "vlist"]),
+    getNestedValue(state, ["list", "vlist"]),
+    getNestedValue(state, ["vlist"]),
   ];
 
   for (const candidate of candidates) {
     if (!Array.isArray(candidate)) continue;
     const videos = candidate
-      .map((v: any) => mapToUserVideoItem(v))
+      .map((v: unknown) => mapUnknownToUserVideoItem(v))
       .filter((v: BilibiliUserVideoItem | null): v is BilibiliUserVideoItem => !!v);
     if (videos.length > 0) return videos;
   }
