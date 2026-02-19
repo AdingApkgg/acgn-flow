@@ -118,15 +118,24 @@ async function getUserVideos(
 ): Promise<{ bvid: string; aid: number; title: string }[]> {
   const pageSize = 50;
   const allVideos: { bvid: string; aid: number; title: string }[] = [];
+  const maxPages = 100;
+
+  const fetchPageWithRetry = async (page: number, retries: number = 2) => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const videos = await getUserVideosWithWbi(mid, page, pageSize);
+      if (videos.length > 0) {
+        return videos;
+      }
+      if (attempt < retries) {
+        await delay(200 * (attempt + 1));
+      }
+    }
+    return [] as Awaited<ReturnType<typeof getUserVideosWithWbi>>;
+  };
 
   try {
     // 先获取第一页，确定总数
-    let firstPage = await getUserVideosWithWbi(mid, 1, pageSize);
-    // 首次为空时重试一次，降低偶发风控/网关抖动导致的误判
-    if (firstPage.length === 0) {
-      await delay(200);
-      firstPage = await getUserVideosWithWbi(mid, 1, pageSize);
-    }
+    const firstPage = await fetchPageWithRetry(1);
     if (firstPage.length === 0) return [];
 
     allVideos.push(...firstPage.map((v) => ({
@@ -138,49 +147,22 @@ async function getUserVideos(
     // 如果第一页就不满，说明没有更多
     if (firstPage.length < pageSize) return allVideos;
 
-    // 分批并行获取（每批3页，避免风控）
-    const batchSize = 3;
+    // 逐页获取并重试，避免某一页偶发失败导致只返回前50条
     let page = 2;
-    let hasMore = true;
+    while (page <= maxPages) {
+      const videos = await fetchPageWithRetry(page);
+      if (videos.length === 0) break;
 
-    while (hasMore && page <= 100) {
-      const pagesToFetch = Array.from(
-        { length: Math.min(batchSize, 101 - page) },
-        (_, i) => page + i
-      );
+      allVideos.push(...videos.map((v) => ({
+        bvid: v.bvid,
+        aid: v.aid,
+        title: v.title,
+      })));
 
-      const pageResults = await Promise.all(
-        pagesToFetch.map(async (p) => {
-          try {
-            return await getUserVideosWithWbi(mid, p, pageSize);
-          } catch {
-            return [];
-          }
-        })
-      );
+      if (videos.length < pageSize) break;
 
-      for (const videos of pageResults) {
-        if (videos.length === 0) {
-          hasMore = false;
-          break;
-        }
-        allVideos.push(...videos.map((v) => ({
-          bvid: v.bvid,
-          aid: v.aid,
-          title: v.title,
-        })));
-        if (videos.length < pageSize) {
-          hasMore = false;
-          break;
-        }
-      }
-
-      page += batchSize;
-      
-      // 批次间延迟
-      if (hasMore) {
-        await delay(100);
-      }
+      page++;
+      await delay(100);
     }
 
     // 去重，避免回退接口或重试场景下重复数据
