@@ -124,9 +124,9 @@ function mapToUserVideoItem(v: {
 
 function extractInitialStateJson(html: string): any | null {
   const patterns = [
-    /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;\s*\(function/s,
-    /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;\s*<\/script>/s,
-    /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});/s,
+    /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;\s*\(function/,
+    /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;\s*<\/script>/,
+    /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});/,
   ];
 
   for (const pattern of patterns) {
