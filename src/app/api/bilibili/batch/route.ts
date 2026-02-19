@@ -116,25 +116,32 @@ async function getVideoTags(aid: number): Promise<string[]> {
 async function getUserVideos(
   mid: number
 ): Promise<{ bvid: string; aid: number; title: string }[]> {
-  const pageSize = 50;
-  const allVideos: { bvid: string; aid: number; title: string }[] = [];
   const maxPages = 100;
-
-  const fetchPageWithRetry = async (page: number, retries: number = 2) => {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      const videos = await getUserVideosWithWbi(mid, page, pageSize);
-      if (videos.length > 0) {
-        return videos;
-      }
-      if (attempt < retries) {
-        await delay(200 * (attempt + 1));
+  const dedupeVideos = (videos: { bvid: string; aid: number; title: string }[]) => {
+    const deduped = new Map<string, { bvid: string; aid: number; title: string }>();
+    for (const video of videos) {
+      if (!deduped.has(video.bvid)) {
+        deduped.set(video.bvid, video);
       }
     }
-    return [] as Awaited<ReturnType<typeof getUserVideosWithWbi>>;
+    return Array.from(deduped.values());
   };
 
-  try {
-    // 先获取第一页，确定总数
+  const crawlByPageSize = async (pageSize: number) => {
+    const allVideos: { bvid: string; aid: number; title: string }[] = [];
+    const fetchPageWithRetry = async (page: number, retries: number = 2) => {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        const videos = await getUserVideosWithWbi(mid, page, pageSize);
+        if (videos.length > 0) {
+          return videos;
+        }
+        if (attempt < retries) {
+          await delay(200 * (attempt + 1));
+        }
+      }
+      return [] as Awaited<ReturnType<typeof getUserVideosWithWbi>>;
+    };
+
     const firstPage = await fetchPageWithRetry(1);
     if (firstPage.length === 0) return [];
 
@@ -144,10 +151,10 @@ async function getUserVideos(
       title: v.title,
     })));
 
-    // 如果第一页就不满，说明没有更多
-    if (firstPage.length < pageSize) return allVideos;
+    if (firstPage.length < pageSize) {
+      return dedupeVideos(allVideos);
+    }
 
-    // 逐页获取并重试，避免某一页偶发失败导致只返回前50条
     let page = 2;
     while (page <= maxPages) {
       const videos = await fetchPageWithRetry(page);
@@ -160,29 +167,30 @@ async function getUserVideos(
       })));
 
       if (videos.length < pageSize) break;
-
       page++;
       await delay(100);
     }
 
-    // 去重，避免回退接口或重试场景下重复数据
-    const deduped = new Map<string, { bvid: string; aid: number; title: string }>();
-    for (const video of allVideos) {
-      if (!deduped.has(video.bvid)) {
-        deduped.set(video.bvid, video);
+    return dedupeVideos(allVideos);
+  };
+
+  try {
+    // 先用 pageSize=50（效率更高）
+    const videos50 = await crawlByPageSize(50);
+    if (videos50.length === 0) return [];
+
+    // 如果刚好卡在50，可能是第二页被风控/分页异常，降级为30再抓一次
+    if (videos50.length === 50) {
+      const videos30 = await crawlByPageSize(30);
+      if (videos30.length > videos50.length) {
+        return videos30;
       }
     }
-    return Array.from(deduped.values());
+
+    return videos50;
   } catch (error) {
     console.error("获取用户视频列表失败:", error);
-    if (allVideos.length === 0) return [];
-    const deduped = new Map<string, { bvid: string; aid: number; title: string }>();
-    for (const video of allVideos) {
-      if (!deduped.has(video.bvid)) {
-        deduped.set(video.bvid, video);
-      }
-    }
-    return Array.from(deduped.values());
+    return [];
   }
 }
 
