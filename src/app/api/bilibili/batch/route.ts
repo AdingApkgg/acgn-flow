@@ -440,6 +440,39 @@ function parseCollectionUrl(url: string): { type: "season" | "series"; mid: numb
   return null;
 }
 
+// 解析用户UID输入（支持纯数字、space链接、uid=xxx、UID:xxx、全角数字）
+function parseUserUidInput(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+
+  // 将全角数字转为半角，避免中文输入法导致解析失败
+  const normalized = value
+    .trim()
+    .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+  if (!normalized) return null;
+
+  // 1) 纯数字
+  if (/^\d+$/.test(normalized)) {
+    const uid = Number(normalized);
+    return Number.isInteger(uid) && uid > 0 ? uid : null;
+  }
+
+  // 2) space主页/视频页链接（支持 http/https，可带后续路径和参数）
+  const spaceMatch = normalized.match(/(?:https?:\/\/)?space\.bilibili\.com\/(\d+)/i);
+  if (spaceMatch) {
+    const uid = Number(spaceMatch[1]);
+    return Number.isInteger(uid) && uid > 0 ? uid : null;
+  }
+
+  // 3) 通用 uid=xxx / UID:xxx / uid xxx
+  const uidMatch = normalized.match(/\buid\b\s*[:=]?\s*(\d+)/i);
+  if (uidMatch) {
+    const uid = Number(uidMatch[1]);
+    return Number.isInteger(uid) && uid > 0 ? uid : null;
+  }
+
+  return null;
+}
+
 // 获取视频系列列表
 async function getSeriesVideos(
   mid: number,
@@ -509,8 +542,8 @@ export async function POST(request: NextRequest) {
 
       case "user": {
         // 用户UID（自动获取全部投稿）
-        const mid = parseInt(value, 10);
-        if (isNaN(mid)) {
+        const mid = parseUserUidInput(value);
+        if (!mid) {
           return NextResponse.json(
             { error: "无效的用户UID" },
             { status: 400 }
