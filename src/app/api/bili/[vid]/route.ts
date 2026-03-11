@@ -1,23 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";
-
-const HEADERS: Record<string, string> = {
-  accept: "application/json, text/plain, */*",
-  "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
-  "accept-encoding": "gzip",
-  "cache-control": "no-cache",
-  "X-Real-IP": "120.2.5.6",
-  "user-agent":
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
-};
-
-if (BILIBILI_COOKIE) {
-  HEADERS["cookie"] = BILIBILI_COOKIE;
-}
-
-const CID_API = "https://api.bilibili.com/x/player/pagelist";
-const PLAYURL_API = "https://api.bilibili.com/x/player/playurl";
+import { getPageCidMap, getPlayUrl } from "@/lib/bilibili";
 
 // TTL-based in-memory cache
 interface CacheEntry<T> {
@@ -26,9 +8,9 @@ interface CacheEntry<T> {
 }
 
 const urlCache = new Map<string, CacheEntry<string>>();
-const cidCache = new Map<string, CacheEntry<Record<string, number>>>();
+const cidCache = new Map<string, CacheEntry<Map<number, number>>>();
 
-const URL_TTL = 120_000; // 2 min
+const URL_TTL = 120_000; // 2 min (B站 URL 有效期 120 min, 但保守缓存)
 const CID_TTL = 3_600_000; // 1 hour
 
 function getCached<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
@@ -43,7 +25,6 @@ function getCached<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null 
 
 function setCache<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T, ttl: number) {
   cache.set(key, { value, expiresAt: Date.now() + ttl });
-  // Lazy eviction: prune expired entries when cache grows large
   if (cache.size > 5000) {
     const now = Date.now();
     for (const [k, v] of cache) {
@@ -52,72 +33,22 @@ function setCache<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T, t
   }
 }
 
-async function getCid(vid: string, page: number, isAv: boolean): Promise<number | string> {
-  const cachedCids = getCached(cidCache, vid);
-  if (cachedCids && String(page) in cachedCids) {
-    return cachedCids[String(page)];
+async function resolveCid(vid: string, page: number): Promise<number | string> {
+  const cached = getCached(cidCache, vid);
+  if (cached) {
+    const cid = cached.get(page);
+    if (cid) return cid;
+    return `分P ${page} 不存在（共 ${cached.size} P）`;
   }
 
-  const params = new URLSearchParams(
-    isAv ? { aid: vid.slice(2) } : { bvid: vid }
-  );
+  const result = await getPageCidMap(vid);
+  if ("error" in result) return result.error;
 
-  const resp = await fetch(`${CID_API}?${params}`, {
-    headers: HEADERS,
-    signal: AbortSignal.timeout(8000),
-  });
+  setCache(cidCache, vid, result, CID_TTL);
 
-  let json: { code: number; message?: string; data?: Array<{ cid: number; page: number }> };
-  try {
-    json = await resp.json();
-  } catch {
-    return "服务器获取CID出错";
-  }
-
-  if (json.code !== 0 || !json.data) {
-    return `视频状态异常: ${json.message || "未知错误"}`;
-  }
-
-  const mapping: Record<string, number> = {};
-  for (const p of json.data) {
-    mapping[String(p.page)] = p.cid;
-  }
-  setCache(cidCache, vid, mapping, CID_TTL);
-
-  const cid = mapping[String(page)];
-  if (!cid) return `分P ${page} 不存在`;
+  const cid = result.get(page);
+  if (!cid) return `分P ${page} 不存在（共 ${result.size} P）`;
   return cid;
-}
-
-async function getVideoUrl(vid: string, cid: number, isAv: boolean): Promise<string> {
-  const params = new URLSearchParams({
-    platform: "html5",
-    cid: String(cid),
-    type: "mp4",
-    qn: "208",
-    high_quality: "1",
-    ...(isAv ? { avid: vid.slice(2) } : { bvid: vid }),
-  });
-
-  const resp = await fetch(`${PLAYURL_API}?${params}`, {
-    headers: HEADERS,
-    signal: AbortSignal.timeout(8000),
-  });
-
-  let json: { code: number; message?: string; data?: { durl?: Array<{ url: string }> } };
-  try {
-    json = await resp.json();
-  } catch {
-    return "服务器获取视频链接出错";
-  }
-
-  if (json.code !== 0) {
-    return `B站返回错误: ${json.message || "未知错误"}`;
-  }
-
-  const url = json.data?.durl?.[0]?.url;
-  if (!url) return "未获取到视频流地址";
-  return url;
 }
 
 export async function GET(
@@ -158,31 +89,34 @@ export async function GET(
   }
 
   // Resolve CID
-  const cid = await getCid(vid, page, isAv);
+  const cid = await resolveCid(vid, page);
   if (typeof cid === "string") {
     return NextResponse.json({ error: cid }, { status: 502 });
   }
 
-  // Get video stream URL
-  const videoUrl = await getVideoUrl(vid, cid, isAv);
-  if (!videoUrl.startsWith("https://")) {
-    // Error message returned
-    // Clear CID cache in case it was stale
+  // Get video stream URL via shared bilibili.ts helper
+  const result = await getPlayUrl(vid, cid);
+  if ("error" in result) {
     cidCache.delete(vid);
-    return NextResponse.json({ error: videoUrl }, { status: 502 });
+    return NextResponse.json({ error: result.error }, { status: 502 });
   }
 
   // Cache and redirect
-  setCache(urlCache, cacheKey, videoUrl, URL_TTL);
+  setCache(urlCache, cacheKey, result.url, URL_TTL);
+  // Also cache backup URLs for potential fallback
+  if (result.backupUrls.length > 0) {
+    setCache(urlCache, `${cacheKey}_backup`, result.backupUrls[0], URL_TTL);
+  }
 
   return new NextResponse(null, {
     status: 307,
     headers: {
-      Location: videoUrl,
+      Location: result.url,
       "Content-Type": "video/mp4",
       "Cache-Control": "no-cache",
       "Referrer-Policy": "no-referrer",
       "Access-Control-Allow-Origin": "*",
+      "X-Video-Quality": String(result.quality),
     },
   });
 }

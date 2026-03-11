@@ -30,10 +30,10 @@ interface RuffleInstance {
 export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<RuffleInstance | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
 
   const loadRuffle = useCallback(async () => {
     setIsLoading(true);
@@ -79,6 +79,9 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
       await player.load({ url });
       playerRef.current = player;
       setIsLoading(false);
+
+      // 加载完成后聚焦 wrapper 以接收键盘事件
+      wrapperRef.current?.focus();
     } catch (e) {
       console.error("Ruffle load error:", e);
       setError(e instanceof Error ? e.message : "Flash 内容加载失败");
@@ -138,6 +141,31 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
     loadRuffle();
   }, [loadRuffle]);
 
+  // 键盘快捷键
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      switch (e.key) {
+        case "f":
+        case "F":
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+        case "Escape":
+          if (document.fullscreenElement) {
+            e.preventDefault();
+            document.exitFullscreen();
+          }
+          break;
+        case "r":
+        case "R":
+          e.preventDefault();
+          handleReload();
+          break;
+      }
+    },
+    [toggleFullscreen, handleReload]
+  );
+
   if (error) {
     return (
       <div
@@ -161,7 +189,9 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
   return (
     <div
       ref={wrapperRef}
-      className={cn("group relative rounded-lg bg-black", className)}
+      className={cn("group relative rounded-lg bg-black outline-none", className)}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
     >
       {isLoading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center">
@@ -193,7 +223,7 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
           size="icon"
           className="h-8 w-8 bg-black/50 text-white hover:bg-black/70"
           onClick={handleReload}
-          title="重新加载"
+          title="重新加载 (R)"
         >
           <RotateCcw className="h-4 w-4" />
         </Button>
@@ -202,7 +232,7 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
           size="icon"
           className="h-8 w-8 bg-black/50 text-white hover:bg-black/70"
           onClick={toggleFullscreen}
-          title={isFullscreen ? "退出全屏" : "全屏"}
+          title={isFullscreen ? "退出全屏 (F)" : "全屏 (F)"}
         >
           {isFullscreen ? (
             <Minimize className="h-4 w-4" />

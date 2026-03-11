@@ -901,16 +901,38 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     const [showPlayer, setShowPlayer] = useState(autoStart || !poster);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
-    const [volume, setVolume] = useState(0.7);
+    const [volume, setVolume] = useState(() => {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("video-player-volume");
+        if (saved) {
+          const v = parseFloat(saved);
+          if (v >= 0 && v <= 1) return v;
+        }
+      }
+      return 0.7;
+    });
     const [played, setPlayed] = useState(0);
     const [playedSeconds, setPlayedSeconds] = useState(0);
     const [duration, setDuration] = useState(0);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showControls, setShowControls] = useState(true);
     const [isBuffering, setIsBuffering] = useState(false);
-    const [playbackRate, setPlaybackRate] = useState(1);
+    const [buffered, setBuffered] = useState(0);
+    const [playbackRate, setPlaybackRate] = useState(() => {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("video-player-rate");
+        if (saved) {
+          const rate = parseFloat(saved);
+          if ([0.25, 0.5, 0.75, 1, 1.25, 1.5, 2].includes(rate)) return rate;
+        }
+      }
+      return 1;
+    });
     const [isLocked, setIsLocked] = useState(false);
     const [showMobileMenu, setShowMobileMenu] = useState(false);
+    const [hoverProgress, setHoverProgress] = useState(0);
+    const [showHoverTime, setShowHoverTime] = useState(false);
+    const [brightness, setBrightness] = useState(1);
 
     // 多媒体轨道状态
     const [currentQuality, setCurrentQuality] = useState<QualityLevel | null>(
@@ -928,7 +950,17 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 弹幕状态
     const [danmakuEnabled, setDanmakuEnabled] = useState(true);
     const [danmakuData, setDanmakuData] = useState<DanmakuItem[]>([]);
-    const [danmakuSettings, setDanmakuSettings] = useState<DanmakuSettings>(defaultDanmakuSettings);
+    const [danmakuSettings, setDanmakuSettings] = useState<DanmakuSettings>(() => {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("video-danmaku-settings");
+        if (saved) {
+          try {
+            return { ...defaultDanmakuSettings, ...JSON.parse(saved) };
+          } catch { /* ignore */ }
+        }
+      }
+      return defaultDanmakuSettings;
+    });
 
     // 字幕设置状态（B站同款）
     const [subtitleSettings, setSubtitleSettings] = useState<SubtitleSettings>(() => {
@@ -952,6 +984,27 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         localStorage.setItem("video-subtitle-settings", JSON.stringify(subtitleSettings));
       }
     }, [subtitleSettings]);
+
+    // 持久化音量
+    useEffect(() => {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("video-player-volume", String(volume));
+      }
+    }, [volume]);
+
+    // 持久化播放速度
+    useEffect(() => {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("video-player-rate", String(playbackRate));
+      }
+    }, [playbackRate]);
+
+    // 持久化弹幕设置
+    useEffect(() => {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("video-danmaku-settings", JSON.stringify(danmakuSettings));
+      }
+    }, [danmakuSettings]);
 
     // 当前播放 URL
     const currentUrl = useMemo(() => {
@@ -1112,12 +1165,22 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         return;
       }
 
-      // 应用字幕时间偏移
       const currentTime = playedSeconds + subtitleSettings.offset;
-      const cue = subtitleCues.find(
-        (c) => currentTime >= c.start && currentTime <= c.end
-      );
-      setCurrentCue(cue?.text || "");
+      // 二分查找定位当前字幕
+      let lo = 0, hi = subtitleCues.length - 1, found = "";
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const c = subtitleCues[mid];
+        if (currentTime < c.start) {
+          hi = mid - 1;
+        } else if (currentTime > c.end) {
+          lo = mid + 1;
+        } else {
+          found = c.text;
+          break;
+        }
+      }
+      setCurrentCue(found);
     }, [playedSeconds, subtitleCues, subtitlesEnabled, subtitleSettings.offset]);
 
     // 初始化弹幕渲染器
@@ -1192,12 +1255,33 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       }, 3000);
     }, [isPlaying, showMobileMenu]);
 
+    // 缓冲进度跟踪
+    useEffect(() => {
+      if (!isReady) return;
+      const video = getVideoElement();
+      if (!video) return;
+
+      const updateBuffered = () => {
+        if (video.buffered.length > 0 && video.duration > 0) {
+          const end = video.buffered.end(video.buffered.length - 1);
+          setBuffered(end / video.duration);
+        }
+      };
+
+      video.addEventListener("progress", updateBuffered);
+      video.addEventListener("loadeddata", updateBuffered);
+      updateBuffered();
+      return () => {
+        video.removeEventListener("progress", updateBuffered);
+        video.removeEventListener("loadeddata", updateBuffered);
+      };
+    }, [isReady, getVideoElement]);
+
     // 全屏变化监听
     useEffect(() => {
       const handleFullscreenChange = () => {
         const isNowFullscreen = !!document.fullscreenElement;
         setIsFullscreen(isNowFullscreen);
-        // 退出全屏时重置锁定状态，防止用户无法交互
         if (!isNowFullscreen) {
           setIsLocked(false);
         }
@@ -1454,26 +1538,17 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
     const handlePlay = useCallback(() => setShowPlayer(true), []);
 
-    // 鼠标双击处理（桌面端）
-    const lastClickRef = useRef<number>(0);
+    // 桌面端点击/双击处理（YouTube 式：单击立即切换播放，双击全屏时会切换两次自动复原）
     const handleVideoClick = useCallback((e: React.MouseEvent) => {
       if (isMobile || isLocked) return;
       if ((e.target as HTMLElement).closest("[data-controls]")) return;
-      
-      const now = Date.now();
-      const timeSinceLastClick = now - lastClickRef.current;
-      
-      if (timeSinceLastClick < 300) {
-        toggleFullscreen();
-        lastClickRef.current = 0;
-      } else {
-        lastClickRef.current = now;
-        setTimeout(() => {
-          if (Date.now() - lastClickRef.current >= 300) {
-            setIsPlaying((prev) => !prev);
-          }
-        }, 300);
-      }
+      setIsPlaying((prev) => !prev);
+    }, [isMobile, isLocked]);
+
+    const handleVideoDoubleClick = useCallback((e: React.MouseEvent) => {
+      if (isMobile || isLocked) return;
+      if ((e.target as HTMLElement).closest("[data-controls]")) return;
+      toggleFullscreen();
     }, [toggleFullscreen, isMobile, isLocked]);
 
     // 触摸开始
@@ -1562,9 +1637,10 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         showGestureHint("volume", `${Math.round(newVol * 100)}%`);
         e.preventDefault();
       } else if (gestureActiveRef.current === "brightness") {
-        const brightnessDelta = -(deltaY / (rect.height / 2)) * 50;
-        const newBrightness = Math.max(0, Math.min(100, 50 + brightnessDelta));
-        showGestureHint("brightness", `${Math.round(newBrightness)}%`);
+        const brightnessDelta = -(deltaY / (rect.height / 2));
+        const newBrightness = Math.max(0.2, Math.min(2, 1 + brightnessDelta));
+        setBrightness(newBrightness);
+        showGestureHint("brightness", `${Math.round(newBrightness * 100)}%`);
         e.preventDefault();
       }
     }, [duration, playedSeconds, volume, getVideoElement, showGestureHint, isLocked]);
@@ -1652,6 +1728,19 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       }, 500);
     }, [skip, showControls, resetControlsTimeout, isLocked]);
 
+    // 进度条悬停时间预览
+    const handleProgressHover = useCallback((e: React.MouseEvent) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const progress = Math.max(0, Math.min(1, x / rect.width));
+      setHoverProgress(progress);
+      setShowHoverTime(true);
+    }, []);
+
+    const handleProgressLeave = useCallback(() => {
+      setShowHoverTime(false);
+    }, []);
+
     const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
     // 服务端渲染时显示骨架屏
@@ -1711,10 +1800,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           "relative aspect-video bg-black rounded-lg overflow-hidden group select-none touch-none",
           isFullscreen && "rounded-none"
         )}
+        style={brightness !== 1 ? { filter: `brightness(${brightness})` } : undefined}
         tabIndex={0}
         onMouseMove={!isMobile ? resetControlsTimeout : undefined}
         onMouseLeave={!isMobile ? () => isPlaying && setShowControls(false) : undefined}
         onClick={handleVideoClick}
+        onDoubleClick={!isMobile ? handleVideoDoubleClick : undefined}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -1786,9 +1877,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
             !danmakuEnabled && "hidden"
           )}
         >
-          {/* CCL 默认样式 + 自定义动画回退 */}
+          {/* CCL 核心样式（动画回退 keyframes 已在 globals.css 中定义） */}
           <style>{`
-            /* CommentCoreLibrary 核心样式 */
             .container {
               position: relative;
               width: 100%;
@@ -1809,42 +1899,15 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
               pointer-events: none;
               z-index: 1;
             }
-            /* 滚动弹幕 */
-            .cmt.r2l {
-              transform: translateX(0);
-            }
-            .cmt.l2r {
-              transform: translateX(0);
-            }
-            /* 顶部/底部固定弹幕 */
+            .cmt.r2l { transform: translateX(0); }
+            .cmt.l2r { transform: translateX(0); }
             .cmt.top, .cmt.bottom {
               left: 50%;
               transform: translateX(-50%);
             }
-            .cmt.bottom {
-              bottom: 10%;
-            }
-            .cmt.top {
-              top: 5%;
-            }
-            /* 高级弹幕 */
-            .cmt.abs {
-              transform-origin: center center;
-            }
-            /* 回退动画（当 CCL 未加载时使用） */
-            @keyframes danmaku-scroll {
-              from { transform: translateX(0); }
-              to { transform: translateX(calc(-100% - 100vw)); }
-            }
-            @keyframes danmaku-scroll-reverse {
-              from { transform: translateX(0); }
-              to { transform: translateX(calc(100% + 100vw)); }
-            }
-            @keyframes danmaku-fade {
-              0% { opacity: 1; }
-              80% { opacity: 1; }
-              100% { opacity: 0; }
-            }
+            .cmt.bottom { bottom: 10%; }
+            .cmt.top { top: 5%; }
+            .cmt.abs { transform-origin: center center; }
           `}</style>
         </div>
 
@@ -1917,6 +1980,15 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           </div>
         )}
 
+        {/* 速度指示器 */}
+        {playbackRate !== 1 && isReady && !isBuffering && (
+          <div className="absolute top-3 right-3 z-20 pointer-events-none">
+            <div className="rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white/90 backdrop-blur-sm">
+              {playbackRate}x
+            </div>
+          </div>
+        )}
+
         {/* 缓冲指示器 */}
         {isBuffering && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
@@ -1974,8 +2046,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent" />
             
             <div className="relative p-3 pb-safe">
-              {/* 进度条 */}
-              <div className="mb-3">
+              {/* 进度条（含缓冲指示） */}
+              <div className="relative mb-3">
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 left-0 h-1.5 rounded-full bg-white/25 pointer-events-none transition-[width] duration-300"
+                  style={{ width: `${buffered * 100}%` }}
+                />
                 <Slider
                   value={[played]}
                   max={1}
@@ -2346,8 +2422,26 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
             onClick={(e) => e.stopPropagation()}
             onTouchEnd={(e) => e.stopPropagation()}
           >
-            {/* 进度条 */}
-            <div className="mb-3">
+            {/* 进度条（含缓冲指示 + 悬停预览） */}
+            <div
+              className="relative mb-3"
+              onMouseMove={handleProgressHover}
+              onMouseLeave={handleProgressLeave}
+            >
+              {/* 缓冲进度 */}
+              <div
+                className="absolute top-1/2 -translate-y-1/2 left-0 h-1 rounded-full bg-white/25 pointer-events-none transition-[width] duration-300"
+                style={{ width: `${buffered * 100}%` }}
+              />
+              {/* 悬停时间提示 */}
+              {showHoverTime && duration > 0 && (
+                <div
+                  className="absolute -top-8 z-10 rounded bg-black/90 px-2 py-1 text-xs text-white pointer-events-none -translate-x-1/2"
+                  style={{ left: `${hoverProgress * 100}%` }}
+                >
+                  {formatTime(hoverProgress * duration)}
+                </div>
+              )}
               <Slider
                 value={[played]}
                 max={1}

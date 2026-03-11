@@ -9,8 +9,10 @@ import { sortDanmakuByTime } from "./perf-utils";
 // 获取 Bilibili cookie（从环境变量）
 const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";
 
-// 通用请求头
-function getBilibiliHeaders(referer?: string) {
+/**
+ * 通用 B 站请求头（带可选 Cookie）
+ */
+export function getBilibiliHeaders(referer?: string) {
   const headers: Record<string, string> = {
     "User-Agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -18,6 +20,26 @@ function getBilibiliHeaders(referer?: string) {
   };
   if (BILIBILI_COOKIE) {
     headers["Cookie"] = BILIBILI_COOKIE;
+  }
+  return headers;
+}
+
+/**
+ * HTML5 平台专用请求头（用于 playurl 接口取流）
+ * 模拟移动端请求，获取单文件 MP4 视频流
+ */
+export function getHtml5Headers() {
+  const headers: Record<string, string> = {
+    "accept": "application/json, text/plain, */*",
+    "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "accept-encoding": "gzip",
+    "cache-control": "no-cache",
+    "X-Real-IP": "120.2.5.6",
+    "user-agent":
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
+  };
+  if (BILIBILI_COOKIE) {
+    headers["cookie"] = BILIBILI_COOKIE;
   }
   return headers;
 }
@@ -337,6 +359,7 @@ export function extractAid(input: string): number | null {
 export interface BilibiliVideoBasicInfo {
   bvid: string;
   aid: number;
+  cid: number;
   title: string;
   desc: string;
   pic: string;
@@ -366,6 +389,7 @@ export async function getVideoInfoByBvid(bvid: string): Promise<BilibiliVideoBas
     return {
       bvid: data.data.bvid,
       aid: data.data.aid,
+      cid: data.data.cid || 0,
       title: data.data.title,
       desc: data.data.desc,
       pic: data.data.pic,
@@ -395,6 +419,7 @@ export async function getVideoInfoByAid(aid: number): Promise<BilibiliVideoBasic
     return {
       bvid: data.data.bvid,
       aid: data.data.aid,
+      cid: data.data.cid || 0,
       title: data.data.title,
       desc: data.data.desc,
       pic: data.data.pic,
@@ -822,10 +847,11 @@ export async function getVideoCid(bvid: string): Promise<number | null> {
 
 /**
  * 获取视频所有分P的cid列表
+ * 参考 BACNext: /x/player/pagelist
  * @param bvid BV号
- * @returns cid数组
+ * @returns 分P信息数组，包含 cid、标题、分P序号、时长
  */
-export async function getVideoPages(bvid: string): Promise<{ cid: number; title: string; page: number }[]> {
+export async function getVideoPages(bvid: string): Promise<{ cid: number; title: string; page: number; duration: number }[]> {
   try {
     const response = await fetch(
       `https://api.bilibili.com/x/player/pagelist?bvid=${bvid}`,
@@ -838,11 +864,217 @@ export async function getVideoPages(bvid: string): Promise<{ cid: number; title:
       return [];
     }
     
-    return data.data.map((p: { cid: number; part: string; page: number }) => ({
+    return data.data.map((p: { cid: number; part: string; page: number; duration: number }) => ({
       cid: p.cid,
       title: p.part,
       page: p.page,
+      duration: p.duration || 0,
     }));
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================
+// 视频流 URL 获取
+// 参考 BACNext: /x/player/playurl
+// ============================================================
+
+/**
+ * qn 清晰度标识（参考 BACNext 文档）
+ * 注意: 使用 platform=html5 时 qn 值有特殊含义
+ */
+export const QN = {
+  "240P": 6,
+  "360P": 16,
+  "480P": 32,
+  "720P": 64,
+  "720P60": 74,
+  "1080P": 80,
+  "1080P_PLUS": 112,
+  "1080P60": 116,
+  "4K": 120,
+  "HDR": 125,
+} as const;
+
+/** playurl 返回结果 */
+export interface PlayUrlResult {
+  url: string;
+  backupUrls: string[];
+  quality: number;
+  acceptQuality: number[];
+  duration: number;
+}
+
+/**
+ * 获取视频流 URL（HTML5 平台模式，返回单文件 MP4）
+ *
+ * 参考 BACNext: /x/player/playurl
+ * - platform=html5 + type=mp4 返回可直接播放的 MP4 流
+ * - 不登录最高 480P，登录后最高 1080P
+ * - URL 有效期 120 分钟
+ *
+ * @param vid   BV号 或 av号（如 "BV1xx411c7mD" 或 "av170001"）
+ * @param cid   视频 cid
+ * @param qn    请求清晰度，默认 116（1080P60，自动降级到可用最高）
+ */
+export async function getPlayUrl(
+  vid: string,
+  cid: number,
+  qn: number = 116,
+): Promise<PlayUrlResult | { error: string }> {
+  const isAv = /^av/i.test(vid);
+
+  const params = new URLSearchParams({
+    platform: "html5",
+    cid: String(cid),
+    type: "mp4",
+    qn: String(qn),
+    high_quality: "1",
+    ...(isAv ? { avid: vid.slice(2) } : { bvid: vid }),
+  });
+
+  try {
+    const resp = await fetch(
+      `https://api.bilibili.com/x/player/playurl?${params}`,
+      { headers: getHtml5Headers(), signal: AbortSignal.timeout(8000) },
+    );
+
+    const json = await resp.json();
+
+    if (json.code !== 0) {
+      return { error: `B站返回错误 (${json.code}): ${json.message || "未知错误"}` };
+    }
+
+    const d = json.data;
+    const durl = d?.durl?.[0];
+    if (!durl?.url) {
+      return { error: "未获取到视频流地址" };
+    }
+
+    return {
+      url: durl.url,
+      backupUrls: durl.backup_url || [],
+      quality: d.quality ?? 0,
+      acceptQuality: d.accept_quality ?? [],
+      duration: d.timelength ? Math.round(d.timelength / 1000) : 0,
+    };
+  } catch (e) {
+    return { error: `获取视频流失败: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/**
+ * 获取视频分P的 CID 映射
+ * 参考 BACNext: /x/player/pagelist
+ *
+ * @returns Map<page, cid> 或错误字符串
+ */
+export async function getPageCidMap(
+  vid: string,
+): Promise<Map<number, number> | { error: string }> {
+  const isAv = /^av/i.test(vid);
+  const params = new URLSearchParams(
+    isAv ? { aid: vid.slice(2) } : { bvid: vid },
+  );
+
+  try {
+    const resp = await fetch(
+      `https://api.bilibili.com/x/player/pagelist?${params}`,
+      { headers: getBilibiliHeaders(), signal: AbortSignal.timeout(8000) },
+    );
+
+    const json = await resp.json();
+
+    if (json.code !== 0 || !json.data) {
+      return { error: `视频状态异常 (${json.code}): ${json.message || "未知错误"}` };
+    }
+
+    const map = new Map<number, number>();
+    for (const p of json.data as Array<{ page: number; cid: number }>) {
+      map.set(p.page, p.cid);
+    }
+    return map;
+  } catch (e) {
+    return { error: `获取CID失败: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+// ============================================================
+// WBI 签名版视频信息
+// 参考 BACNext: /x/web-interface/wbi/view
+// ============================================================
+
+/**
+ * 通过 WBI 签名获取视频信息（更可靠，不易被风控）
+ * BACNext 文档: /x/web-interface/wbi/view
+ */
+export async function getVideoInfoWbi(
+  idParam: { bvid: string } | { aid: number },
+): Promise<BilibiliVideoBasicInfo | null> {
+  try {
+    const params: Record<string, string | number> = "bvid" in idParam
+      ? { bvid: idParam.bvid }
+      : { aid: idParam.aid };
+
+    const signedQuery = await encWbi(params);
+    const url = `https://api.bilibili.com/x/web-interface/wbi/view?${signedQuery}`;
+
+    const response = await fetch(url, {
+      headers: getBilibiliHeaders(),
+    });
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      // 风控返回 HTML，回退到非 WBI 版本
+      const fallbackId = "bvid" in idParam ? idParam.bvid : null;
+      if (fallbackId) return getVideoInfoByBvid(fallbackId);
+      return getVideoInfoByAid(("aid" in idParam ? idParam.aid : 0));
+    }
+
+    const data = await response.json();
+
+    if (data.code !== 0 || !data.data) {
+      // 回退到非 WBI 版本
+      if ("bvid" in idParam) return getVideoInfoByBvid(idParam.bvid);
+      return getVideoInfoByAid(idParam.aid);
+    }
+
+    return {
+      bvid: data.data.bvid,
+      aid: data.data.aid,
+      cid: data.data.cid || 0,
+      title: data.data.title,
+      desc: data.data.desc,
+      pic: data.data.pic,
+      duration: data.data.duration,
+      owner: data.data.owner,
+    };
+  } catch {
+    // 回退
+    if ("bvid" in idParam) return getVideoInfoByBvid(idParam.bvid);
+    return getVideoInfoByAid(("aid" in idParam ? idParam.aid : 0));
+  }
+}
+
+/**
+ * 获取视频标签
+ * 参考 BACNext: /x/tag/archive/tags
+ */
+export async function getVideoTags(aid: number): Promise<string[]> {
+  try {
+    const response = await fetch(
+      `https://api.bilibili.com/x/tag/archive/tags?aid=${aid}`,
+      { headers: getBilibiliHeaders() },
+    );
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) return [];
+
+    const data = await response.json();
+    if (data.code !== 0 || !data.data) return [];
+
+    return data.data.map((tag: { tag_name: string }) => tag.tag_name);
   } catch {
     return [];
   }

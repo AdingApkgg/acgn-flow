@@ -305,22 +305,22 @@ video::cue {
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-/* 弹幕动画 */
+/* 弹幕动画（CSS 回退渲染器使用） */
 @keyframes danmaku-scroll {
   from {
-    transform: translateX(100%);
+    transform: translateX(0);
   }
   to {
-    transform: translateX(-100vw);
+    transform: translateX(calc(-100% - 100vw));
   }
 }
 
 @keyframes danmaku-scroll-reverse {
   from {
-    transform: translateX(-100%);
+    transform: translateX(0);
   }
   to {
-    transform: translateX(100vw);
+    transform: translateX(calc(100% + 100vw));
   }
 }
 

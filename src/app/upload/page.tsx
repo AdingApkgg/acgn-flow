@@ -217,7 +217,7 @@ function BilibiliImportDialog({
         if (result.videoInfo) {
           setPagesVideoInfo({
             ...result.videoInfo,
-            videoUrl: `${window.location.origin}/api/bili/${result.videoInfo.bvid}?p=1`,
+            videoUrl: `/api/bili/${result.videoInfo.bvid}?p=1`,
           });
         }
         toast.success(`找到 ${result.data.length} 个分P`);
@@ -274,7 +274,7 @@ function BilibiliImportDialog({
       }));
       const videoWithPage: BilibiliVideoInfo = {
         ...pagesVideoInfo,
-        videoUrl: `${window.location.origin}/api/bili/${pagesVideoInfo.bvid}?p=${selectedPage}`,
+        videoUrl: `/api/bili/${pagesVideoInfo.bvid}?p=${selectedPage}`,
         pages: pagesData, // 保存所有分P信息
       };
       onImport(videoWithPage);
@@ -970,7 +970,12 @@ export default function UploadPage() {
               type="button"
               variant={contentType === "VIDEO" ? "default" : "outline"}
               size="sm"
-              onClick={() => setContentType("VIDEO")}
+              onClick={() => {
+                if (contentType !== "VIDEO") {
+                  form.setValue("videoUrl", "");
+                  setContentType("VIDEO");
+                }
+              }}
             >
               <Upload className="h-4 w-4 mr-1.5" />
               视频
@@ -979,7 +984,12 @@ export default function UploadPage() {
               type="button"
               variant={contentType === "FLASH" ? "default" : "outline"}
               size="sm"
-              onClick={() => setContentType("FLASH")}
+              onClick={() => {
+                if (contentType !== "FLASH") {
+                  form.setValue("videoUrl", "");
+                  setContentType("FLASH");
+                }
+              }}
             >
               <Zap className="h-4 w-4 mr-1.5" />
               Flash

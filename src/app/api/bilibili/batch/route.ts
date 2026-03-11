@@ -1,21 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseVideoId, getUserVideosFromUploadPage, getUserVideosWithWbi } from "@/lib/bilibili";
-
-// 获取 Bilibili cookie（从环境变量）
-const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";
-
-// 通用请求头
-function getBilibiliHeaders(referer?: string) {
-  const headers: Record<string, string> = {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    Referer: referer || "https://www.bilibili.com",
-  };
-  if (BILIBILI_COOKIE) {
-    headers["Cookie"] = BILIBILI_COOKIE;
-  }
-  return headers;
-}
+import {
+  parseVideoId,
+  getUserVideosFromUploadPage,
+  getUserVideosWithWbi,
+  getBilibiliHeaders,
+  getVideoInfoWbi,
+  getVideoTags as getVideoTagsShared,
+} from "@/lib/bilibili";
 
 // B站视频信息接口
 interface BilibiliVideoInfo {
@@ -34,83 +25,35 @@ interface BilibiliVideoInfo {
 // 延迟函数
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// 获取视频详细信息
+// 获取视频详细信息（使用 WBI 签名版 API）
 async function getVideoDetails(
   bvid: string,
-  baseUrl: string
 ): Promise<Omit<BilibiliVideoInfo, "videoUrl" | "tags"> | null> {
-  const url = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
+  const info = await getVideoInfoWbi({ bvid });
+  if (!info) return null;
 
-  try {
-    const response = await fetch(url, {
-      headers: getBilibiliHeaders(),
-    });
-
-    // 检查是否返回 HTML（风控页面）
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
-      console.error("B站API返回非JSON响应，可能触发风控");
-      return null;
-    }
-
-    const data = await response.json();
-
-    if (data.code !== 0 || !data.data) {
-      return null;
-    }
-
-    const video = data.data;
-
-    let coverPic = video.pic || "";
-    if (coverPic.startsWith("http://")) {
-      coverPic = coverPic.replace("http://", "https://");
-    }
-    const proxiedCover = coverPic
-      ? `${baseUrl}/api/bilibili/image?url=${encodeURIComponent(coverPic)}`
-      : "";
-
-    return {
-      title: video.title,
-      description: video.desc,
-      coverUrl: proxiedCover,
-      duration: video.duration,
-      uploader: video.owner?.name || "",
-      bvid: video.bvid,
-      aid: video.aid,
-      cid: video.cid || 0, // 添加 cid 用于弹幕获取
-    };
-  } catch (error) {
-    console.error("获取B站视频信息失败:", error);
-    return null;
+  let coverPic = info.pic || "";
+  if (coverPic.startsWith("http://")) {
+    coverPic = coverPic.replace("http://", "https://");
   }
+  const proxiedCover = coverPic
+    ? `/api/bilibili/image?url=${encodeURIComponent(coverPic)}`
+    : "";
+
+  return {
+    title: info.title,
+    description: info.desc,
+    coverUrl: proxiedCover,
+    duration: info.duration,
+    uploader: info.owner?.name || "",
+    bvid: info.bvid,
+    aid: info.aid,
+    cid: info.cid || 0,
+  };
 }
 
-// 获取视频标签
-async function getVideoTags(aid: number): Promise<string[]> {
-  const url = `https://api.bilibili.com/x/tag/archive/tags?aid=${aid}`;
-
-  try {
-    const response = await fetch(url, {
-      headers: getBilibiliHeaders(),
-    });
-
-    // 检查是否返回 HTML（风控页面）
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
-      return [];
-    }
-
-    const data = await response.json();
-
-    if (data.code !== 0 || !data.data) {
-      return [];
-    }
-
-    return data.data.map((tag: { tag_name: string }) => tag.tag_name);
-  } catch {
-    return [];
-  }
-}
+// 使用共享的标签获取函数
+const getVideoTags = getVideoTagsShared;
 
 // 获取用户视频列表（使用WBI签名，控制并发避免风控）
 async function getUserVideos(
@@ -420,44 +363,40 @@ async function getSeasonVideosById(
   }
 }
 
-// 获取视频分P列表
-async function getVideoPages(
+// 获取视频分P列表（使用 WBI 签名的 view API + pagelist）
+async function getVideoPagesDetailed(
   bvid: string
 ): Promise<{ bvid: string; aid: number; title: string; partTitle: string; cid: number; page: number }[]> {
   try {
-    // 先获取视频信息
-    const viewUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
-    const viewResponse = await fetch(viewUrl, {
-      headers: getBilibiliHeaders(),
-    });
-    const viewData = await viewResponse.json();
-    
-    if (viewData.code !== 0 || !viewData.data) {
-      console.error("获取视频信息失败:", viewData.message);
-      return [];
-    }
+    const info = await getVideoInfoWbi({ bvid });
+    if (!info) return [];
 
-    const aid = viewData.data.aid;
-    const pages = viewData.data.pages || [];
+    // 通过 pagelist 获取所有分P
+    const pagelistResp = await fetch(
+      `https://api.bilibili.com/x/player/pagelist?bvid=${bvid}`,
+      { headers: getBilibiliHeaders() },
+    );
+    const pagelistData = await pagelistResp.json();
+
+    const pages: Array<{ cid: number; page: number; part: string }> =
+      pagelistData.code === 0 && pagelistData.data ? pagelistData.data : [];
 
     if (pages.length <= 1) {
-      // 单P视频，返回视频本身
       return [{
-        bvid: viewData.data.bvid,
-        aid: aid,
-        title: viewData.data.title,
-        partTitle: viewData.data.title,
-        cid: pages[0]?.cid || 0,
+        bvid: info.bvid,
+        aid: info.aid,
+        title: info.title,
+        partTitle: info.title,
+        cid: pages[0]?.cid || info.cid || 0,
         page: 1,
       }];
     }
 
-    // 多P视频，返回所有分P
-    return pages.map((p: { cid: number; page: number; part: string }) => ({
-      bvid: viewData.data.bvid,
-      aid: aid,
-      title: `${viewData.data.title} - P${p.page} ${p.part}`,
-      partTitle: p.part, // 分P标题
+    return pages.map((p) => ({
+      bvid: info.bvid,
+      aid: info.aid,
+      title: `${info.title} - P${p.page} ${p.part}`,
+      partTitle: p.part,
       cid: p.cid,
       page: p.page,
     }));
@@ -566,13 +505,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { type, value } = body;
-
-    // 优先使用环境变量，确保线上环境正确
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (() => {
-      const protocol = request.headers.get("x-forwarded-proto") || "http";
-      const host = request.headers.get("host") || "localhost:3000";
-      return `${protocol}://${host}`;
-    })();
 
     let videoList: { bvid: string; aid: number; title: string }[] = [];
     let useLightweightResponse = false;
@@ -711,7 +643,7 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
-        const pages = await getVideoPages(parsedVideo.bvid);
+        const pages = await getVideoPagesDetailed(parsedVideo.bvid);
         if (pages.length === 0) {
           return NextResponse.json(
             { error: "获取分P列表失败" },
@@ -720,7 +652,7 @@ export async function POST(request: NextRequest) {
         }
 
         // 获取视频基本信息
-        const baseDetails = await getVideoDetails(parsedVideo.bvid, baseUrl);
+        const baseDetails = await getVideoDetails(parsedVideo.bvid);
         if (!baseDetails) {
           return NextResponse.json(
             { error: "获取视频信息失败" },
@@ -744,7 +676,7 @@ export async function POST(request: NextRequest) {
           page: p.page,
           cid: p.cid,
           tags,
-          videoUrl: `${baseUrl}/api/bili/${parsedVideo.bvid}?p=${p.page}`,
+          videoUrl: `/api/bili/${parsedVideo.bvid}?p=${p.page}`,
         }));
 
         return NextResponse.json({
@@ -792,7 +724,7 @@ export async function POST(request: NextRequest) {
         uploader: "",
         bvid: v.bvid,
         aid: v.aid,
-        videoUrl: `${baseUrl}/api/bili/${v.bvid}`,
+        videoUrl: `/api/bili/${v.bvid}`,
       }));
 
       return NextResponse.json({
@@ -813,7 +745,7 @@ export async function POST(request: NextRequest) {
         batch.map(async (v) => {
           try {
             const [details, tags] = await Promise.all([
-              getVideoDetails(v.bvid, baseUrl),
+              getVideoDetails(v.bvid),
               getVideoTags(v.aid),
             ]);
             if (!details) return null;
@@ -821,7 +753,7 @@ export async function POST(request: NextRequest) {
             return {
               ...details,
               tags,
-              videoUrl: `${baseUrl}/api/bili/${v.bvid}`,
+              videoUrl: `/api/bili/${v.bvid}`,
             } as BilibiliVideoInfo;
           } catch {
             return null;
