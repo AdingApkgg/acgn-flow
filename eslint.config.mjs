@@ -17,6 +17,9 @@ const eslintConfig = defineConfig([
     // Third-party libraries
     "public/ccl.js",
     "public/ccl.min.js",
+    "public/ruffle/**",
+    // Build/helper scripts
+    "scripts/**",
   ]),
 ]);
 

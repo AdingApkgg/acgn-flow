@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
+import Image from "next/image";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,18 @@ interface RuffleInstance {
   pause: () => void;
 }
 
+interface RufflePublicAPI {
+  newest: () => {
+    createPlayer: () => RuffleInstance & HTMLElement;
+  };
+}
+
+declare global {
+  interface Window {
+    RufflePlayer?: RufflePublicAPI;
+  }
+}
+
 export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<RuffleInstance | null>(null);
@@ -35,64 +48,66 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const loadRuffle = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      if (!(window as any).RufflePlayer) {
-        await new Promise<void>((resolve, reject) => {
-          const existing = document.querySelector(
-            `script[src="${RUFFLE_LOCAL_URL}"]`
-          );
-          if (existing) {
-            if ((window as any).RufflePlayer) {
-              resolve();
-            } else {
-              existing.addEventListener("load", () => resolve());
-              existing.addEventListener("error", () =>
-                reject(new Error("Ruffle 加载失败"))
-              );
-            }
-            return;
+  const createRufflePlayer = useCallback(async () => {
+    if (!window.RufflePlayer) {
+      await new Promise<void>((resolve, reject) => {
+        const existing = document.querySelector(
+          `script[src="${RUFFLE_LOCAL_URL}"]`
+        );
+        if (existing) {
+          if (window.RufflePlayer) {
+            resolve();
+          } else {
+            existing.addEventListener("load", () => resolve());
+            existing.addEventListener("error", () =>
+              reject(new Error("Ruffle 加载失败"))
+            );
           }
+          return;
+        }
 
-          const script = document.createElement("script");
-          script.src = RUFFLE_LOCAL_URL;
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error("Ruffle 加载失败"));
-          document.head.appendChild(script);
-        });
-      }
-
-      const ruffle = (window as any).RufflePlayer.newest();
-      const player = ruffle.createPlayer();
-
-      player.style.width = "100%";
-      player.style.height = "100%";
-
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
-        containerRef.current.appendChild(player);
-      }
-
-      await player.load({ url });
-      playerRef.current = player;
-      setIsLoading(false);
-
-      // 加载完成后聚焦 wrapper 以接收键盘事件
-      wrapperRef.current?.focus();
-    } catch (e) {
-      console.error("Ruffle load error:", e);
-      setError(e instanceof Error ? e.message : "Flash 内容加载失败");
-      setIsLoading(false);
+        const script = document.createElement("script");
+        script.src = RUFFLE_LOCAL_URL;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Ruffle 加载失败"));
+        document.head.appendChild(script);
+      });
     }
+
+    const ruffle = window.RufflePlayer!.newest();
+    const player = ruffle.createPlayer();
+
+    player.style.width = "100%";
+    player.style.height = "100%";
+
+    if (containerRef.current) {
+      containerRef.current.innerHTML = "";
+      containerRef.current.appendChild(player);
+    }
+
+    await player.load({ url });
+    return player;
   }, [url]);
 
   useEffect(() => {
-    loadRuffle();
+    let cancelled = false;
+
+    createRufflePlayer()
+      .then((player) => {
+        if (cancelled) return;
+        playerRef.current = player;
+        setIsLoading(false);
+        wrapperRef.current?.focus();
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error("Ruffle load error:", e);
+        setError(e instanceof Error ? e.message : "Flash 内容加载失败");
+        setIsLoading(false);
+      });
 
     return () => {
+      cancelled = true;
       if (playerRef.current) {
         try {
           playerRef.current.remove();
@@ -102,7 +117,7 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
         playerRef.current = null;
       }
     };
-  }, [loadRuffle]);
+  }, [createRufflePlayer]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -138,8 +153,20 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
     if (containerRef.current) {
       containerRef.current.innerHTML = "";
     }
-    loadRuffle();
-  }, [loadRuffle]);
+    setIsLoading(true);
+    setError(null);
+    createRufflePlayer()
+      .then((player) => {
+        playerRef.current = player;
+        setIsLoading(false);
+        wrapperRef.current?.focus();
+      })
+      .catch((e) => {
+        console.error("Ruffle load error:", e);
+        setError(e instanceof Error ? e.message : "Flash 内容加载失败");
+        setIsLoading(false);
+      });
+  }, [createRufflePlayer]);
 
   // 键盘快捷键
   const handleKeyDown = useCallback(
@@ -196,10 +223,12 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
       {isLoading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center">
           {poster ? (
-            <img
+            <Image
               src={poster}
               alt="Flash cover"
-              className="absolute inset-0 h-full w-full rounded-lg object-cover opacity-50"
+              fill
+              unoptimized
+              className="absolute inset-0 rounded-lg object-cover opacity-50"
             />
           ) : (
             <Skeleton className="absolute inset-0 rounded-lg" />

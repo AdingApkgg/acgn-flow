@@ -53,6 +53,22 @@ import dynamic from "next/dynamic";
 // 动态导入 ReactPlayer 避免 SSR 问题
 const ReactPlayer = dynamic(() => import("react-player"), { ssr: false });
 
+const EXTERNAL_EMBED_PATTERNS = [
+  /(?:youtube\.com|youtu\.be)/,
+  /(?:vimeo\.com)/,
+  /(?:dailymotion\.com|dai\.ly)/,
+  /(?:twitch\.tv)/,
+  /(?:soundcloud\.com)/,
+  /(?:streamable\.com)/,
+  /(?:wistia\.com|wi\.st)/,
+  /(?:facebook\.com|fb\.watch)/,
+  /(?:mixcloud\.com)/,
+];
+
+function checkExternalEmbed(url: string): boolean {
+  return EXTERNAL_EMBED_PATTERNS.some((p) => p.test(url));
+}
+
 // 字幕设置接口（B站同款）
 interface SubtitleSettings {
   fontSize: "small" | "medium" | "large" | "xlarge";
@@ -895,6 +911,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 客户端挂载状态
     const isMounted = useIsMounted();
 
+    // 外部嵌入检测（YouTube/Vimeo 等 iframe 播放器）
+    const isExternal = useMemo(() => checkExternalEmbed(url), [url]);
+
     // 播放器状态
     const [isReady, setIsReady] = useState(false);
     const [hasError, setHasError] = useState(false);
@@ -1421,9 +1440,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       });
     }, [showGestureHint]);
 
-    // 键盘快捷键
+    // 键盘快捷键 — 外部嵌入时不拦截
     useEffect(() => {
-      if (!showPlayer || !isReady) return;
+      if (!showPlayer || !isReady || isExternal) return;
 
       const handleKeyDown = (e: KeyboardEvent) => {
         if (
@@ -1534,7 +1553,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
       window.addEventListener("keydown", handleKeyDown);
       return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [showPlayer, isReady, skip, adjustVolume, toggleFullscreen, getVideoElement, showGestureHint]);
+    }, [showPlayer, isReady, isExternal, skip, adjustVolume, toggleFullscreen, getVideoElement, showGestureHint]);
 
     const handlePlay = useCallback(() => setShowPlayer(true), []);
 
@@ -1798,18 +1817,19 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       <div
         ref={containerRef}
         className={cn(
-          "relative aspect-video bg-black rounded-lg overflow-hidden group select-none touch-none",
+          "relative aspect-video bg-black rounded-lg overflow-hidden group",
+          !isExternal && "select-none touch-none",
           isFullscreen && "rounded-none"
         )}
         style={brightness !== 1 ? { filter: `brightness(${brightness})` } : undefined}
-        tabIndex={0}
-        onMouseMove={!isMobile ? resetControlsTimeout : undefined}
-        onMouseLeave={!isMobile ? () => isPlaying && setShowControls(false) : undefined}
-        onClick={handleVideoClick}
-        onDoubleClick={!isMobile ? handleVideoDoubleClick : undefined}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        tabIndex={isExternal ? undefined : 0}
+        onMouseMove={!isMobile && !isExternal ? resetControlsTimeout : undefined}
+        onMouseLeave={!isMobile && !isExternal ? () => isPlaying && setShowControls(false) : undefined}
+        onClick={!isExternal ? handleVideoClick : undefined}
+        onDoubleClick={!isMobile && !isExternal ? handleVideoDoubleClick : undefined}
+        onTouchStart={!isExternal ? handleTouchStart : undefined}
+        onTouchMove={!isExternal ? handleTouchMove : undefined}
+        onTouchEnd={!isExternal ? handleTouchEnd : undefined}
       >
         {/* 加载骨架屏 */}
         <div
@@ -1827,16 +1847,22 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           src={currentUrl}
           width="100%"
           height="100%"
-          playing={isPlaying}
-          muted={isMuted}
-          volume={volume}
-          playbackRate={playbackRate}
+          playing={isExternal ? undefined : isPlaying}
+          muted={isExternal ? undefined : isMuted}
+          volume={isExternal ? undefined : volume}
+          playbackRate={isExternal ? undefined : playbackRate}
+          controls={isExternal}
+          onReady={() => {
+            if (!isReady) {
+              setIsReady(true);
+            }
+          }}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           onEnded={onEnded}
           onError={() => setHasError(true)}
-          onWaiting={() => setIsBuffering(true)}
-          onCanPlay={() => {
+          onWaiting={isExternal ? undefined : () => setIsBuffering(true)}
+          onCanPlay={isExternal ? undefined : () => {
             setIsBuffering(false);
             if (!isReady) {
               setIsReady(true);
@@ -1848,13 +1874,13 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
               }
             }
           }}
-          onLoadedData={() => {
+          onLoadedData={isExternal ? undefined : () => {
             if (!isReady) {
               setIsReady(true);
             }
           }}
-          onDurationChange={(e) => setDuration((e.target as HTMLVideoElement).duration || 0)}
-          onTimeUpdate={(e) => {
+          onDurationChange={isExternal ? undefined : (e) => setDuration((e.target as HTMLVideoElement).duration || 0)}
+          onTimeUpdate={isExternal ? undefined : (e) => {
             const video = e.target as HTMLVideoElement;
             if (video.duration) {
               const state = {
@@ -1870,12 +1896,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           }}
         />
 
-        {/* 弹幕层 (CommentCoreLibrary) */}
+        {/* 弹幕层 (CommentCoreLibrary) — 外部嵌入时隐藏 */}
         <div
           ref={danmakuContainerRef}
           className={cn(
             "absolute inset-0 pointer-events-none overflow-hidden",
-            !danmakuEnabled && "hidden"
+            (!danmakuEnabled || isExternal) && "hidden"
           )}
         >
           {/* CCL 核心样式（动画回退 keyframes 已在 globals.css 中定义） */}
@@ -1912,8 +1938,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           `}</style>
         </div>
 
-        {/* 字幕层（B站同款样式） */}
-        {subtitlesEnabled && currentCue && (
+        {/* 字幕层（B站同款样式） — 外部嵌入时隐藏 */}
+        {subtitlesEnabled && currentCue && !isExternal && (
           <div className={cn(
             "absolute left-0 right-0 flex justify-center pointer-events-none z-20 px-4",
             subtitleSettings.position === "top" 
@@ -1952,8 +1978,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           </div>
         )}
 
-        {/* 手势提示 */}
-        {gestureHint && (
+        {/* 手势提示 — 外部嵌入时隐藏 */}
+        {gestureHint && !isExternal && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
             <div className="bg-black/80 text-white px-6 py-4 rounded-2xl text-center backdrop-blur-sm">
               {gestureHint.icon === "forward" && (
@@ -1981,8 +2007,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           </div>
         )}
 
-        {/* 速度指示器 */}
-        {playbackRate !== 1 && isReady && !isBuffering && (
+        {/* 速度指示器 — 外部嵌入时隐藏 */}
+        {playbackRate !== 1 && isReady && !isBuffering && !isExternal && (
           <div className="absolute top-3 right-3 z-20 pointer-events-none">
             <div className="rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white/90 backdrop-blur-sm">
               {playbackRate}x
@@ -1990,15 +2016,15 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           </div>
         )}
 
-        {/* 缓冲指示器 */}
-        {isBuffering && (
+        {/* 缓冲指示器 — 外部嵌入时隐藏 */}
+        {isBuffering && !isExternal && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
             <Loader2 className="w-12 h-12 text-white animate-spin" />
           </div>
         )}
 
-        {/* 中央播放按钮 */}
-        {!isPlaying && isReady && !isLocked && (
+        {/* 中央播放按钮 — 外部嵌入时隐藏 */}
+        {!isPlaying && isReady && !isLocked && !isExternal && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="w-16 h-16 md:w-20 md:h-20 bg-white/90 rounded-full flex items-center justify-center shadow-lg">
               <Play className="w-8 h-8 md:w-10 md:h-10 text-black ml-1" />
@@ -2006,8 +2032,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           </div>
         )}
 
-        {/* 锁定按钮（移动端全屏时显示） */}
-        {isMobile && isFullscreen && (
+        {/* 锁定按钮（移动端全屏时显示） — 外部嵌入时隐藏 */}
+        {isMobile && isFullscreen && !isExternal && (
           <button
             className={cn(
               "absolute left-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-black/50 text-white transition-opacity",
@@ -2025,15 +2051,15 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           </button>
         )}
 
-        {/* 锁定提示 */}
-        {isLocked && (
+        {/* 锁定提示 — 外部嵌入时隐藏 */}
+        {isLocked && !isExternal && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
             <div className="text-white/50 text-sm">点击左侧锁图标解锁</div>
           </div>
         )}
 
-        {/* 移动端控制栏 */}
-        {isMobile ? (
+        {/* 控制栏 — 外部嵌入时隐藏，由 iframe 原生控件接管 */}
+        {!isExternal && (isMobile ? (
           <div
             data-controls
             className={cn(
@@ -2960,7 +2986,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
               </div>
             </div>
           </div>
-        )}
+        ))}
       </div>
     );
   }
