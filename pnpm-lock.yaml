@@ -92,6 +92,9 @@ importers:
       '@radix-ui/react-visually-hidden':
         specifier: ^1.2.4
         version: 1.2.4(@types/react-dom@19.2.3(@types/react@19.2.10))(@types/react@19.2.10)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@ruffle-rs/ruffle':
+        specifier: 0.2.0-nightly.2026.3.11
+        version: 0.2.0-nightly.2026.3.11
       '@t3-oss/env-nextjs':
         specifier: ^0.13.10
         version: 0.13.10(typescript@5.9.3)(valibot@1.2.0(typescript@5.9.3))(zod@4.3.6)
@@ -1742,6 +1745,9 @@ packages:
 
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
+
+  '@ruffle-rs/ruffle@0.2.0-nightly.2026.3.11':
+    resolution: {integrity: sha512-Q5cdM/r6tBj0A2uzS9qIw67bC/L2gKTq2vHrZ7/vPyPuTIOkGGbxsahVVjhMXVrfBGlsuHuIO9l7VKtFjcYi+Q==}
 
   '@serwist/build@9.5.3':
     resolution: {integrity: sha512-P20GPPB4lFEQawA0WUdkWa5RNnWfQIqupNKk7eY8aYmio4P5hQQci5GmA7sQCNw+rxWKTkqzCoiw1F53+uCbog==}
@@ -6005,6 +6011,8 @@ snapshots:
       react-redux: 9.2.0(@types/react@19.2.10)(react@19.2.4)(redux@5.0.1)
 
   '@rtsao/scc@1.1.0': {}
+
+  '@ruffle-rs/ruffle@0.2.0-nightly.2026.3.11': {}
 
   '@serwist/build@9.5.3(browserslist@4.28.1)(typescript@5.9.3)':
     dependencies:

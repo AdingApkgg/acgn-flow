@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { trpc } from "@/lib/trpc";
 import { VideoPlayer, type VideoPlayerRef, type DanmakuItem } from "@/components/video/video-player";
+import { RufflePlayer } from "@/components/video/ruffle-player";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -316,6 +317,7 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://af.saop.cc";
+  const isFlash = displayVideo.contentType === "FLASH";
 
   return (
     <>
@@ -331,14 +333,21 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
       <div className="px-4 md:px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
-            <VideoPlayer
-              ref={playerRef}
-              url={currentVideoUrl || displayVideo.videoUrl}
-              poster={displayVideo.coverUrl}
-              onProgress={handleProgress}
-              subtitles={displayVideo.subtitleUrl ? [{ url: displayVideo.subtitleUrl, name: "字幕", default: true }] : []}
-              danmakuUrl={displayVideo.danmakuUrl || `/uploads/danmaku/${displayVideo.id}.json`}
-            />
+            {isFlash ? (
+              <RufflePlayer
+                url={displayVideo.videoUrl}
+                poster={displayVideo.coverUrl || undefined}
+              />
+            ) : (
+              <VideoPlayer
+                ref={playerRef}
+                url={currentVideoUrl || displayVideo.videoUrl}
+                poster={displayVideo.coverUrl}
+                onProgress={handleProgress}
+                subtitles={displayVideo.subtitleUrl ? [{ url: displayVideo.subtitleUrl, name: "字幕", default: true }] : []}
+                danmakuUrl={displayVideo.danmakuUrl || `/uploads/danmaku/${displayVideo.id}.json`}
+              />
+            )}
 
           <div>
             <div className="flex items-start justify-between gap-2">
@@ -574,8 +583,8 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
             </div>
           )}
 
-          {/* 分P列表 */}
-          {hasPages && displayVideo.pages && (
+          {/* 分P列表（仅视频） */}
+          {!isFlash && hasPages && displayVideo.pages && (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <List className="h-4 w-4" />
@@ -608,8 +617,8 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
             </div>
           )}
 
-          {/* 弹幕列表 */}
-          {danmakuData.length > 0 && (
+          {/* 弹幕列表（仅视频） */}
+          {!isFlash && danmakuData.length > 0 && (
             <div className="border rounded-lg overflow-hidden">
               <button
                 onClick={() => setShowDanmakuList(!showDanmakuList)}

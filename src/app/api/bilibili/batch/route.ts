@@ -744,7 +744,7 @@ export async function POST(request: NextRequest) {
           page: p.page,
           cid: p.cid,
           tags,
-          videoUrl: `https://parse.saop.cc/api/bili/${parsedVideo.bvid}?p=${p.page}`,
+          videoUrl: `${baseUrl}/api/bili/${parsedVideo.bvid}?p=${p.page}`,
         }));
 
         return NextResponse.json({
@@ -792,7 +792,7 @@ export async function POST(request: NextRequest) {
         uploader: "",
         bvid: v.bvid,
         aid: v.aid,
-        videoUrl: `https://parse.saop.cc/api/bili/${v.bvid}`,
+        videoUrl: `${baseUrl}/api/bili/${v.bvid}`,
       }));
 
       return NextResponse.json({
@@ -821,7 +821,7 @@ export async function POST(request: NextRequest) {
             return {
               ...details,
               tags,
-              videoUrl: `https://parse.saop.cc/api/bili/${v.bvid}`,
+              videoUrl: `${baseUrl}/api/bili/${v.bvid}`,
             } as BilibiliVideoInfo;
           } catch {
             return null;

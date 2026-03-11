@@ -222,12 +222,13 @@ export const videoRouter = router({
         cursor: z.string().optional(),
         tagId: z.string().optional(),
         search: z.string().optional(),
+        contentType: z.enum(["VIDEO", "FLASH"]).optional(),
         sortBy: z.enum(["latest", "views", "likes", "recommend"]).default("latest"),
         timeRange: z.enum(["all", "today", "week", "month"]).default("all"),
       })
     )
     .query(async ({ ctx, input }) => {
-      const { limit, cursor, tagId, search, sortBy, timeRange } = input;
+      const { limit, cursor, tagId, search, sortBy, timeRange, contentType } = input;
 
       // 计算时间范围
       const getTimeFilter = () => {
@@ -247,6 +248,7 @@ export const videoRouter = router({
 
       const baseWhere: Prisma.VideoWhereInput = {
         status: "PUBLISHED",
+        ...(contentType ? { contentType } : {}),
       };
 
       if (tagId) {
@@ -602,26 +604,27 @@ export const videoRouter = router({
   create: protectedProcedure
     .input(
       z.object({
-        customId: z.string().regex(/^av\d+$/i, "自定义ID格式必须为 av+数字").optional(), // B站AV号作为ID
+        customId: z.string().regex(/^av\d+$/i, "自定义ID格式必须为 av+数字").optional(),
         title: z.string().min(1).max(100),
         description: z.string().max(5000).optional(),
         coverUrl: z.string().url().optional().or(z.literal("")),
-        videoUrl: z.string().url(),
+        videoUrl: z.string().min(1),
         subtitleUrl: z.string().url().optional().or(z.literal("")),
         danmakuUrl: z.string().url().optional().or(z.literal("")),
         duration: z.number().optional(),
+        contentType: z.enum(["VIDEO", "FLASH"]).optional(),
         tagIds: z.array(z.string()).optional(),
-        tagNames: z.array(z.string()).optional(), // 新建标签名称
+        tagNames: z.array(z.string()).optional(),
         pages: z.array(z.object({
           page: z.number(),
           title: z.string(),
           cid: z.number().optional(),
-        })).optional(), // B站分P信息
-        skipIndexNow: z.boolean().optional(), // 批量导入时跳过 IndexNow
+        })).optional(),
+        skipIndexNow: z.boolean().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { customId, tagIds, tagNames, coverUrl, subtitleUrl, danmakuUrl, pages, skipIndexNow, ...data } = input;
+      const { customId, tagIds, tagNames, coverUrl, subtitleUrl, danmakuUrl, pages, skipIndexNow, contentType, ...data } = input;
 
       // 如果提供了自定义ID，检查是否已存在
       if (customId) {
@@ -672,17 +675,17 @@ export const videoRouter = router({
 
       const video = await ctx.prisma.video.create({
         data: {
-          // 使用自定义ID（如B站AV号）或自动生成
           ...(customId ? { id: customId.toLowerCase() } : {}),
           title: data.title,
           description: data.description,
           videoUrl: data.videoUrl,
           duration: data.duration,
-          status: "PUBLISHED", // 直接发布，无需审核
+          status: "PUBLISHED",
+          contentType: contentType || "VIDEO",
           ...(coverUrl ? { coverUrl } : {}),
           ...(subtitleUrl ? { subtitleUrl } : {}),
           ...(danmakuUrl ? { danmakuUrl } : {}),
-          ...(pages && pages.length > 1 ? { pages } : {}), // 只有多P时才保存
+          ...(pages && pages.length > 1 ? { pages } : {}),
           uploader: { connect: { id: ctx.session.user.id } },
           ...(uniqueTagIds.length > 0 
             ? { tags: { create: uniqueTagIds.map((tagId) => ({ tag: { connect: { id: tagId } } })) } }
@@ -706,7 +709,7 @@ export const videoRouter = router({
         title: z.string().min(1).max(100).optional(),
         description: z.string().max(5000).optional(),
         coverUrl: z.string().url().optional().or(z.literal("")),
-        videoUrl: z.string().url().optional(),
+        videoUrl: z.string().min(1).optional(),
         subtitleUrl: z.string().url().optional().or(z.literal("")),
         danmakuUrl: z.string().url().optional().or(z.literal("")),
         tagIds: z.array(z.string()).optional(),

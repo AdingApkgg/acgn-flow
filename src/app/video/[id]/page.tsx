@@ -106,6 +106,7 @@ function serializeVideo(video: NonNullable<Awaited<ReturnType<typeof getVideo>>>
     duration: video.duration,
     views: video.views,
     status: video.status,
+    contentType: video.contentType,
     createdAt: video.createdAt.toISOString(),
     updatedAt: video.updatedAt.toISOString(),
     uploader: video.uploader,

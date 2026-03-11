@@ -171,6 +171,7 @@ model Video {
   duration    Int?
   views       Int         @default(0)
   status      VideoStatus @default(PENDING)
+  contentType ContentType @default(VIDEO)
   pages       Json?       // B站分P信息 [{ page: number, title: string, cid?: number }]
   
   tags        TagOnVideo[]
@@ -240,6 +241,11 @@ enum VideoStatus {
   PUBLISHED
   REJECTED
   DELETED
+}
+
+enum ContentType {
+  VIDEO
+  FLASH
 }
 
 

@@ -128,8 +128,7 @@ export async function POST(request: NextRequest) {
     // 获取标签
     const tags = await getVideoTags(aid);
     
-    // 使用外部解析服务，以BV号作为参数
-    const videoUrl = `https://parse.saop.cc/api/bili/${bvid}`;
+    const videoUrl = `${baseUrl}/api/bili/${bvid}`;
     
     return NextResponse.json({
       success: true,

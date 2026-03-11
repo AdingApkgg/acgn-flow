@@ -8,6 +8,7 @@ import sharp from "sharp";
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "./uploads";
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB (图片)
 const MAX_TEXT_FILE_SIZE = 50 * 1024 * 1024; // 50MB (字幕/弹幕)
+const MAX_FLASH_FILE_SIZE = 100 * 1024 * 1024; // 100MB (Flash)
 
 // 允许的文件类型
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"];
@@ -59,18 +60,25 @@ const IMAGE_CONFIG: Record<string, ImageConfig> = {
   },
 };
 
+const ALLOWED_FLASH_TYPES = [
+  "application/x-shockwave-flash",
+  "application/octet-stream",
+];
+
 // 判断文件类型分类
-function getFileCategory(type: string, fileName: string): "image" | "subtitle" | "danmaku" | null {
+function getFileCategory(type: string, fileName: string): "image" | "subtitle" | "danmaku" | "flash" | null {
   if (ALLOWED_IMAGE_TYPES.includes(type)) return "image";
   
-  // 通过扩展名判断字幕文件
+  // 通过扩展名判断
   const ext = fileName.toLowerCase().split(".").pop();
   if (["vtt", "srt", "ass", "ssa"].includes(ext || "")) return "subtitle";
   if (["xml", "json"].includes(ext || "")) return "danmaku";
+  if (ext === "swf") return "flash";
   
   // 通过 MIME 类型判断
   if (ALLOWED_SUBTITLE_TYPES.includes(type)) return "subtitle";
   if (ALLOWED_DANMAKU_TYPES.includes(type)) return "danmaku";
+  if (ALLOWED_FLASH_TYPES.includes(type)) return "flash";
   
   return null;
 }
@@ -102,7 +110,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 根据文件类型检查大小限制
-    const maxSize = fileCategory === "image" ? MAX_FILE_SIZE : MAX_TEXT_FILE_SIZE;
+    const maxSize = fileCategory === "flash" ? MAX_FLASH_FILE_SIZE
+      : fileCategory === "image" ? MAX_FILE_SIZE
+      : MAX_TEXT_FILE_SIZE;
     if (file.size > maxSize) {
       return NextResponse.json(
         { error: `文件大小不能超过 ${maxSize / 1024 / 1024}MB` },
@@ -115,6 +125,7 @@ export async function POST(request: NextRequest) {
     // 根据文件类型自动设置目录
     if (fileCategory === "subtitle" && !type) uploadType = "subtitle";
     if (fileCategory === "danmaku" && !type) uploadType = "danmaku";
+    if (fileCategory === "flash" && !type) uploadType = "flash";
     
     const uploadPath = join(UPLOAD_DIR, uploadType);
     if (!existsSync(uploadPath)) {
@@ -131,8 +142,14 @@ export async function POST(request: NextRequest) {
     let metadata: { width?: number; height?: number } = {};
     let compressionMode = "none";
 
+    // Flash SWF 文件处理
+    if (fileCategory === "flash") {
+      outputBuffer = inputBuffer;
+      outputExt = "swf";
+      compressionMode = "none";
+    }
     // 字幕文件处理
-    if (fileCategory === "subtitle") {
+    else if (fileCategory === "subtitle") {
       const ext = file.name.toLowerCase().split(".").pop() || "vtt";
       outputBuffer = inputBuffer;
       outputExt = ext;

@@ -17,7 +17,8 @@
     "pm2:stop": "pm2 stop acgn-flow",
     "pm2:restart": "pm2 restart acgn-flow",
     "pm2:logs": "pm2 logs acgn-flow",
-    "pm2:status": "pm2 status"
+    "pm2:status": "pm2 status",
+    "postinstall": "node scripts/copy-ruffle.cjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
@@ -48,6 +49,7 @@
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@radix-ui/react-visually-hidden": "^1.2.4",
+    "@ruffle-rs/ruffle": "0.2.0-nightly.2026.3.11",
     "@t3-oss/env-nextjs": "^0.13.10",
     "@tanstack/react-query": "^5.90.20",
     "@trpc/client": "^11.9.0",

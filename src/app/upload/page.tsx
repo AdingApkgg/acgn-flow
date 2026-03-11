@@ -14,7 +14,7 @@ import { Form, FormLabel } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { Loader2, Upload, Import, Layers, Plus } from "lucide-react";
+import { Loader2, Upload, Import, Layers, Plus, Zap, FileUp } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import {
   Select,
@@ -40,10 +40,12 @@ const uploadSchema = z.object({
   title: z.string().min(1, "请输入标题").max(100, "标题最多100个字符"),
   description: z.string().max(5000, "简介最多5000个字符").optional().or(z.literal("")),
   coverUrl: z.string().url("请输入有效的封面URL").optional().or(z.literal("")),
-  videoUrl: z.string().url("请输入有效的视频URL"),
+  videoUrl: z.string().min(1, "请提供视频URL或上传文件"),
   subtitleUrl: z.string().url("请输入有效的字幕URL").optional().or(z.literal("")),
   danmakuUrl: z.string().url("请输入有效的弹幕URL").optional().or(z.literal("")),
 });
+
+type ContentTypeOption = "VIDEO" | "FLASH";
 
 type UploadForm = z.infer<typeof uploadSchema>;
 
@@ -215,7 +217,7 @@ function BilibiliImportDialog({
         if (result.videoInfo) {
           setPagesVideoInfo({
             ...result.videoInfo,
-            videoUrl: `https://parse.saop.cc/api/bili/${result.videoInfo.bvid}?p=1`,
+            videoUrl: `${window.location.origin}/api/bili/${result.videoInfo.bvid}?p=1`,
           });
         }
         toast.success(`找到 ${result.data.length} 个分P`);
@@ -272,7 +274,7 @@ function BilibiliImportDialog({
       }));
       const videoWithPage: BilibiliVideoInfo = {
         ...pagesVideoInfo,
-        videoUrl: `https://parse.saop.cc/api/bili/${pagesVideoInfo.bvid}?p=${selectedPage}`,
+        videoUrl: `${window.location.origin}/api/bili/${pagesVideoInfo.bvid}?p=${selectedPage}`,
         pages: pagesData, // 保存所有分P信息
       };
       onImport(videoWithPage);
@@ -579,6 +581,8 @@ export default function UploadPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [isLoading, setIsLoading] = useState(false);
+  const [contentType, setContentType] = useState<ContentTypeOption>("VIDEO");
+  const [flashUploading, setFlashUploading] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [newTags, setNewTags] = useState<string[]>([]);
   const [biliAid, setBiliAid] = useState<number | null>(null); // B站AV号，用于自定义视频ID
@@ -770,22 +774,47 @@ export default function UploadPage() {
     }
   };
 
+  const handleFlashUpload = async (file: File) => {
+    setFlashUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("type", "flash");
+
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "上传失败");
+
+      form.setValue("videoUrl", data.url);
+      toast.success("SWF 文件上传成功");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "上传失败");
+    } finally {
+      setFlashUploading(false);
+    }
+  };
+
   async function onSubmit(data: UploadForm) {
+    if (contentType === "FLASH" && !data.videoUrl) {
+      toast.error("请上传 SWF 文件");
+      return;
+    }
     setIsLoading(true);
     try {
       const result = await createMutation.mutateAsync({
         // 如果是从B站导入的，使用AV号作为视频ID
         ...(biliAid ? { customId: `av${biliAid}` } : {}),
         ...(biliDuration ? { duration: biliDuration } : {}),
-        ...(biliPages && biliPages.length > 1 ? { pages: biliPages } : {}), // 分P信息
+        ...(biliPages && biliPages.length > 1 ? { pages: biliPages } : {}),
         title: data.title,
         description: data.description,
         coverUrl: data.coverUrl || "",
         videoUrl: data.videoUrl,
-        subtitleUrl: data.subtitleUrl || "",
-        danmakuUrl: data.danmakuUrl || "",
+        subtitleUrl: contentType === "VIDEO" ? (data.subtitleUrl || "") : "",
+        danmakuUrl: contentType === "VIDEO" ? (data.danmakuUrl || "") : "",
         tagIds: selectedTags,
         tagNames: newTags,
+        contentType,
       });
       
       // 如果是从B站导入的，异步获取弹幕
@@ -916,26 +945,132 @@ export default function UploadPage() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Upload className="h-5 w-5" />
-                发布视频
+                {contentType === "FLASH" ? "发布 Flash" : "发布视频"}
               </CardTitle>
               <CardDescription>
-                填写视频信息，提供视频直链即可发布
+                {contentType === "FLASH"
+                  ? "上传 SWF 文件，通过 Ruffle 在浏览器中播放 Flash 内容"
+                  : "填写视频信息，提供视频直链即可发布"}
               </CardDescription>
             </div>
-            <BilibiliImportDialog
-              onImport={handleBilibiliImport}
-              onBatchImport={handleBatchImport}
-              allTags={allTags}
-              setSelectedTags={setSelectedTags}
-              setNewTags={setNewTags}
-            />
+            {contentType === "VIDEO" && (
+              <BilibiliImportDialog
+                onImport={handleBilibiliImport}
+                onBatchImport={handleBatchImport}
+                allTags={allTags}
+                setSelectedTags={setSelectedTags}
+                setNewTags={setNewTags}
+              />
+            )}
+          </div>
+
+          {/* 内容类型切换 */}
+          <div className="flex gap-2 mt-4">
+            <Button
+              type="button"
+              variant={contentType === "VIDEO" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setContentType("VIDEO")}
+            >
+              <Upload className="h-4 w-4 mr-1.5" />
+              视频
+            </Button>
+            <Button
+              type="button"
+              variant={contentType === "FLASH" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setContentType("FLASH")}
+            >
+              <Zap className="h-4 w-4 mr-1.5" />
+              Flash
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* 使用共享的表单字段组件 */}
-              <VideoFormFields form={form} />
+              {contentType === "VIDEO" ? (
+                <VideoFormFields form={form} />
+              ) : (
+                <>
+                  {/* Flash 模式：标题 + 简介 + 封面 + SWF 上传 */}
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <FormLabel>标题 *</FormLabel>
+                      <Input
+                        placeholder="输入 Flash 作品标题"
+                        {...form.register("title")}
+                      />
+                      {form.formState.errors.title && (
+                        <p className="text-sm text-destructive">{form.formState.errors.title.message}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <FormLabel>简介</FormLabel>
+                      <Textarea
+                        placeholder="输入作品简介（可选）"
+                        rows={3}
+                        {...form.register("description")}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <FormLabel>封面 URL</FormLabel>
+                      <Input
+                        placeholder="输入封面图片链接（可选）"
+                        {...form.register("coverUrl")}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <FormLabel>SWF 文件 *</FormLabel>
+                      {form.watch("videoUrl") ? (
+                        <div className="flex items-center gap-2 p-3 border rounded-lg bg-muted/50">
+                          <Zap className="h-4 w-4 text-amber-500" />
+                          <span className="text-sm flex-1 truncate">{form.watch("videoUrl")}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => form.setValue("videoUrl", "")}
+                          >
+                            移除
+                          </Button>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
+                          {flashUploading ? (
+                            <>
+                              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">上传中...</span>
+                            </>
+                          ) : (
+                            <>
+                              <FileUp className="h-8 w-8 text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">点击选择 SWF 文件（最大 100MB）</span>
+                            </>
+                          )}
+                          <input
+                            type="file"
+                            accept=".swf"
+                            className="hidden"
+                            disabled={flashUploading}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleFlashUpload(file);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        通过 Ruffle (WebAssembly) 播放，部分 ActionScript 3 内容可能不完全兼容
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* 标签选择 */}
               <div className="space-y-2">
@@ -1079,7 +1214,7 @@ export default function UploadPage() {
 
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                发布视频
+                {contentType === "FLASH" ? "发布 Flash" : "发布视频"}
               </Button>
             </form>
           </Form>

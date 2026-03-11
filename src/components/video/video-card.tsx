@@ -9,7 +9,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { Play, Eye, Heart, User, Clock } from "lucide-react";
+import { Play, Eye, Heart, User, Clock, Zap } from "lucide-react";
 import { formatDuration, formatViews, formatRelativeTime } from "@/lib/format";
 
 interface VideoCardProps {
@@ -19,6 +19,7 @@ interface VideoCardProps {
     coverUrl?: string | null;
     duration?: number | null;
     views: number;
+    contentType?: string;
     createdAt: Date;
     uploader: {
       id: string;
@@ -68,6 +69,14 @@ function VideoCardComponent({ video, index = 0 }: VideoCardProps) {
             <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 bg-black/75 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium">
               <Clock className="h-3 w-3" />
               {formatDuration(video.duration)}
+            </div>
+          )}
+
+          {/* Flash 角标 */}
+          {video.contentType === "FLASH" && (
+            <div className="absolute top-2.5 left-2.5 flex items-center gap-1 bg-amber-500/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium z-10">
+              <Zap className="h-3 w-3" />
+              Flash
             </div>
           )}
 
