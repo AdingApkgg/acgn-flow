@@ -1609,6 +1609,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           const isLeftSide = startX < rect.left + rect.width / 2;
           if (isLeftSide) {
             gestureActiveRef.current = "brightness";
+            gestureStartValueRef.current = brightness;
           } else {
             gestureActiveRef.current = "volume";
             gestureStartValueRef.current = volume;
@@ -1638,12 +1639,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         e.preventDefault();
       } else if (gestureActiveRef.current === "brightness") {
         const brightnessDelta = -(deltaY / (rect.height / 2));
-        const newBrightness = Math.max(0.2, Math.min(2, 1 + brightnessDelta));
+        const newBrightness = Math.max(0.2, Math.min(2, gestureStartValueRef.current + brightnessDelta));
         setBrightness(newBrightness);
         showGestureHint("brightness", `${Math.round(newBrightness * 100)}%`);
         e.preventDefault();
       }
-    }, [duration, playedSeconds, volume, getVideoElement, showGestureHint, isLocked]);
+    }, [duration, playedSeconds, volume, brightness, getVideoElement, showGestureHint, isLocked]);
 
     // 触摸结束
     const handleTouchEnd = useCallback(() => {
