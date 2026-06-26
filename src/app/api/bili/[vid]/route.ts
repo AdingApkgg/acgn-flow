@@ -79,10 +79,8 @@ export async function GET(
       status: 307,
       headers: {
         Location: cachedUrl,
-        "Content-Type": "video/mp4",
         "Cache-Control": "no-cache",
         "Referrer-Policy": "no-referrer",
-        "Access-Control-Allow-Origin": "*",
         "X-Cache": "HIT",
       },
     });
@@ -112,10 +110,8 @@ export async function GET(
     status: 307,
     headers: {
       Location: result.url,
-      "Content-Type": "video/mp4",
       "Cache-Control": "no-cache",
       "Referrer-Policy": "no-referrer",
-      "Access-Control-Allow-Origin": "*",
       "X-Video-Quality": String(result.quality),
     },
   });

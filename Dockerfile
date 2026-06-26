@@ -2,17 +2,18 @@
 
 FROM node:22-alpine AS base
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install nub（预编译 Rust 二进制 + N-API addon）
+# 注意：alpine 是 musl；若 nub 无 musl 预编译产物，请把基础镜像换成 node:22-slim（glibc）
+RUN npm install -g --ignore-scripts=false @nubjs/nub
 
 # Dependencies stage
 FROM base AS deps
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json lock.yaml ./
 COPY prisma ./prisma/
 
-RUN pnpm install --frozen-lockfile
+RUN nub ci
 
 # Builder stage
 FROM base AS builder
@@ -26,7 +27,7 @@ ENV SKIP_ENV_VALIDATION=1
 # Dummy DATABASE_URL for build time (actual URL provided at runtime)
 ENV DATABASE_URL="postgresql://user:pass@localhost:5432/db"
 
-RUN pnpm run build
+RUN nub run build
 
 # Runner stage
 FROM base AS runner

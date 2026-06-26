@@ -85,7 +85,22 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
       containerRef.current.appendChild(player);
     }
 
-    await player.load({ url });
+    // 给 load() 加超时兜底：卡死（既不 resolve 也不 reject）时进入错误态可重试
+    const LOAD_TIMEOUT_MS = 20000;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        player.load({ url }),
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error("Flash 内容加载超时")),
+            LOAD_TIMEOUT_MS
+          );
+        }),
+      ]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
     return player;
   }, [url]);
 

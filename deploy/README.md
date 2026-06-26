@@ -44,8 +44,8 @@ docker compose up -d --build
 ### 3. 初始化数据库
 
 ```bash
-podman exec -it acgn-flow-app pnpm db:push
-podman exec -it acgn-flow-app pnpm db:seed
+podman exec -it acgn-flow-app nub run db:push
+podman exec -it acgn-flow-app nub run db:seed
 ```
 
 ### 4. 配置 Rathole 客户端
@@ -118,5 +118,5 @@ tar -czvf uploads-backup.tar.gz uploads/
 git pull
 podman-compose down
 podman-compose up -d --build
-podman exec -it acgn-flow-app pnpm db:push
+podman exec -it acgn-flow-app nub run db:push
 ```

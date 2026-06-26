@@ -19,8 +19,8 @@ ACGN Fans 流式媒体内容分享平台。不存储视频文件，仅通过用�
 ### 1. 安装依赖
 
 ```bash
-pnpm install
-pnpm approve-builds  # 批准依赖的构建脚本
+nub install
+nub approve-builds  # 批准依赖的构建脚本
 ```
 
 ### 2. 配置环境变量
@@ -35,19 +35,19 @@ cp .env.example .env
 
 ```bash
 # 生成 Prisma Client
-pnpm db:generate
+nub run db:generate
 
 # 推送数据库 schema
-pnpm db:push
+nub run db:push
 
 # (可选) 填充初始数据
-pnpm db:seed
+nub run db:seed
 ```
 
 ### 4. 启动开发服务器
 
 ```bash
-pnpm dev
+nub run dev
 ```
 
 访问 http://localhost:3000
@@ -56,15 +56,15 @@ pnpm dev
 
 | 命令 | 说明 |
 |------|------|
-| `pnpm dev` | 启动开发服务器 (Turbopack, 端口 3000) |
-| `pnpm build` | 构建生产版本 |
-| `pnpm start` | 启动生产服务器 |
-| `pnpm lint` | 运行 ESLint |
-| `pnpm db:generate` | 生成 Prisma Client |
-| `pnpm db:push` | 推送 schema 到数据库 |
-| `pnpm db:migrate` | 运行数据库迁移 |
-| `pnpm db:studio` | 打开 Prisma Studio |
-| `pnpm db:seed` | 填充初始数据 |
+| `nub run dev` | 启动开发服务器 (Turbopack, 端口 3000) |
+| `nub run build` | 构建生产版本 |
+| `nub run start` | 启动生产服务器 |
+| `nub run lint` | 运行 ESLint |
+| `nub run db:generate` | 生成 Prisma Client |
+| `nub run db:push` | 推送 schema 到数据库 |
+| `nub run db:migrate` | 运行数据库迁移 |
+| `nub run db:studio` | 打开 Prisma Studio |
+| `nub run db:seed` | 填充初始数据 |
 
 ## 生产部署
 
@@ -101,7 +101,7 @@ podman compose down
 
 | 环境 | 端口 | 说明 |
 |------|------|------|
-| 开发环境 | 3000 | `pnpm dev` |
+| 开发环境 | 3000 | `nub run dev` |
 | 生产环境 | 1270 | `podman compose` (host 网络模式) |
 
 ### Rathole 隧道配置
@@ -152,7 +152,7 @@ acgn-flow/
 
 ## 默认账户
 
-运行 `pnpm db:seed` 后：
+运行 `nub run db:seed` 后：
 
 - **管理员**: admin@acgnflow.com / admin123
 
