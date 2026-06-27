@@ -6,6 +6,9 @@ import { CollectionPageJsonLd } from "@/components/seo/json-ld";
 const siteName = process.env.NEXT_PUBLIC_APP_NAME || "ACGN Flow";
 const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://acgn.app";
 
+// 该页查库列出全部标签：强制动态渲染，避免构建期连库（Docker 构建用占位 DATABASE_URL）
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "标签",
   description: `浏览 ${siteName} 的所有视频标签，按分类查找 ACGN 相关视频内容`,

@@ -1,17 +1,21 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22-alpine AS base
-# nub 包管理器（预编译 Rust 二进制 + N-API addon）。
-# 注意：alpine 是 musl；若 @nubjs/nub 无 musl 预编译产物，把基础镜像换成 node:22-slim（glibc）。
-# alpine 下 prisma 引擎(schema engine 需 openssl) / sharp 需要 libc 兼容层。
-RUN apk add --no-cache libc6-compat openssl \
+FROM node:22-slim AS base
+# 用 glibc 基础镜像(debian-slim)而非 alpine(musl)：
+# Next 的 SWC 二进制是 @next/swc-linux-x64-gnu(glibc)，在 musl 下加载会缺符号
+# (__register_atfork: symbol not found) 而失败；glibc 下原生可用，省去 musl 适配。
+# prisma schema engine(db push) 需要 openssl。
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
   && npm install -g --ignore-scripts=false @nubjs/nub
 
 # ---------- 依赖安装 ----------
 FROM base AS deps
 WORKDIR /app
 # scripts/ 必须先于安装拷入：postinstall 会执行 scripts/copy-ruffle.cjs
-COPY package.json lock.yaml ./
+# .npmrc 带 trustPolicyExclude=next-auth，nub ci 需要它放行 next-auth beta
+COPY package.json lock.yaml .npmrc ./
 COPY prisma ./prisma/
 COPY scripts ./scripts/
 RUN nub ci
@@ -55,8 +59,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup --system --gid 1001 nodejs \
-  && adduser --system --uid 1001 nextjs
+RUN groupadd --system --gid 1001 nodejs \
+  && useradd --system --uid 1001 --gid nodejs nextjs
 
 # standalone 产物 + 静态资源 + prisma schema + 生成的 client
 COPY --from=builder /app/public ./public
