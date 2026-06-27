@@ -1,8 +1,11 @@
-# ACGN Flow - 完整的容器化部署
-# 使用: podman-compose up -d 或 docker compose up -d
+# ACGN Flow — 全容器化部署（app + postgres + redis + rathole 隧道客户端）
+# 使用: docker compose up -d --build   或   podman compose up -d --build
+#
+# 宿主机不再安装 postgres / redis / pm2 / systemd —— 所有服务都跑在容器里。
+# 变量从同目录的 .env 读取（见 .env.example）。
 
 services:
-  # PostgreSQL 数据库
+  # ---------- PostgreSQL ----------
   postgres:
     image: postgres:16-alpine
     container_name: acgn-flow-postgres
@@ -13,15 +16,17 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-acgn_flow}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # 仅容器内网可达，不向宿主机暴露端口。
+    # 需要本机连库调试时临时取消注释（仅绑定 loopback）:
+    # ports:
+    #   - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-acgn} -d ${POSTGRES_DB:-acgn_flow}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Redis 缓存
+  # ---------- Redis ----------
   redis:
     image: redis:7-alpine
     container_name: acgn-flow-redis
@@ -29,19 +34,38 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Next.js 应用
+  # ---------- 数据库 schema 初始化（一次性，prisma db push）----------
+  # 每次 up 都会跑一遍，db push 是幂等的：schema 已对齐即为 no-op。
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    image: acgn-flow-migrate
+    container_name: acgn-flow-migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-acgn}:${POSTGRES_PASSWORD:-acgn_password}@postgres:5432/${POSTGRES_DB:-acgn_flow}?schema=public
+
+  # ---------- Next.js 应用 ----------
   app:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runner
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:1270}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-ACGN Flow}
+    image: acgn-flow-app
     container_name: acgn-flow-app
     restart: unless-stopped
     depends_on:
@@ -49,12 +73,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       - NODE_ENV=production
       - PORT=1270
-      # 数据库连接（使用容器内网络）
+      # 数据库 / 缓存（容器内网 DNS）
       - DATABASE_URL=postgresql://${POSTGRES_USER:-acgn}:${POSTGRES_PASSWORD:-acgn_password}@postgres:5432/${POSTGRES_DB:-acgn_flow}?schema=public
-      # Redis 连接
       - REDIS_URL=redis://redis:6379
       # NextAuth
       - AUTH_SECRET=${AUTH_SECRET}
@@ -66,7 +91,7 @@ services:
       - AUTH_GOOGLE_SECRET=${AUTH_GOOGLE_SECRET:-}
       - AUTH_DISCORD_ID=${AUTH_DISCORD_ID:-}
       - AUTH_DISCORD_SECRET=${AUTH_DISCORD_SECRET:-}
-      # 应用配置
+      # 应用配置（NEXT_PUBLIC_* 仅作服务端兜底，客户端值在构建时已内联）
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:1270}
       - NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME:-ACGN Flow}
       # 邮件（可选）
@@ -77,18 +102,67 @@ services:
       - SMTP_FROM=${SMTP_FROM:-}
       # 上传目录
       - UPLOAD_DIR=/app/uploads
-      # IndexNow（可选）
+      # IndexNow / Google / Bilibili（可选）
       - INDEXNOW_KEY=${INDEXNOW_KEY:-}
-      # Google Search Console（可选）
       - GOOGLE_SERVICE_ACCOUNT_EMAIL=${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}
       - GOOGLE_PRIVATE_KEY=${GOOGLE_PRIVATE_KEY:-}
-      # Bilibili Cookie（可选）
       - BILIBILI_COOKIE=${BILIBILI_COOKIE:-}
     volumes:
       - uploads:/app/uploads
       - ./data:/app/data:ro  # IP 地理位置数据库（只读）
+    # 发布到宿主机 loopback：宿主机的 cloudflared 回源到 http://localhost:1270 需要它（推荐方式）。
+    # （若改用下面的 compose 内置 cloudflared profile，隧道走容器内网 app:1270，这段可删。）
     ports:
-      - "1270:1270"
+      - "127.0.0.1:1270:1270"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:1270/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # ---------- Cloudflare Tunnel（可选·默认不启动）----------
+  # 默认不起：本项目所在主机一般用「一个宿主机 cloudflared 扛多个站点」的共享隧道，
+  #   af 的 Public Hostname 回源直接配 http://localhost:1270
+  #   （compose 已把 app 发布到 127.0.0.1:1270，宿主机 cloudflared 直接可达）。
+  # 仅当你要「单机自包含、隧道也塞进 compose」时才启用：
+  #   docker compose --profile cloudflared up -d
+  #   且把该 tunnel 的 Public Hostname 回源配成 http://app:1270（容器内网服务名）。
+  cloudflared:
+    profiles: ["cloudflared"]
+    image: cloudflare/cloudflared:2026.6.1
+    container_name: acgn-flow-cloudflared
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      # 从 Cloudflare 控制台复制的 tunnel token（见 .env）
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run
+
+  # ---------- Rathole 隧道客户端（已停用，保留备用）----------
+  # 默认不启动（profile）。需要切回时:
+  #   1) 在 Cloudflare 侧停掉 tunnel，避免双通道
+  #   2) docker compose --profile rathole up -d rathole
+  #   3) docker compose stop cloudflared
+  rathole:
+    profiles: ["rathole"]
+    build:
+      context: .
+      dockerfile: Dockerfile.rathole
+      args:
+        RATHOLE_VERSION: ${RATHOLE_VERSION:-v0.5.0}
+    image: acgn-flow-rathole
+    container_name: acgn-flow-rathole
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      # 复制 deploy/rathole-client.example.toml -> deploy/rathole-client.toml 并填写公网机 IP/token
+      - ./deploy/rathole-client.toml:/config/client.toml:ro
+    command: ["-c", "/config/client.toml"]
 
 volumes:
   postgres_data:

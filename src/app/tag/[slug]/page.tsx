@@ -25,15 +25,25 @@ const getTag = cache(async (slug: string) => {
 
 // 预生成热门标签页面
 export async function generateStaticParams() {
-  const popularTags = await prisma.tag.findMany({
-    take: 50, // 预生成前 50 个热门标签
-    orderBy: { videos: { _count: "desc" } },
-    select: { slug: true },
-  });
+  // 构建期数据库可能不可达（如 Docker 镜像构建用占位 DATABASE_URL）。
+  // 此时返回空数组：不预渲染任何标签页，改为运行时按需渲染（dynamicParams 默认开启）。
+  try {
+    const popularTags = await prisma.tag.findMany({
+      take: 50, // 预生成前 50 个热门标签
+      orderBy: { videos: { _count: "desc" } },
+      select: { slug: true },
+    });
 
-  return popularTags.map((tag) => ({
-    slug: tag.slug,
-  }));
+    return popularTags.map((tag) => ({
+      slug: tag.slug,
+    }));
+  } catch (error) {
+    console.warn(
+      "[generateStaticParams] 跳过标签预渲染（数据库不可达，将在运行时按需渲染）:",
+      error instanceof Error ? error.message : error
+    );
+    return [];
+  }
 }
 
 // 动态生成 metadata

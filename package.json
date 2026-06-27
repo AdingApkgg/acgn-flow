@@ -12,12 +12,12 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "deploy": "nub run build && pm2 reload ecosystem.config.cjs --update-env",
-    "pm2:start": "pm2 start ecosystem.config.cjs",
-    "pm2:stop": "pm2 stop acgn-flow",
-    "pm2:restart": "pm2 restart acgn-flow",
-    "pm2:logs": "pm2 logs acgn-flow",
-    "pm2:status": "pm2 status",
+    "db:deploy": "prisma db push --skip-generate",
+    "compose:up": "docker compose up -d --build",
+    "compose:down": "docker compose down",
+    "compose:restart": "docker compose restart app",
+    "compose:logs": "docker compose logs -f app",
+    "compose:migrate": "docker compose run --rm migrate",
     "postinstall": "node scripts/copy-ruffle.cjs"
   },
   "dependencies": {
