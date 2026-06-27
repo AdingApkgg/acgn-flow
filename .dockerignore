@@ -1,0 +1,43 @@
+# VCS
+.git
+.gitignore
+
+# 依赖与构建产物（镜像内会重新安装/生成）
+node_modules
+.next
+out
+build
+.pnpm-store
+
+# Prisma 生成的 client（构建时 `prisma generate` 重新生成）
+src/generated
+
+# Ruffle 资源（构建时由 scripts/copy-ruffle.cjs 从 node_modules 重新拷贝）
+public/ruffle
+
+# 运行期数据 / 上传（通过卷在运行时挂载，不进镜像）
+uploads
+data
+logs
+*.log
+
+# 环境变量与密钥（运行时由 compose 注入）
+.env
+.env.*
+
+# 部署配置（运行时挂载，不需要进任何镜像）
+deploy
+
+# 编辑器 / 工具
+.vscode
+.idea
+.cursor
+.claude
+*.swp
+*.swo
+
+# 杂项
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+coverage

@@ -12,5 +12,6 @@ keepalive_secs = 30
 keepalive_interval = 5
 
 # Next.js 应用
+# 在 compose 内运行时，local_addr 指向 app 服务名（容器网络 DNS），不是宿主机 127.0.0.1
 [client.services.acgn-flow]
-local_addr = "127.0.0.1:1270"
+local_addr = "app:1270"

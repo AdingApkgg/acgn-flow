@@ -2,6 +2,7 @@
   "name": "anime-flow",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.34.3",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "prisma generate && next build && serwist build",
@@ -12,12 +13,11 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "deploy": "pnpm build && pm2 reload ecosystem.config.cjs --update-env",
-    "pm2:start": "pm2 start ecosystem.config.cjs",
-    "pm2:stop": "pm2 stop acgn-flow",
-    "pm2:restart": "pm2 restart acgn-flow",
-    "pm2:logs": "pm2 logs acgn-flow",
-    "pm2:status": "pm2 status",
+    "compose:up": "docker compose up -d --build",
+    "compose:down": "docker compose down",
+    "compose:restart": "docker compose restart app",
+    "compose:logs": "docker compose logs -f app",
+    "compose:migrate": "docker compose run --rm migrate",
     "postinstall": "node scripts/copy-ruffle.cjs"
   },
   "dependencies": {

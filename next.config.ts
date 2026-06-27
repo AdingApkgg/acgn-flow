@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // 独立产物：构建出 .next/standalone/server.js，供 Docker 以 `node server.js` 运行（见 Dockerfile）
+  output: "standalone",
   // Turbopack 配置 (Next.js 16 默认使用 Turbopack)
   turbopack: {},
   images: {

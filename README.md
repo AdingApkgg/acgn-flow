@@ -59,74 +59,59 @@ pnpm dev
 | `pnpm dev` | 启动开发服务器 (Turbopack, 端口 3000) |
 | `pnpm build` | 构建生产版本 |
 | `pnpm start` | 启动生产服务器 |
-| `pnpm lint` | 运行 ESLint |
+| `pnpm lint` | 运行 ESLint + tsc |
 | `pnpm db:generate` | 生成 Prisma Client |
 | `pnpm db:push` | 推送 schema 到数据库 |
 | `pnpm db:migrate` | 运行数据库迁移 |
 | `pnpm db:studio` | 打开 Prisma Studio |
 | `pnpm db:seed` | 填充初始数据 |
+| `pnpm compose:up` | 构建并启动整套容器栈 (`docker compose up -d --build`) |
+| `pnpm compose:down` | 停止整套容器栈 |
+| `pnpm compose:restart` | 重启 app 容器 |
+| `pnpm compose:logs` | 跟随 app 日志 |
+| `pnpm compose:migrate` | 手动跑一次数据库 schema 同步 |
 
 ## 生产部署
+
+**全容器化**：app、PostgreSQL、Redis、Cloudflare Tunnel(cloudflared) 都跑在 compose 里，**宿主机不再安装 pm2 / systemd / postgres / redis**，对外暴露走 Cloudflare Tunnel（无需公网机 / nginx / 入站端口）。
 
 ### 架构概览
 
 ```
-公网机 (Nginx + Rathole Server)
-         ↑
-    Rathole 隧道 (:2333)
-         ↑
-内网机 (Rathole Client + App)
-    |-- Next.js App (:1270)
-    |-- PostgreSQL (:5432)
-    |-- Redis (:6379)
+Cloudflare 边缘 (TLS / HTTP3 / CDN)
+         ↑  Cloudflare Tunnel（cloudflared 主动外连，无入站端口）
+内网机  ── docker compose ───────────────────────────
+   ├─ app         Next.js standalone (:1270)
+   ├─ postgres    PostgreSQL 16（命名卷，不暴露宿主机端口）
+   ├─ redis       Redis 7（命名卷）
+   ├─ migrate     一次性 prisma db push（建表 / 对齐 schema）
+   └─ cloudflared Cloudflare Tunnel → 边缘
+                  （rathole 客户端保留为停用 profile，可切回）
 ```
 
-### 使用 Podman Compose
+### 一键起停
 
 ```bash
-# 构建并启动应用
-podman compose up -d --build
+cp .env.example .env   # 填好 POSTGRES_*、AUTH_SECRET、NEXT_PUBLIC_APP_URL、CLOUDFLARE_TUNNEL_TOKEN
 
-# 查看日志
-podman compose logs -f app
-
-# 重启服务
-podman compose restart
-
-# 停止服务
-podman compose down
+pnpm compose:up      # docker compose up -d --build
+pnpm compose:logs    # 跟随 app 日志
+pnpm compose:down    # 停服
 ```
 
-### 端口配置
+启动顺序由 compose 自动编排：postgres/redis 健康 → migrate 建表完成 → app 健康 → cloudflared 接入隧道。
 
-| 环境 | 端口 | 说明 |
-|------|------|------|
-| 开发环境 | 3000 | `pnpm dev` |
-| 生产环境 | 1270 | `podman compose` (host 网络模式) |
+> Cloudflare Tunnel 需先在控制台创建并拿到 token、配好 Public Hostname（`<域名> → http://app:1270`），详见 [deploy/README.md](deploy/README.md)。
 
-### Rathole 隧道配置
+### 端口与暴露
 
-**内网机** (`/etc/rathole/client.toml`):
-```toml
-[client]
-remote_addr = "公网机IP:2333"
-default_token = "your-secret-token"
+| 服务 | 端口 | 暴露范围 |
+|------|------|----------|
+| app | 1270 | 仅宿主机 loopback（调试用，可删）；对外只走 Cloudflare Tunnel |
+| postgres / redis | 5432 / 6379 | 仅容器内网，**不**向宿主机暴露 |
 
-[client.services.acgn-flow]
-local_addr = "127.0.0.1:1270"
-```
-
-**公网机** (`/etc/rathole/server.toml`):
-```toml
-[server]
-bind_addr = "0.0.0.0:2333"
-default_token = "your-secret-token"
-
-[server.services.acgn-flow]
-bind_addr = "127.0.0.1:1270"
-```
-
-详细部署说明见 [deploy/README.md](deploy/README.md)
+> Cloudflare Tunnel 控制台配置、从旧的 **pm2 + 宿主机 PostgreSQL** 迁移过来（含历史数据无损迁移）的完整步骤，
+> 以及切回 rathole 的方式，见 **[deploy/README.md](deploy/README.md)**。
 
 ## 目录结构
 
@@ -135,6 +120,7 @@ acgn-flow/
 ├── prisma/              # Prisma schema 和种子数据
 ├── src/
 │   ├── app/             # Next.js App Router 页面
+│   │   └── api/health/  # 容器存活探针
 │   ├── components/      # React 组件
 │   │   ├── layout/      # 布局组件
 │   │   ├── ui/          # shadcn/ui 组件
@@ -144,10 +130,11 @@ acgn-flow/
 │   ├── server/          # 服务端代码
 │   │   └── routers/     # tRPC routers
 │   └── stores/          # Zustand stores
-├── deploy/              # 部署配置文件
-├── uploads/             # 上传文件目录
-├── compose.yaml         # Podman/Docker Compose 配置
-└── Dockerfile           # Docker 构建文件
+├── deploy/              # 公网机部署配置（Nginx / Rathole Server）
+├── uploads/             # 上传文件目录（生产用命名卷）
+├── compose.yaml         # Docker / Podman Compose 配置
+├── Dockerfile           # 应用镜像（多阶段：deps / builder / migrator / runner）
+└── Dockerfile.rathole   # Rathole 隧道客户端镜像
 ```
 
 ## 默认账户

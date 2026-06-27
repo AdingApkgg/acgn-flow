@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+# Rathole 隧道客户端镜像 —— 替代原宿主机上的 systemd 服务（deploy/rathole-client.service）。
+# 二进制取自官方 release（rapiz1/rathole），与 deploy/README.md 里手动安装的是同一个。
+#
+# 注意: v0.5.0 的 x86_64 只发布了 gnu(glibc) 版（没有 musl），所以运行基础镜像用
+# debian-slim 而非 alpine —— glibc 动态二进制能直接跑；arm64 用的 musl 静态版在 glibc 上也能跑。
+
+FROM debian:bookworm-slim AS fetch
+ARG RATHOLE_VERSION=v0.5.0
+# docker buildx 会自动注入 TARGETARCH（amd64 / arm64）
+ARG TARGETARCH=amd64
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl unzip ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+WORKDIR /tmp
+RUN set -eux; \
+    case "$TARGETARCH" in \
+      amd64) asset="rathole-x86_64-unknown-linux-gnu.zip" ;; \
+      arm64) asset="rathole-aarch64-unknown-linux-musl.zip" ;; \
+      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o rathole.zip \
+      "https://github.com/rapiz1/rathole/releases/download/${RATHOLE_VERSION}/${asset}"; \
+    unzip rathole.zip; \
+    chmod +x rathole
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && useradd -r -u 1001 rathole
+COPY --from=fetch /tmp/rathole /usr/local/bin/rathole
+USER rathole
+ENTRYPOINT ["rathole"]
+# -c = 客户端模式（与原 systemd 单元一致）；compose 会覆盖 command
+CMD ["-c", "/config/client.toml"]
