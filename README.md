@@ -11,7 +11,7 @@ ACGN Fans 流式媒体内容分享平台。不存储视频文件，仅通过用�
 - **认证**: NextAuth.js v5
 - **数据库**: PostgreSQL + Prisma 7
 - **缓存**: Redis + ioredis
-- **播放器**: react-player + hls.js
+- **播放器**: 原生 `<video>` + hls.js
 - **3D**: Three.js + React Three Fiber
 
 ## 开始开发
@@ -19,8 +19,8 @@ ACGN Fans 流式媒体内容分享平台。不存储视频文件，仅通过用�
 ### 1. 安装依赖
 
 ```bash
-pnpm install
-pnpm approve-builds  # 批准依赖的构建脚本
+nub install
+nub approve-builds  # 批准依赖的构建脚本
 ```
 
 ### 2. 配置环境变量
@@ -35,19 +35,19 @@ cp .env.example .env
 
 ```bash
 # 生成 Prisma Client
-pnpm db:generate
+nub run db:generate
 
 # 推送数据库 schema
-pnpm db:push
+nub run db:push
 
 # (可选) 填充初始数据
-pnpm db:seed
+nub run db:seed
 ```
 
 ### 4. 启动开发服务器
 
 ```bash
-pnpm dev
+nub run dev
 ```
 
 访问 http://localhost:3000
@@ -56,20 +56,20 @@ pnpm dev
 
 | 命令 | 说明 |
 |------|------|
-| `pnpm dev` | 启动开发服务器 (Turbopack, 端口 3000) |
-| `pnpm build` | 构建生产版本 |
-| `pnpm start` | 启动生产服务器 |
-| `pnpm lint` | 运行 ESLint + tsc |
-| `pnpm db:generate` | 生成 Prisma Client |
-| `pnpm db:push` | 推送 schema 到数据库 |
-| `pnpm db:migrate` | 运行数据库迁移 |
-| `pnpm db:studio` | 打开 Prisma Studio |
-| `pnpm db:seed` | 填充初始数据 |
-| `pnpm compose:up` | 构建并启动整套容器栈 (`docker compose up -d --build`) |
-| `pnpm compose:down` | 停止整套容器栈 |
-| `pnpm compose:restart` | 重启 app 容器 |
-| `pnpm compose:logs` | 跟随 app 日志 |
-| `pnpm compose:migrate` | 手动跑一次数据库 schema 同步 |
+| `nub run dev` | 启动开发服务器 (Turbopack, 端口 3000) |
+| `nub run build` | 构建生产版本 |
+| `nub run start` | 启动生产服务器 |
+| `nub run lint` | 运行 ESLint + tsc |
+| `nub run db:generate` | 生成 Prisma Client |
+| `nub run db:push` | 推送 schema 到数据库 |
+| `nub run db:migrate` | 运行数据库迁移 |
+| `nub run db:studio` | 打开 Prisma Studio |
+| `nub run db:seed` | 填充初始数据 |
+| `nub run compose:up` | 构建并启动整套容器栈 (`docker compose up -d --build`) |
+| `nub run compose:down` | 停止整套容器栈 |
+| `nub run compose:restart` | 重启 app 容器 |
+| `nub run compose:logs` | 跟随 app 日志 |
+| `nub run compose:migrate` | 手动跑一次数据库 schema 同步 |
 
 ## 生产部署
 
@@ -94,9 +94,9 @@ Cloudflare 边缘 (TLS / HTTP3 / CDN)
 ```bash
 cp .env.example .env   # 填好 POSTGRES_*、AUTH_SECRET、NEXT_PUBLIC_APP_URL、CLOUDFLARE_TUNNEL_TOKEN
 
-pnpm compose:up      # docker compose up -d --build
-pnpm compose:logs    # 跟随 app 日志
-pnpm compose:down    # 停服
+nub run compose:up     # docker compose up -d --build
+nub run compose:logs   # 跟随 app 日志
+nub run compose:down   # 停服
 ```
 
 启动顺序由 compose 自动编排：postgres/redis 健康 → migrate 建表完成 → app 健康 → cloudflared 接入隧道。
@@ -139,7 +139,7 @@ acgn-flow/
 
 ## 默认账户
 
-运行 `pnpm db:seed` 后：
+运行 `nub run db:seed` 后：
 
 - **管理员**: admin@acgnflow.com / admin123
 

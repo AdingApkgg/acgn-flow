@@ -48,26 +48,20 @@ import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useIsMounted } from "@/components/motion";
-import dynamic from "next/dynamic";
 
-// 动态导入 ReactPlayer 避免 SSR 问题
-const ReactPlayer = dynamic(() => import("react-player"), { ssr: false });
-
-const EXTERNAL_EMBED_PATTERNS = [
-  /(?:youtube\.com|youtu\.be)/,
-  /(?:vimeo\.com)/,
-  /(?:dailymotion\.com|dai\.ly)/,
-  /(?:twitch\.tv)/,
-  /(?:soundcloud\.com)/,
-  /(?:streamable\.com)/,
-  /(?:wistia\.com|wi\.st)/,
-  /(?:facebook\.com|fb\.watch)/,
-  /(?:mixcloud\.com)/,
-];
-
-function checkExternalEmbed(url: string): boolean {
-  return EXTERNAL_EMBED_PATTERNS.some((p) => p.test(url));
+// 判断是否 HLS(m3u8)源：Safari/iOS 可原生播放，其余浏览器用 hls.js 接管
+function isHlsSource(url: string): boolean {
+  return /\.m3u8(\?|$)/i.test(url);
 }
+
+// 仅"自动播放被浏览器拦截"(NotAllowedError) 才回退暂停态；
+// load()/seek 打断 play() 抛出的 AbortError 属正常，忽略以免误翻转播放意图。
+function isAutoplayBlocked(e: unknown): boolean {
+  return e instanceof DOMException && e.name === "NotAllowedError";
+}
+
+// 第三方解析（B站等）加载失败时的自动重试上限
+const MAX_AUTO_RETRY = 2;
 
 // 字幕设置接口（B站同款）
 interface SubtitleSettings {
@@ -884,12 +878,14 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     },
     ref
   ) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const playerRef = useRef<any>(null);
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const hlsRef = useRef<import("hls.js").default | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const danmakuContainerRef = useRef<HTMLDivElement>(null);
     const danmakuRendererRef = useRef<DanmakuRenderer | null>(null);
     const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // 是否已恢复上次播放进度（与具体就绪事件解耦，避免事件竞争丢失）
+    const didResumeRef = useRef(false);
     
     // 触摸操作相关
     const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -911,12 +907,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 客户端挂载状态
     const isMounted = useIsMounted();
 
-    // 外部嵌入检测（YouTube/Vimeo 等 iframe 播放器）
-    const isExternal = useMemo(() => checkExternalEmbed(url), [url]);
-
     // 播放器状态
     const [isReady, setIsReady] = useState(false);
     const [hasError, setHasError] = useState(false);
+    // 重试计数：变化时强制 <video> 重新挂载并重新发起解析/取流请求
+    const [retryKey, setRetryKey] = useState(0);
     const [showPlayer, setShowPlayer] = useState(autoStart || !poster);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
@@ -1033,19 +1028,24 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       return url;
     }, [currentQuality, url]);
 
-    // URL 变化时重置状态
+    // 播放源/重试变化时重置状态（覆盖 url/分P/画质切换，以及重试时重新武装进度恢复）
     useEffect(() => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsReady(false);
       setHasError(false);
       setPlayed(0);
       setPlayedSeconds(0);
       setDuration(0);
+      didResumeRef.current = false;
+    }, [currentUrl, retryKey]);
+
+    // 切换到新视频（url 变化）时清空重试计数，确保新视频可重新自动重试
+    useEffect(() => {
+      setRetryKey(0);
     }, [url]);
 
     // 获取内部视频元素
     const getVideoElement = useCallback(() => {
-      return containerRef.current?.querySelector("video") as HTMLVideoElement | null;
+      return videoRef.current ?? (containerRef.current?.querySelector("video") as HTMLVideoElement | null);
     }, []);
 
     // 暴露方法给父组件
@@ -1061,10 +1061,116 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       getDanmakuData: () => danmakuData,
     }), [playedSeconds, duration, danmakuData, getVideoElement]);
 
+    // 加载看门狗：避免骨架屏永久卡住（onReady/canplay 始终不触发的情况）
+    useEffect(() => {
+      if (!showPlayer || isReady || hasError) return;
+      const timer = setTimeout(() => {
+        const video = getVideoElement();
+        if (video && video.readyState >= 2) {
+          // 已有可播放数据，只是事件没冒上来 → 揭开
+          setIsReady(true);
+        } else {
+          // 真正卡住 → 给出可重试的错误态
+          setHasError(true);
+        }
+      }, 20000);
+      return () => clearTimeout(timer);
+    }, [showPlayer, currentUrl, retryKey, isReady, hasError, getVideoElement]);
+
+    // 恢复上次播放进度（与 onReady/onCanPlay/onLoadedData 竞争解耦）
+    useEffect(() => {
+      if (!isReady || initialProgress <= 0) return;
+      if (didResumeRef.current) return;
+      const video = getVideoElement();
+      if (video && video.currentTime < 1) {
+        video.currentTime = initialProgress;
+      }
+      didResumeRef.current = true;
+    }, [isReady, initialProgress, getVideoElement]);
+
+    // 绑定播放源：mp4/webm 直接挂 src；HLS(m3u8) 在非 Safari 用 hls.js 接管。
+    // retryKey 变化时重跑此 effect → 重新取流，实现"重试"。
+    useEffect(() => {
+      const video = getVideoElement();
+      if (!video) return;
+
+      // Safari/iOS 原生支持 HLS；其余非 HLS 源也直接挂 src
+      if (!isHlsSource(currentUrl) || video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = currentUrl;
+        video.load();
+        return;
+      }
+
+      // 非 Safari 的 HLS：动态加载 hls.js 接管
+      let destroyed = false;
+      import("hls.js")
+        .then(({ default: Hls }) => {
+          if (destroyed) return;
+          if (!Hls.isSupported()) {
+            video.src = currentUrl;
+            video.load();
+            return;
+          }
+          const hls = new Hls({ enableWorker: true });
+          hlsRef.current = hls;
+          hls.loadSource(currentUrl);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.ERROR, (_evt, data) => {
+            if (!data.fatal) return;
+            // 与 mp4 onError 一致：有限次自动重试。重试会触发本 effect 清理（销毁旧实例）
+            // 并以新的 retryKey 重跑 → 重新 loadSource。
+            if (retryKey < MAX_AUTO_RETRY) {
+              setIsReady(false);
+              setHasError(false);
+              setRetryKey((k) => k + 1);
+            } else {
+              hls.destroy();
+              hlsRef.current = null;
+              setHasError(true);
+            }
+          });
+        })
+        .catch(() => setHasError(true));
+
+      return () => {
+        destroyed = true;
+        // 销毁 hls 实例（含 Web Worker），即便处于错误态卸载也不泄漏
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+      };
+      // isMounted/showPlayer：<video> 仅在挂载且进入播放器视图后才存在，
+      // 必须随其变化重跑，否则元素出现时本 effect 不再触发 → src 永不绑定。
+    }, [currentUrl, retryKey, getVideoElement, isMounted, showPlayer]);
+
+    // 同步声明式播放状态到原生 <video>（react-player 原本代劳的部分）
+    // 依赖含 currentUrl/retryKey：换源/重试后即便 isPlaying 未变也重新对齐，确保续播。
+    useEffect(() => {
+      const video = getVideoElement();
+      if (!video) return;
+      if (isPlaying) {
+        video.play().catch((e) => {
+          if (isAutoplayBlocked(e)) setIsPlaying(false);
+        });
+      } else {
+        video.pause();
+      }
+    }, [isPlaying, currentUrl, retryKey, getVideoElement, isMounted, showPlayer]);
+
+    // 同步音量/静音/倍速到原生 <video>（含换源/重试后 load() 重置的重新应用）
+    useEffect(() => {
+      const video = getVideoElement();
+      if (!video) return;
+      video.muted = isMuted;
+      video.volume = volume;
+      video.playbackRate = playbackRate;
+    }, [isMuted, volume, playbackRate, currentUrl, retryKey, getVideoElement, isMounted, showPlayer]);
+
     // 加载弹幕数据
     useEffect(() => {
       if (danmakuList) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setDanmakuData(danmakuList);
         return;
       }
@@ -1077,6 +1183,10 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       const loadDanmaku = async () => {
         try {
           const response = await fetch(danmakuUrl);
+          if (!response.ok) {
+            setDanmakuData([]);
+            return;
+          }
           const contentType = response.headers.get("content-type") || "";
           
           if (contentType.includes("application/json") || danmakuUrl.endsWith(".json")) {
@@ -1156,7 +1266,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 加载字幕数据
     useEffect(() => {
       if (!currentSubtitle?.url) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setSubtitleCues([]);
         return;
       }
@@ -1164,6 +1274,10 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       const loadSubtitle = async () => {
         try {
           const response = await fetch(currentSubtitle.url);
+          if (!response.ok) {
+            setSubtitleCues([]);
+            return;
+          }
           const text = await response.text();
           const cues = parseSubtitle(text, currentSubtitle.url);
           setSubtitleCues(cues);
@@ -1179,7 +1293,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // 更新当前显示的字幕（支持时间偏移）
     useEffect(() => {
       if (!subtitlesEnabled || subtitleCues.length === 0) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setCurrentCue("");
         return;
       }
@@ -1303,6 +1417,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         setIsFullscreen(isNowFullscreen);
         if (!isNowFullscreen) {
           setIsLocked(false);
+          // 退出全屏时解除方向锁定（按钮退出 / 系统返回 / Esc 都会触发）
+          (screen.orientation as ScreenOrientation & { unlock?: () => void })?.unlock?.();
         }
       };
       document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -1367,15 +1483,22 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       [playedSeconds, getVideoElement]
     );
 
-    // 全屏切换
-    const toggleFullscreen = useCallback(() => {
+    // 全屏切换（移动端进入全屏后尝试锁定横屏）
+    const toggleFullscreen = useCallback(async () => {
       if (!containerRef.current) return;
       if (document.fullscreenElement) {
-        document.exitFullscreen();
+        await document.exitFullscreen().catch(() => {});
       } else {
-        containerRef.current.requestFullscreen();
+        await containerRef.current.requestFullscreen().catch(() => {});
+        if (isMobile) {
+          // 非标准 API：Android Chrome 可用，iOS Safari / 桌面会 reject 或缺失
+          const orientation = screen.orientation as ScreenOrientation & {
+            lock?: (o: string) => Promise<void>;
+          };
+          await orientation?.lock?.("landscape").catch(() => {});
+        }
       }
-    }, []);
+    }, [isMobile]);
 
     // 画中画
     const togglePiP = useCallback(async () => {
@@ -1442,7 +1565,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
     // 键盘快捷键 — 外部嵌入时不拦截
     useEffect(() => {
-      if (!showPlayer || !isReady || isExternal) return;
+      if (!showPlayer || !isReady) return;
 
       const handleKeyDown = (e: KeyboardEvent) => {
         if (
@@ -1553,7 +1676,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
       window.addEventListener("keydown", handleKeyDown);
       return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [showPlayer, isReady, isExternal, skip, adjustVolume, toggleFullscreen, getVideoElement, showGestureHint]);
+    }, [showPlayer, isReady, skip, adjustVolume, toggleFullscreen, getVideoElement, showGestureHint]);
 
     const handlePlay = useCallback(() => setShowPlayer(true), []);
 
@@ -1624,7 +1747,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         if (Math.abs(deltaX) > threshold && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
           gestureActiveRef.current = "progress";
           gestureStartValueRef.current = playedSeconds;
-        } else if (Math.abs(deltaY) > threshold && Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
+        } else if (isFullscreen && Math.abs(deltaY) > threshold && Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
+          // 仅全屏时纵向滑动调音量/亮度；非全屏时让位给页面滚动，避免“滚不动”
           const isLeftSide = startX < rect.left + rect.width / 2;
           if (isLeftSide) {
             gestureActiveRef.current = "brightness";
@@ -1663,7 +1787,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         showGestureHint("brightness", `${Math.round(newBrightness * 100)}%`);
         e.preventDefault();
       }
-    }, [duration, playedSeconds, volume, brightness, getVideoElement, showGestureHint, isLocked]);
+    }, [duration, playedSeconds, volume, brightness, getVideoElement, showGestureHint, isLocked, isFullscreen]);
 
     // 触摸结束
     const handleTouchEnd = useCallback(() => {
@@ -1696,9 +1820,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       
       const now = Date.now();
       const touchDuration = now - touchStart.time;
-      
-      // 如果没有移动且是快速点击，检测双击
-      if (!touchMove && touchDuration < 300 && gestureActiveRef.current === "none") {
+      const movedDist = touchMove
+        ? Math.hypot(touchMove.x - touchStart.x, touchMove.y - touchStart.y)
+        : 0;
+
+      // 轻微抖动（<10px）仍按点击处理，避免“点了没反应”
+      if (movedDist < 10 && touchDuration < 300 && gestureActiveRef.current === "none") {
         const lastTap = lastTapRef.current;
         
         if (lastTap && now - lastTap.time < 300) {
@@ -1722,17 +1849,13 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           }
           lastTapRef.current = null;
         } else {
-          // 单击：显示/隐藏控制栏
+          // 单击：立即显示/隐藏控制栏（无 300ms 延迟），双击由上面分支处理
           lastTapRef.current = { time: now, x: touchStart.x };
-          setTimeout(() => {
-            if (lastTapRef.current && Date.now() - lastTapRef.current.time >= 300) {
-              setShowControls((prev) => !prev);
-              if (!showControls) {
-                resetControlsTimeout();
-              }
-              lastTapRef.current = null;
-            }
-          }, 300);
+          setShowControls((prev) => {
+            const next = !prev;
+            if (next) resetControlsTimeout();
+            return next;
+          });
         }
       }
       
@@ -1746,7 +1869,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       gestureHintTimeoutRef.current = setTimeout(() => {
         setGestureHint(null);
       }, 500);
-    }, [skip, showControls, resetControlsTimeout, isLocked]);
+    }, [skip, resetControlsTimeout, isLocked]);
 
     // 进度条悬停时间预览
     const handleProgressHover = useCallback((e: React.MouseEvent) => {
@@ -1774,17 +1897,31 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
     if (hasError) {
       return (
-        <div className="aspect-video bg-muted flex flex-col items-center justify-center rounded-lg gap-2">
+        <div className="aspect-video bg-muted flex flex-col items-center justify-center rounded-lg gap-3">
           <AlertCircle className="h-10 w-10 text-muted-foreground" />
           <p className="text-muted-foreground">视频加载失败</p>
-          <a
-            href={currentUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-primary hover:underline"
-          >
-            尝试直接打开
-          </a>
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setHasError(false);
+                setIsReady(false);
+                setRetryKey((k) => k + 1);
+              }}
+            >
+              <RotateCcw className="h-4 w-4 mr-1.5" />
+              重试
+            </Button>
+            <a
+              href={currentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline"
+            >
+              尝试直接打开
+            </a>
+          </div>
         </div>
       );
     }
@@ -1817,71 +1954,81 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       <div
         ref={containerRef}
         className={cn(
-          "relative aspect-video bg-black rounded-lg overflow-hidden group",
-          !isExternal && "select-none touch-none",
+          "relative aspect-video bg-black rounded-lg overflow-hidden group select-none",
+          // 非全屏时允许纵向滑动滚动页面；全屏时彻底接管手势
+          isFullscreen ? "touch-none" : "touch-pan-y",
           isFullscreen && "rounded-none"
         )}
         style={brightness !== 1 ? { filter: `brightness(${brightness})` } : undefined}
-        tabIndex={isExternal ? undefined : 0}
-        onMouseMove={!isMobile && !isExternal ? resetControlsTimeout : undefined}
-        onMouseLeave={!isMobile && !isExternal ? () => isPlaying && setShowControls(false) : undefined}
-        onClick={!isExternal ? handleVideoClick : undefined}
-        onDoubleClick={!isMobile && !isExternal ? handleVideoDoubleClick : undefined}
-        onTouchStart={!isExternal ? handleTouchStart : undefined}
-        onTouchMove={!isExternal ? handleTouchMove : undefined}
-        onTouchEnd={!isExternal ? handleTouchEnd : undefined}
+        tabIndex={0}
+        onMouseMove={!isMobile ? resetControlsTimeout : undefined}
+        onMouseLeave={!isMobile ? () => isPlaying && setShowControls(false) : undefined}
+        onClick={handleVideoClick}
+        onDoubleClick={!isMobile ? handleVideoDoubleClick : undefined}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         {/* 加载骨架屏 */}
         <div
           className={cn(
-            "absolute inset-0 z-10 transition-opacity duration-300",
-            isReady ? "opacity-0 pointer-events-none" : "opacity-100"
+            "absolute inset-0 z-10 pointer-events-none transition-opacity duration-300",
+            isReady ? "opacity-0" : "opacity-100"
           )}
         >
           <Skeleton className="w-full h-full" />
         </div>
 
-        {/* React Player */}
-        <ReactPlayer
-          ref={playerRef}
-          src={currentUrl}
-          width="100%"
-          height="100%"
-          playing={isExternal ? undefined : isPlaying}
-          muted={isExternal ? undefined : isMuted}
-          volume={isExternal ? undefined : volume}
-          playbackRate={isExternal ? undefined : playbackRate}
-          controls={isExternal}
-          onReady={() => {
-            if (!isReady) {
-              setIsReady(true);
-            }
+        {/* 原生 HTML5 视频：mp4/webm 直连，HLS(m3u8) 由 hls.js 接管（见 source effect） */}
+        <video
+          ref={videoRef}
+          className="w-full h-full bg-black object-contain"
+          playsInline
+          onEnded={() => {
+            setIsPlaying(false);
+            onEnded?.();
           }}
           onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onEnded={onEnded}
-          onError={() => setHasError(true)}
-          onWaiting={isExternal ? undefined : () => setIsBuffering(true)}
-          onCanPlay={isExternal ? undefined : () => {
+          onPause={() => {
+            // 过滤 load()/seek 引起的瞬时暂停（此时 readyState 很低）：
+            // 仅在确有可播放数据且非 seeking 时同步外部/画中画/媒体键的暂停。
+            const v = getVideoElement();
+            if (v && !v.seeking && v.readyState >= 3) {
+              setIsPlaying(false);
+            }
+          }}
+          onError={() => {
+            // 第三方解析（B站等）多为瞬时失败（风控/CID/过期）：有限次自动重试
+            if (retryKey < MAX_AUTO_RETRY) {
+              setIsReady(false);
+              setHasError(false);
+              setRetryKey((k) => k + 1);
+            } else {
+              setHasError(true);
+            }
+          }}
+          onWaiting={() => setIsBuffering(true)}
+          onPlaying={() => setIsBuffering(false)}
+          onCanPlay={() => {
             setIsBuffering(false);
-            if (!isReady) {
-              setIsReady(true);
-              if (initialProgress > 0) {
-                const video = getVideoElement();
-                if (video && video.currentTime < 1) {
-                  video.currentTime = initialProgress;
-                }
-              }
+            // (重新)加载后重新对齐声明式状态：load() 可能重置音量/倍速并暂停
+            const video = getVideoElement();
+            if (video) {
+              video.muted = isMuted;
+              video.volume = volume;
+              video.playbackRate = playbackRate;
+              if (isPlaying) video.play().catch((e) => {
+                if (isAutoplayBlocked(e)) setIsPlaying(false);
+              });
             }
+            if (!isReady) setIsReady(true);
           }}
-          onLoadedData={isExternal ? undefined : () => {
-            if (!isReady) {
-              setIsReady(true);
-            }
+          onLoadedData={() => {
+            if (!isReady) setIsReady(true);
           }}
-          onDurationChange={isExternal ? undefined : (e) => setDuration((e.target as HTMLVideoElement).duration || 0)}
-          onTimeUpdate={isExternal ? undefined : (e) => {
-            const video = e.target as HTMLVideoElement;
+          onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
+          onTimeUpdate={(e) => {
+            const video = e.currentTarget;
             if (video.duration) {
               const state = {
                 played: video.currentTime / video.duration,
@@ -1896,12 +2043,12 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           }}
         />
 
-        {/* 弹幕层 (CommentCoreLibrary) — 外部嵌入时隐藏 */}
+        {/* 弹幕层 (CommentCoreLibrary) */}
         <div
           ref={danmakuContainerRef}
           className={cn(
             "absolute inset-0 pointer-events-none overflow-hidden",
-            (!danmakuEnabled || isExternal) && "hidden"
+            !danmakuEnabled && "hidden"
           )}
         >
           {/* CCL 核心样式（动画回退 keyframes 已在 globals.css 中定义） */}
@@ -1939,7 +2086,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         </div>
 
         {/* 字幕层（B站同款样式） — 外部嵌入时隐藏 */}
-        {subtitlesEnabled && currentCue && !isExternal && (
+        {subtitlesEnabled && currentCue && (
           <div className={cn(
             "absolute left-0 right-0 flex justify-center pointer-events-none z-20 px-4",
             subtitleSettings.position === "top" 
@@ -1979,7 +2126,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         )}
 
         {/* 手势提示 — 外部嵌入时隐藏 */}
-        {gestureHint && !isExternal && (
+        {gestureHint && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
             <div className="bg-black/80 text-white px-6 py-4 rounded-2xl text-center backdrop-blur-sm">
               {gestureHint.icon === "forward" && (
@@ -2008,7 +2155,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         )}
 
         {/* 速度指示器 — 外部嵌入时隐藏 */}
-        {playbackRate !== 1 && isReady && !isBuffering && !isExternal && (
+        {playbackRate !== 1 && isReady && !isBuffering && (
           <div className="absolute top-3 right-3 z-20 pointer-events-none">
             <div className="rounded bg-black/60 px-2 py-0.5 text-xs font-medium text-white/90 backdrop-blur-sm">
               {playbackRate}x
@@ -2017,23 +2164,36 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         )}
 
         {/* 缓冲指示器 — 外部嵌入时隐藏 */}
-        {isBuffering && !isExternal && (
+        {isBuffering && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
             <Loader2 className="w-12 h-12 text-white animate-spin" />
           </div>
         )}
 
         {/* 中央播放按钮 — 外部嵌入时隐藏 */}
-        {!isPlaying && isReady && !isLocked && !isExternal && (
+        {!isPlaying && isReady && !isLocked && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-16 h-16 md:w-20 md:h-20 bg-white/90 rounded-full flex items-center justify-center shadow-lg">
+            <button
+              type="button"
+              aria-label="播放"
+              className="pointer-events-auto w-16 h-16 md:w-20 md:h-20 bg-white/90 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsPlaying(true);
+              }}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setIsPlaying(true);
+              }}
+            >
               <Play className="w-8 h-8 md:w-10 md:h-10 text-black ml-1" />
-            </div>
+            </button>
           </div>
         )}
 
-        {/* 锁定按钮（移动端全屏时显示） — 外部嵌入时隐藏 */}
-        {isMobile && isFullscreen && !isExternal && (
+        {/* 锁定按钮（移动端全屏，或已锁定时显示，避免非全屏锁定后无法解锁） — 外部嵌入时隐藏 */}
+        {isMobile && (isFullscreen || isLocked) && (
           <button
             className={cn(
               "absolute left-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-black/50 text-white transition-opacity",
@@ -2052,14 +2212,27 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         )}
 
         {/* 锁定提示 — 外部嵌入时隐藏 */}
-        {isLocked && !isExternal && (
+        {isLocked && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
             <div className="text-white/50 text-sm">点击左侧锁图标解锁</div>
           </div>
         )}
 
         {/* 控制栏 — 外部嵌入时隐藏，由 iframe 原生控件接管 */}
-        {!isExternal && (isMobile ? (
+        {isMobile ? (
+          <>
+          {/* 设置面板的点击遮罩：点空白处关闭 */}
+          {showMobileMenu && (
+            <div
+              className="absolute inset-0 z-30"
+              onClick={() => setShowMobileMenu(false)}
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                setShowMobileMenu(false);
+              }}
+            />
+          )}
           <div
             data-controls
             className={cn(
@@ -2072,7 +2245,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
             {/* 渐变背景 */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent" />
             
-            <div className="relative p-3 pb-safe">
+            <div className="relative p-3 safe-area-bottom">
               {/* 进度条（含缓冲指示） */}
               <div className="relative mb-3">
                 <div
@@ -2144,6 +2317,20 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                     </Button>
                   )}
 
+                  {/* 锁定 */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={isLocked ? "解锁" : "锁定"}
+                    className="text-white hover:bg-white/20 h-10 w-10"
+                    onClick={() => {
+                      setIsLocked(!isLocked);
+                      if (!isLocked) setShowControls(false);
+                    }}
+                  >
+                    {isLocked ? <Lock className="h-5 w-5" /> : <Unlock className="h-5 w-5" />}
+                  </Button>
+
                   {/* 更多设置 */}
                   <Button
                     variant="ghost"
@@ -2166,13 +2353,15 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* 移动端菜单面板 */}
-            {showMobileMenu && (
-              <div 
-                className="absolute bottom-full left-0 right-0 bg-black/95 backdrop-blur-sm max-h-[50vh] overflow-y-auto"
-                onClick={(e) => e.stopPropagation()}
-              >
+          {/* 移动端设置面板（底部抽屉，锚定视口底部，避免横屏被裁切） */}
+          {showMobileMenu && (
+            <div
+              className="absolute inset-x-0 bottom-0 z-40 bg-black/95 backdrop-blur-sm max-h-[80vh] overflow-y-auto rounded-t-2xl safe-area-bottom"
+              onClick={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
+            >
                 <div className="p-4 space-y-4">
                   {/* 播放速度 */}
                   <div>
@@ -2437,7 +2626,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                 </button>
               </div>
             )}
-          </div>
+          </>
         ) : (
           /* 桌面端控制栏 */
           <div
@@ -2986,7 +3175,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
               </div>
             </div>
           </div>
-        ))}
+        )}
       </div>
     );
   }

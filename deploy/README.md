@@ -75,10 +75,10 @@ curl -fsS http://127.0.0.1:1270/api/health    # {"status":"ok"}
 （先在 compose.yaml 里临时取消 `postgres.ports` 的 loopback 注释）：
 
 ```bash
-DATABASE_URL='postgresql://<user>:<pass>@127.0.0.1:5432/<db>?schema=public' pnpm db:seed
+DATABASE_URL='postgresql://<user>:<pass>@127.0.0.1:5432/<db>?schema=public' nub run db:seed
 ```
 
-> 用 `pnpm compose:migrate` 可随时手动重跑一次 schema 同步（`prisma db push`，幂等）。
+> 用 `nub run compose:migrate` 可随时手动重跑一次 schema 同步（`prisma db push`，幂等）。
 
 ---
 
