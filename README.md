@@ -79,14 +79,15 @@ nub run dev
 
 ```
 Cloudflare 边缘 (TLS / HTTP3 / CDN)
-         ↑  Cloudflare Tunnel（cloudflared 主动外连，无入站端口）
+         ↑  Cloudflare Tunnel（宿主机 cloudflared，回源 http://localhost:1270）
 内网机  ── docker compose ───────────────────────────
-   ├─ app         Next.js standalone (:1270)
-   ├─ postgres    PostgreSQL 16（命名卷，不暴露宿主机端口）
-   ├─ redis       Redis 7（命名卷）
-   ├─ migrate     一次性 prisma db push（建表 / 对齐 schema）
-   └─ cloudflared Cloudflare Tunnel → 边缘
-                  （rathole 客户端保留为停用 profile，可切回）
+   ├─ app       Next.js standalone（发布到 127.0.0.1:1270）
+   ├─ postgres  PostgreSQL 16（命名卷，不暴露宿主机端口）
+   ├─ redis     Redis 7（命名卷）
+   └─ migrate   一次性 prisma db push（建表 / 对齐 schema）
+
+隧道默认由宿主机 cloudflared 统一管（多站点共享一条隧道）；
+compose 内置的 cloudflared / rathole 均为可选 profile，默认不启动。
 ```
 
 ### 一键起停
@@ -99,15 +100,15 @@ nub run compose:logs   # 跟随 app 日志
 nub run compose:down   # 停服
 ```
 
-启动顺序由 compose 自动编排：postgres/redis 健康 → migrate 建表完成 → app 健康 → cloudflared 接入隧道。
+启动顺序由 compose 自动编排：postgres/redis 健康 → migrate 建表完成 → app 健康。对外暴露由**宿主机 cloudflared** 负责（回源 `http://localhost:1270`），compose 默认不起隧道。
 
-> Cloudflare Tunnel 需先在控制台创建并拿到 token、配好 Public Hostname（`<域名> → http://app:1270`），详见 [deploy/README.md](deploy/README.md)。
+> 推荐用宿主机上的 cloudflared 把域名回源到 `http://localhost:1270`。若要把隧道也塞进 compose：`docker compose --profile cloudflared up -d`（那时 Public Hostname 回源用 `http://app:1270`）。详见 [deploy/README.md](deploy/README.md)。
 
 ### 端口与暴露
 
 | 服务 | 端口 | 暴露范围 |
 |------|------|----------|
-| app | 1270 | 仅宿主机 loopback（调试用，可删）；对外只走 Cloudflare Tunnel |
+| app | 1270 | 发布到 `127.0.0.1:1270`，供宿主机 cloudflared 回源；对外走 Cloudflare Tunnel |
 | postgres / redis | 5432 / 6379 | 仅容器内网，**不**向宿主机暴露 |
 
 > Cloudflare Tunnel 控制台配置、从旧的 **pm2 + 宿主机 PostgreSQL** 迁移过来（含历史数据无损迁移）的完整步骤，

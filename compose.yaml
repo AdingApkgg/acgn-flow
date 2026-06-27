@@ -110,8 +110,8 @@ services:
     volumes:
       - uploads:/app/uploads
       - ./data:/app/data:ro  # IP 地理位置数据库（只读）
-    # 默认只把端口绑定到宿主机 loopback，供本机调试；
-    # 对公网的暴露完全走 rathole 隧道，不直接开放。删掉这段也能正常跑（rathole 走容器内网）。
+    # 发布到宿主机 loopback：宿主机的 cloudflared 回源到 http://localhost:1270 需要它（推荐方式）。
+    # （若改用下面的 compose 内置 cloudflared profile，隧道走容器内网 app:1270，这段可删。）
     ports:
       - "127.0.0.1:1270:1270"
     healthcheck:
@@ -121,12 +121,15 @@ services:
       retries: 5
       start_period: 40s
 
-  # ---------- Cloudflare Tunnel（当前对外暴露方式）----------
-  # cloudflared 主动外连 Cloudflare 边缘：无需公网机 / nginx / 开放任何入站端口，
-  # TLS、HTTP/3、CDN、防护都由 Cloudflare 边缘负责。
-  # 在 Cloudflare Zero Trust → Networks → Tunnels 给该 tunnel 配置 Public Hostname:
-  #   <你的域名>  ->  http://app:1270   （cloudflared 与 app 同处 compose 内网）
+  # ---------- Cloudflare Tunnel（可选·默认不启动）----------
+  # 默认不起：本项目所在主机一般用「一个宿主机 cloudflared 扛多个站点」的共享隧道，
+  #   af 的 Public Hostname 回源直接配 http://localhost:1270
+  #   （compose 已把 app 发布到 127.0.0.1:1270，宿主机 cloudflared 直接可达）。
+  # 仅当你要「单机自包含、隧道也塞进 compose」时才启用：
+  #   docker compose --profile cloudflared up -d
+  #   且把该 tunnel 的 Public Hostname 回源配成 http://app:1270（容器内网服务名）。
   cloudflared:
+    profiles: ["cloudflared"]
     image: cloudflare/cloudflared:2026.6.1
     container_name: acgn-flow-cloudflared
     restart: unless-stopped

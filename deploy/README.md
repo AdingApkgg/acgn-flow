@@ -1,48 +1,58 @@
 # ACGN Flow 部署指南
 
-全容器化部署：内网机上 **app + PostgreSQL + Redis + Cloudflare Tunnel** 全部跑在 docker/podman compose 里，
+全容器化部署：内网机上 **app + PostgreSQL + Redis** 跑在 docker/podman compose 里，
 宿主机不再有 pm2 / systemd / postgres / redis。
 
-对外暴露走 **Cloudflare Tunnel**（cloudflared 主动外连 Cloudflare 边缘）：
+对外暴露走 **Cloudflare Tunnel**：
 - 不需要公网机、不需要 Nginx、不需要开放任何入站端口、不需要 certbot
 - TLS、HTTP/3、CDN、防护都由 Cloudflare 边缘负责
+- **推荐由宿主机上的 cloudflared 统一管隧道**（一条隧道扛多个站点），各站点回源到自己的
+  `http://localhost:<端口>`；本应用回源 `http://localhost:1270`（compose 已把 app 发布到 `127.0.0.1:1270`）。
+- compose 也内置了 `cloudflared` / `rathole` 两个**可选 profile**（默认不启动），见对应小节。
 
-> 原先的 rathole + 公网机 Nginx 方案已停用，但保留为备用 profile，见文末「切回 rathole」。
+> 原先的 rathole + 公网机 Nginx 方案已停用，保留为备用 profile，见文末「切回 rathole」。
 
 ## 架构概览
 
 ```
 Cloudflare 边缘 (TLS / HTTP3 / CDN / WAF)
-         ↑  Cloudflare Tunnel（cloudflared 主动外连，无入站端口）
-内网机  ── docker compose ───────────────────────────
-   ├─ app         Next.js standalone (:1270)
-   ├─ postgres    PostgreSQL 16（命名卷 acgn-flow-postgres-data）
-   ├─ redis       Redis 7（命名卷 acgn-flow-redis-data）
-   ├─ migrate     一次性 prisma db push
-   └─ cloudflared Cloudflare Tunnel → 边缘
+         ↑  Cloudflare Tunnel（宿主机 cloudflared，回源 http://localhost:1270）
+内网机
+   ├─ 宿主机 cloudflared（多站点共享，systemd 管）
+   └─ docker compose ───────────────────────────
+        ├─ app       Next.js standalone（发布到 127.0.0.1:1270）
+        ├─ postgres  PostgreSQL 16（命名卷 acgn-flow-postgres-data）
+        ├─ redis     Redis 7（命名卷 acgn-flow-redis-data）
+        └─ migrate   一次性 prisma db push
 ```
 
-依赖与启动顺序由 compose 编排：`postgres`/`redis` 健康 → `migrate` 建表完成 → `app` 健康 → `cloudflared` 接入隧道。
+依赖与启动顺序由 compose 编排：`postgres`/`redis` 健康 → `migrate` 建表完成 → `app` 健康。隧道由宿主机 cloudflared 负责。
 
 ---
 
 ## 一、Cloudflare Tunnel 配置（先做一次）
 
+**推荐：用宿主机上的 cloudflared 统一管隧道**（一条隧道可扛多个站点）。
+
 1. 把域名接入 Cloudflare（在域名商把 NS 指向 Cloudflare 分配的 nameserver）。
-2. **Zero Trust → Networks → Tunnels → Create a tunnel → Cloudflared**，命名（如 `acgn-flow`）。
-3. 复制它给出的 **tunnel token**，填进内网机的 `.env`：
-
-   ```
-   CLOUDFLARE_TUNNEL_TOKEN="eyJ...（很长的一串）"
-   ```
-
-4. 在该 tunnel 的 **Public Hostname** 里加一条：
+2. **Zero Trust → Networks → Tunnels**：选一条已有隧道复用，或 Create a tunnel → Cloudflared。
+   宿主机若已在跑该隧道的 cloudflared 就直接用；新建的话在宿主机以该 token 运行并做成 systemd 服务：
+   `cloudflared --no-autoupdate tunnel run --token <token>`。
+3. 在该 tunnel 的 **Public Hostname** 里加一条：
    - Subdomain / Domain：你的对外域名（如 `af.saop.cc`）
-   - Service：`HTTP`　URL：`app:1270`
-   - （cloudflared 与 app 同处 compose 内网，所以用服务名 `app`，不是 127.0.0.1）
+   - Service：`HTTP`　URL：**`localhost:1270`**
+   - ⚠️ cloudflared 跑在宿主机，回源必须用 `localhost:1270`（compose 已把 app 发布到 `127.0.0.1:1270`）。
+     **别填 `app:1270`** —— 那是容器服务名，只有 cloudflared 也在 compose 内（见下）才对；
+     填错会出现 `dial tcp: lookup app ... no such host` → 502。
 
 > 原 Nginx 做的限流 / 安全响应头 / 缓存，现在用 Cloudflare 侧的 WAF、Rate Limiting、
 > Transform Rules、Cache Rules 实现；或保留在应用层（`next.config.ts` headers）。
+
+### （可选）把隧道也塞进 compose
+
+想单机自包含、隧道跟着 `docker compose` 起停：把 token 填进 `.env` 的 `CLOUDFLARE_TUNNEL_TOKEN`，
+`docker compose --profile cloudflared up -d`，并把该 tunnel 的 Public Hostname 回源改成 **`http://app:1270`**。
+别和宿主机那份 cloudflared 用同一条隧道同时跑（两副本回源不一致会时好时坏）。
 
 ---
 
@@ -56,17 +66,17 @@ cp .env.example .env
 #   必填: POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
 #         AUTH_SECRET(openssl rand -base64 32) / AUTH_URL(你的域名)
 #         NEXT_PUBLIC_APP_URL(你的域名，注意会在构建时内联进前端，改了要重建镜像)
-#         CLOUDFLARE_TUNNEL_TOKEN(上一步复制的 token)
+#         （CLOUDFLARE_TUNNEL_TOKEN 仅当用 --profile cloudflared 把隧道塞进 compose 时才需要）
 
-# 2) 起栈（首启会构建镜像）
+# 2) 起栈（首启会构建镜像；默认不含隧道）
 docker compose up -d --build          # 或 podman compose up -d --build
 
 # 3) 看状态 / 日志
 docker compose ps
 docker compose logs -f app
-docker compose logs -f cloudflared    # 应看到 "Registered tunnel connection"
 curl -fsS http://127.0.0.1:1270/api/health    # {"status":"ok"}
-# 然后直接访问你的 Cloudflare 域名验证
+# 宿主机 cloudflared 把 <域名> 回源到 localhost:1270 后，直接访问 Cloudflare 域名验证
+# 查隧道连接：journalctl -u <你的 cloudflared 单元> | grep "Registered tunnel connection"
 ```
 
 ### 填充种子数据（仅全新库需要）
@@ -112,7 +122,7 @@ docker compose exec -T postgres pg_restore \
 # 5) 把历史上传文件导入 uploads 卷（旧 app 的 UPLOAD_DIR 默认是 ./uploads）
 bash scripts/import-uploads-to-volume.sh
 
-# 6) 起全栈：migrate 跑 prisma db push 对齐 schema（数据已在，通常 no-op），再起 app、cloudflared
+# 6) 起全栈：migrate 跑 prisma db push 对齐 schema（数据已在，通常 no-op），再起 app（隧道由宿主机 cloudflared 管）
 docker compose up -d --build
 
 # 7) 验证
@@ -159,7 +169,7 @@ docker run --rm -v acgn-flow-uploads:/src:ro -v "$PWD":/dst alpine \
 | 起栈 | `docker compose up -d --build` |
 | 停栈 | `docker compose down` |
 | 看 app 日志 | `docker compose logs -f app` |
-| 看隧道日志 | `docker compose logs -f cloudflared` |
+| 看隧道日志 | `journalctl -u <宿主机 cloudflared 单元> -f`（compose profile 则 `docker compose logs -f cloudflared`） |
 | 重启 app | `docker compose restart app` |
 | 手动同步 schema | `docker compose run --rm migrate` |
 | 进 app 容器 | `docker compose exec app sh` |
@@ -174,8 +184,9 @@ docker run --rm -v acgn-flow-uploads:/src:ro -v "$PWD":/dst alpine \
 rathole 客户端仍在仓库里，挂在 compose 的 `rathole` profile 下，默认不启动。切回步骤：
 
 ```bash
-# 1) 在 Cloudflare 侧停掉/删掉该 tunnel（避免双通道），并停 cloudflared
-docker compose stop cloudflared
+# 1) 在 Cloudflare 侧停掉/删掉该 tunnel 的 Public Hostname（避免双通道）
+#    宿主机 cloudflared:  sudo systemctl stop <你的 cloudflared 单元>
+#    （若用的是 compose profile:  docker compose stop cloudflared）
 
 # 2) 准备 rathole 客户端配置
 cp deploy/rathole-client.example.toml deploy/rathole-client.toml
