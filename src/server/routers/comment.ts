@@ -1,53 +1,47 @@
+import { ORPCError } from "@orpc/server";
+import { and, asc, desc, eq, exists, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { router, publicProcedure, protectedProcedure } from "../trpc";
-import { TRPCError } from "@trpc/server";
-import { Prisma } from "@/generated/prisma/client";
+import * as schema from "@/db/schema";
+import { type DeviceInfo, parseDeviceInfo } from "@/lib/device-info";
 import { getIpLocation } from "@/lib/ip-location";
-import { parseDeviceInfo, type DeviceInfo } from "@/lib/device-info";
+import { protectedProcedure, publicProcedure } from "../orpc";
+import { hasAdminScope } from "../services/permissions";
+import { cursorCondition, requiredRow } from "../services/query";
 
 // 排序类型
 const SortType = z.enum(["newest", "oldest", "popular"]);
 
-export const commentRouter = router({
+export const commentRouter = {
   // 获取全站最新评论流
   listRecent: publicProcedure
     .input(
       z.object({
         cursor: z.string().optional(),
         limit: z.number().min(1).max(50).default(10),
-      })
+      }),
     )
-    .query(async ({ ctx, input }) => {
+    .handler(async ({ context, input }) => {
       const { cursor, limit } = input;
 
-      const comments = await ctx.prisma.comment.findMany({
-        where: {
-          isDeleted: false,
-          isHidden: false,
-          video: {
-            status: "PUBLISHED",
-          },
+      const comments = await context.db.query.comment.findMany({
+        with: {
+          user: { columns: { id: true, username: true, nickname: true, avatar: true } },
+          video: { columns: { id: true, title: true, coverUrl: true } },
         },
-        take: limit + 1,
-        cursor: cursor ? { id: cursor } : undefined,
-        orderBy: { createdAt: "desc" },
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              nickname: true,
-              avatar: true,
-            },
-          },
-          video: {
-            select: {
-              id: true,
-              title: true,
-              coverUrl: true,
-            },
-          },
-        },
+        where: and(
+          and(
+            eq(schema.comment.isDeleted, false),
+            eq(schema.comment.isHidden, false),
+            exists(
+              sql`(select 1 from "Video" as "rel_3" where ${and(eq(sql`"rel_3"."id"`, schema.comment.videoId), and(eq(sql`"rel_3"."status"`, "PUBLISHED")))})`,
+            ),
+          ),
+          cursorCondition(schema.comment, (cursor ? { id: cursor } : undefined)?.id, [
+            { column: schema.comment.createdAt, direction: "desc" },
+          ]),
+        ),
+        orderBy: [desc(schema.comment.createdAt), desc(schema.comment.id)],
+        limit: limit + 1,
       });
 
       let nextCursor: string | undefined;
@@ -70,60 +64,51 @@ export const commentRouter = router({
         sort: SortType.default("newest"),
         cursor: z.string().optional(),
         limit: z.number().min(1).max(50).default(20),
-      })
+      }),
     )
-    .query(async ({ ctx, input }) => {
+    .handler(async ({ context, input }) => {
       const { videoId, sort, cursor, limit } = input;
 
       // 构建排序条件
-      const orderBy = (() => {
-        switch (sort) {
-          case "oldest":
-            return { createdAt: "asc" as const };
-          case "popular":
-            return { likes: "desc" as const };
-          default:
-            return { createdAt: "desc" as const };
-        }
-      })();
+      const sortColumn = sort === "popular" ? schema.comment.likes : schema.comment.createdAt;
+      const direction = sort === "oldest" ? "asc" : "desc";
+      const orderBy = [
+        direction === "asc" ? asc(sortColumn) : desc(sortColumn),
+        desc(schema.comment.id),
+      ];
 
       // 查询顶级评论（parentId 为 null）
-      const comments = await ctx.prisma.comment.findMany({
-        where: {
-          videoId,
-          parentId: null,
-          isDeleted: false,
-          isHidden: false,
-        },
-        take: limit + 1,
-        cursor: cursor ? { id: cursor } : undefined,
-        orderBy,
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              nickname: true,
-              avatar: true,
-            },
-          },
-          replyToUser: {
-            select: {
-              id: true,
-              username: true,
-              nickname: true,
-            },
-          },
-          _count: {
-            select: { replies: true },
-          },
-          reactions: ctx.session?.user
+      const comments = await context.db.query.comment.findMany({
+        with: {
+          user: { columns: { id: true, username: true, nickname: true, avatar: true } },
+          replyToUser: { columns: { id: true, username: true, nickname: true } },
+          reactions: context.session?.user
             ? {
-                where: { userId: ctx.session.user.id },
-                select: { isLike: true },
+                columns: { isLike: true },
+                where: and(eq(schema.commentReaction.userId, context.session.user.id)),
               }
-            : false,
+            : undefined,
         },
+        extras: (row) => ({
+          _count: sql<{
+            replies: number;
+          }>`json_build_object('replies', (select count(*)::int from "Comment" as "count_replies" where "count_replies"."parentId" = ${sql`${row.id}`}))`.as(
+            "_count",
+          ),
+        }),
+        where: and(
+          and(
+            eq(schema.comment.videoId, videoId),
+            isNull(schema.comment.parentId),
+            eq(schema.comment.isDeleted, false),
+            eq(schema.comment.isHidden, false),
+          ),
+          cursorCondition(schema.comment, (cursor ? { id: cursor } : undefined)?.id, [
+            { column: sortColumn, direction: direction },
+          ]),
+        ),
+        orderBy,
+        limit: limit + 1,
       });
 
       let nextCursor: string | undefined;
@@ -152,43 +137,34 @@ export const commentRouter = router({
         commentId: z.string(),
         cursor: z.string().optional(),
         limit: z.number().min(1).max(50).default(10),
-      })
+      }),
     )
-    .query(async ({ ctx, input }) => {
+    .handler(async ({ context, input }) => {
       const { commentId, cursor, limit } = input;
 
-      const replies = await ctx.prisma.comment.findMany({
-        where: {
-          parentId: commentId,
-          isDeleted: false,
-          isHidden: false,
-        },
-        take: limit + 1,
-        cursor: cursor ? { id: cursor } : undefined,
-        orderBy: { createdAt: "asc" },
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              nickname: true,
-              avatar: true,
-            },
-          },
-          replyToUser: {
-            select: {
-              id: true,
-              username: true,
-              nickname: true,
-            },
-          },
-          reactions: ctx.session?.user
+      const replies = await context.db.query.comment.findMany({
+        with: {
+          user: { columns: { id: true, username: true, nickname: true, avatar: true } },
+          replyToUser: { columns: { id: true, username: true, nickname: true } },
+          reactions: context.session?.user
             ? {
-                where: { userId: ctx.session.user.id },
-                select: { isLike: true },
+                columns: { isLike: true },
+                where: and(eq(schema.commentReaction.userId, context.session.user.id)),
               }
-            : false,
+            : undefined,
         },
+        where: and(
+          and(
+            eq(schema.comment.parentId, commentId),
+            eq(schema.comment.isDeleted, false),
+            eq(schema.comment.isHidden, false),
+          ),
+          cursorCondition(schema.comment, (cursor ? { id: cursor } : undefined)?.id, [
+            { column: schema.comment.createdAt, direction: "asc" },
+          ]),
+        ),
+        orderBy: [asc(schema.comment.createdAt), desc(schema.comment.id)],
+        limit: limit + 1,
       });
 
       let nextCursor: string | undefined;
@@ -212,14 +188,15 @@ export const commentRouter = router({
   // 获取评论数量
   getCount: publicProcedure
     .input(z.object({ videoId: z.string() }))
-    .query(async ({ ctx, input }) => {
-      const count = await ctx.prisma.comment.count({
-        where: {
-          videoId: input.videoId,
-          isDeleted: false,
-          isHidden: false,
-        },
-      });
+    .handler(async ({ context, input }) => {
+      const count = await context.db.$count(
+        schema.comment,
+        and(
+          eq(schema.comment.videoId, input.videoId),
+          eq(schema.comment.isDeleted, false),
+          eq(schema.comment.isHidden, false),
+        ),
+      );
       return count;
     }),
 
@@ -250,22 +227,22 @@ export const commentRouter = router({
             fingerprint: z.string().optional(),
           })
           .optional(),
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
+    .handler(async ({ context, input }) => {
       const { videoId, content, parentId, replyToUserId, gpsLocation, deviceInfo } = input;
-      const userId = ctx.session.user.id;
-      
+      const userId = context.session.user.id;
+
       // 获取 IPv4 和 IPv6 位置
       const [ipv4Location, ipv6Location] = await Promise.all([
-        getIpLocation(ctx.ipv4Address),
-        getIpLocation(ctx.ipv6Address),
+        getIpLocation(context.ipv4Address),
+        getIpLocation(context.ipv6Address),
       ]);
-      
+
       // 如果客户端传递了设备信息（包含高精度版本），直接使用
       // 否则用 User-Agent 解析（精度较低）
       let normalizedDeviceInfo: DeviceInfo;
-      if (deviceInfo && deviceInfo.os && deviceInfo.osVersion) {
+      if (deviceInfo?.os && deviceInfo.osVersion) {
         // 客户端传递了完整的高精度设备信息，直接使用
         normalizedDeviceInfo = {
           deviceType: deviceInfo.deviceType || "desktop",
@@ -280,115 +257,97 @@ export const commentRouter = router({
           timezone: deviceInfo.timezone || null,
           screen: deviceInfo.screen || null,
           pixelRatio: deviceInfo.pixelRatio || null,
-          userAgent: deviceInfo.userAgent || ctx.userAgent || null,
+          userAgent: deviceInfo.userAgent || context.userAgent || null,
           fingerprint: deviceInfo.fingerprint || "unknown",
         };
       } else {
         // 回退到 User-Agent 解析
-        normalizedDeviceInfo = parseDeviceInfo(ctx.userAgent, deviceInfo);
+        normalizedDeviceInfo = parseDeviceInfo(context.userAgent, deviceInfo);
       }
 
       // 验证视频存在
-      const video = await ctx.prisma.video.findUnique({
-        where: { id: videoId },
-        select: { id: true, status: true },
-      });
+      const video = await context.db.query.video
+        .findFirst({
+          columns: { id: true, status: true },
+          where: and(eq(schema.video.id, videoId)),
+        })
+        .then((row) => row ?? null);
 
-      if (!video || video.status !== "PUBLISHED") {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "视频不存在",
-        });
+      if (video?.status !== "PUBLISHED") {
+        throw new ORPCError("NOT_FOUND", { message: "视频不存在" });
       }
 
       // 如果是回复，验证父评论存在
       if (parentId) {
-        const parentComment = await ctx.prisma.comment.findUnique({
-          where: { id: parentId },
-          select: { id: true, videoId: true, isDeleted: true, userId: true },
-        });
+        const parentComment = await context.db.query.comment
+          .findFirst({
+            columns: { id: true, videoId: true, isDeleted: true, userId: true },
+            where: and(eq(schema.comment.id, parentId)),
+          })
+          .then((row) => row ?? null);
 
         if (!parentComment || parentComment.isDeleted || parentComment.videoId !== videoId) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "评论不存在",
-          });
+          throw new ORPCError("NOT_FOUND", { message: "评论不存在" });
         }
       }
 
-      const comment = await ctx.prisma.comment.create({
-        data: {
-          content,
-          userId,
-          videoId,
-          parentId,
-          replyToUserId,
-          ipv4Address: ctx.ipv4Address,
-          ipv4Location,
-          ipv6Address: ctx.ipv6Address,
-          ipv6Location,
-          gpsLocation,
-          deviceInfo: normalizedDeviceInfo as unknown as Prisma.InputJsonValue,
-          userAgent: ctx.userAgent,
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              nickname: true,
-              avatar: true,
+      const comment = await (async () => {
+        const inserted = requiredRow(
+          await context.db
+            .insert(schema.comment)
+            .values({
+              content: content,
+              userId: userId,
+              videoId: videoId,
+              parentId: parentId,
+              replyToUserId: replyToUserId,
+              ipv4Address: context.ipv4Address,
+              ipv4Location: ipv4Location,
+              ipv6Address: context.ipv6Address,
+              ipv6Location: ipv6Location,
+              gpsLocation: gpsLocation,
+              deviceInfo: { ...normalizedDeviceInfo },
+              userAgent: context.userAgent,
+            })
+            .returning(),
+        );
+        return requiredRow(
+          await context.db.query.comment.findFirst({
+            ...{
+              with: {
+                user: { columns: { id: true, username: true, nickname: true, avatar: true } },
+                replyToUser: { columns: { id: true, username: true, nickname: true } },
+              },
+              extras: (row) => ({
+                _count: sql<{
+                  replies: number;
+                }>`json_build_object('replies', (select count(*)::int from "Comment" as "count_replies" where "count_replies"."parentId" = ${sql`${row.id}`}))`.as(
+                  "_count",
+                ),
+              }),
             },
-          },
-          replyToUser: {
-            select: {
-              id: true,
-              username: true,
-              nickname: true,
-            },
-          },
-          _count: {
-            select: { replies: true },
-          },
-        },
-      });
+            where: eq(schema.comment.id, inserted.id),
+          }),
+        );
+      })();
 
       // 更新用户最近位置（优先使用 IPv4，其次 IPv6）
       const lastIpLocation = ipv4Location || ipv6Location;
-      await ctx.prisma.user.update({
-        where: { id: userId },
-        data: {
+      await context.db
+        .update(schema.user)
+        .set({
           lastIpLocation: lastIpLocation || undefined,
           lastGpsLocation: gpsLocation || undefined,
-        },
-      });
+        })
+        .where(and(eq(schema.user.id, userId)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       // 记录设备历史
-      await ctx.prisma.userDevice.upsert({
-        where: {
-          userId_fingerprint: {
-            userId,
-            fingerprint: normalizedDeviceInfo.fingerprint,
-          },
-        },
-        update: {
-          deviceType: normalizedDeviceInfo.deviceType,
-          os: normalizedDeviceInfo.os,
-          osVersion: normalizedDeviceInfo.osVersion,
-          browser: normalizedDeviceInfo.browser,
-          browserVersion: normalizedDeviceInfo.browserVersion,
-          brand: normalizedDeviceInfo.brand,
-          model: normalizedDeviceInfo.model,
-          userAgent: normalizedDeviceInfo.userAgent,
-          ipv4Address: ctx.ipv4Address,
-          ipv4Location,
-          ipv6Address: ctx.ipv6Address,
-          ipv6Location,
-          gpsLocation,
-          lastActiveAt: new Date(),
-        },
-        create: {
-          userId,
+      await context.db
+        .insert(schema.userDevice)
+        .values({
+          userId: userId,
           fingerprint: normalizedDeviceInfo.fingerprint,
           deviceType: normalizedDeviceInfo.deviceType,
           os: normalizedDeviceInfo.os,
@@ -398,13 +357,33 @@ export const commentRouter = router({
           brand: normalizedDeviceInfo.brand,
           model: normalizedDeviceInfo.model,
           userAgent: normalizedDeviceInfo.userAgent,
-          ipv4Address: ctx.ipv4Address,
-          ipv4Location,
-          ipv6Address: ctx.ipv6Address,
-          ipv6Location,
-          gpsLocation,
-        },
-      });
+          ipv4Address: context.ipv4Address,
+          ipv4Location: ipv4Location,
+          ipv6Address: context.ipv6Address,
+          ipv6Location: ipv6Location,
+          gpsLocation: gpsLocation,
+        })
+        .onConflictDoUpdate({
+          target: [schema.userDevice.userId, schema.userDevice.fingerprint],
+          set: {
+            deviceType: normalizedDeviceInfo.deviceType,
+            os: normalizedDeviceInfo.os,
+            osVersion: normalizedDeviceInfo.osVersion,
+            browser: normalizedDeviceInfo.browser,
+            browserVersion: normalizedDeviceInfo.browserVersion,
+            brand: normalizedDeviceInfo.brand,
+            model: normalizedDeviceInfo.model,
+            userAgent: normalizedDeviceInfo.userAgent,
+            ipv4Address: context.ipv4Address,
+            ipv4Location: ipv4Location,
+            ipv6Address: context.ipv6Address,
+            ipv6Location: ipv6Location,
+            gpsLocation: gpsLocation,
+            lastActiveAt: new Date(),
+          },
+        })
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return {
         ...comment,
@@ -418,38 +397,33 @@ export const commentRouter = router({
       z.object({
         id: z.string(),
         content: z.string().min(1).max(2000),
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
+    .handler(async ({ context, input }) => {
       const { id, content } = input;
-      const userId = ctx.session.user.id;
+      const userId = context.session.user.id;
 
-      const comment = await ctx.prisma.comment.findUnique({
-        where: { id },
-        select: { userId: true, isDeleted: true },
-      });
+      const comment = await context.db.query.comment
+        .findFirst({
+          columns: { userId: true, isDeleted: true },
+          where: and(eq(schema.comment.id, id)),
+        })
+        .then((row) => row ?? null);
 
       if (!comment || comment.isDeleted) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "评论不存在",
-        });
+        throw new ORPCError("NOT_FOUND", { message: "评论不存在" });
       }
 
       if (comment.userId !== userId) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "无权编辑此评论",
-        });
+        throw new ORPCError("FORBIDDEN", { message: "无权编辑此评论" });
       }
 
-      const updated = await ctx.prisma.comment.update({
-        where: { id },
-        data: {
-          content,
-          isEdited: true,
-        },
-      });
+      const updated = await context.db
+        .update(schema.comment)
+        .set({ content: content, isEdited: true })
+        .where(and(eq(schema.comment.id, id)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return updated;
     }),
@@ -457,38 +431,34 @@ export const commentRouter = router({
   // 删除评论
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const userRole = ctx.session.user.role;
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
 
-      const comment = await ctx.prisma.comment.findUnique({
-        where: { id: input.id },
-        select: { userId: true, isDeleted: true },
-      });
+      const comment = await context.db.query.comment
+        .findFirst({
+          columns: { userId: true, isDeleted: true },
+          where: and(eq(schema.comment.id, input.id)),
+        })
+        .then((row) => row ?? null);
 
       if (!comment || comment.isDeleted) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "评论不存在",
-        });
+        throw new ORPCError("NOT_FOUND", { message: "评论不存在" });
       }
 
       // 只有评论作者或管理员可以删除
       const isOwner = comment.userId === userId;
-      const isAdmin = userRole === "ADMIN" || userRole === "OWNER";
 
-      if (!isOwner && !isAdmin) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "无权删除此评论",
-        });
+      if (!isOwner && !(await hasAdminScope(context.db, userId, "comment:manage"))) {
+        throw new ORPCError("FORBIDDEN", { message: "无权删除此评论" });
       }
 
       // 软删除
-      await ctx.prisma.comment.update({
-        where: { id: input.id },
-        data: { isDeleted: true },
-      });
+      await context.db
+        .update(schema.comment)
+        .set({ isDeleted: true })
+        .where(and(eq(schema.comment.id, input.id)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return { success: true };
     }),
@@ -499,78 +469,93 @@ export const commentRouter = router({
       z.object({
         commentId: z.string(),
         isLike: z.boolean().nullable(), // null = 取消反应
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const { commentId, isLike } = input;
-      const userId = ctx.session.user.id;
+    .handler(async ({ context, input }) => {
+      return context.db.transaction(async (tx) => {
+        const { commentId, isLike } = input;
+        const userId = context.session.user.id;
 
-      const comment = await ctx.prisma.comment.findUnique({
-        where: { id: commentId },
-        select: { id: true, likes: true, dislikes: true, isDeleted: true },
-      });
+        const comment = (
+          await tx
+            .select()
+            .from(schema.comment)
+            .where(eq(schema.comment.id, commentId))
+            .for("update")
+        )[0];
 
-      if (!comment || comment.isDeleted) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "评论不存在",
-        });
-      }
-
-      // 查找现有反应
-      const existingReaction = await ctx.prisma.commentReaction.findUnique({
-        where: {
-          userId_commentId: { userId, commentId },
-        },
-      });
-
-      let likeDelta = 0;
-      let dislikeDelta = 0;
-
-      if (isLike === null) {
-        // 取消反应
-        if (existingReaction) {
-          await ctx.prisma.commentReaction.delete({
-            where: { id: existingReaction.id },
-          });
-          likeDelta = existingReaction.isLike ? -1 : 0;
-          dislikeDelta = existingReaction.isLike ? 0 : -1;
+        if (!comment || comment.isDeleted) {
+          throw new ORPCError("NOT_FOUND", { message: "评论不存在" });
         }
-      } else if (existingReaction) {
-        // 更新反应
-        if (existingReaction.isLike !== isLike) {
-          await ctx.prisma.commentReaction.update({
-            where: { id: existingReaction.id },
-            data: { isLike },
-          });
-          likeDelta = isLike ? 1 : -1;
-          dislikeDelta = isLike ? -1 : 1;
+
+        // 查找现有反应
+        const existingReaction = await tx.query.commentReaction
+          .findFirst({
+            where: and(
+              and(
+                eq(schema.commentReaction.userId, userId),
+                eq(schema.commentReaction.commentId, commentId),
+              ),
+            ),
+          })
+          .then((row) => row ?? null);
+
+        let likeDelta = 0;
+        let dislikeDelta = 0;
+
+        if (isLike === null) {
+          // 取消反应
+          if (existingReaction) {
+            await tx
+              .delete(schema.commentReaction)
+              .where(and(eq(schema.commentReaction.id, existingReaction.id)))
+              .returning()
+              .then((rows) => requiredRow(rows));
+            likeDelta = existingReaction.isLike ? -1 : 0;
+            dislikeDelta = existingReaction.isLike ? 0 : -1;
+          }
+        } else if (existingReaction) {
+          // 更新反应
+          if (existingReaction.isLike !== isLike) {
+            await tx
+              .update(schema.commentReaction)
+              .set({ isLike: isLike })
+              .where(and(eq(schema.commentReaction.id, existingReaction.id)))
+              .returning()
+              .then((rows) => requiredRow(rows));
+            likeDelta = isLike ? 1 : -1;
+            dislikeDelta = isLike ? -1 : 1;
+          }
+        } else {
+          // 创建新反应
+          await tx
+            .insert(schema.commentReaction)
+            .values({ userId: userId, commentId: commentId, isLike: isLike })
+            .returning()
+            .then((rows) => requiredRow(rows));
+          likeDelta = isLike ? 1 : 0;
+          dislikeDelta = isLike ? 0 : 1;
         }
-      } else {
-        // 创建新反应
-        await ctx.prisma.commentReaction.create({
-          data: { userId, commentId, isLike },
-        });
-        likeDelta = isLike ? 1 : 0;
-        dislikeDelta = isLike ? 0 : 1;
-      }
 
-      // 更新评论的点赞/踩计数
-      if (likeDelta !== 0 || dislikeDelta !== 0) {
-        await ctx.prisma.comment.update({
-          where: { id: commentId },
-          data: {
-            likes: { increment: likeDelta },
-            dislikes: { increment: dislikeDelta },
-          },
-        });
-      }
+        // 更新评论的点赞/踩计数
+        if (likeDelta !== 0 || dislikeDelta !== 0) {
+          await tx
+            .update(schema.comment)
+            .set({
+              likes: sql`${schema.comment.likes} + ${likeDelta}`,
+              dislikes: sql`${schema.comment.dislikes} + ${dislikeDelta}`,
+            })
+            .where(and(eq(schema.comment.id, commentId)))
+            .returning()
+            .then((rows) => requiredRow(rows));
+        }
 
-      return {
-        likes: comment.likes + likeDelta,
-        dislikes: comment.dislikes + dislikeDelta,
-        userReaction: isLike,
-      };
+        return {
+          likes: comment.likes + likeDelta,
+          dislikes: comment.dislikes + dislikeDelta,
+          userReaction: isLike,
+        };
+      });
     }),
 
   // 置顶评论（仅视频上传者/管理员）
@@ -579,56 +564,49 @@ export const commentRouter = router({
       z.object({
         commentId: z.string(),
         isPinned: z.boolean(),
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
+    .handler(async ({ context, input }) => {
       const { commentId, isPinned } = input;
-      const userId = ctx.session.user.id;
-      const userRole = ctx.session.user.role;
+      const userId = context.session.user.id;
 
-      const comment = await ctx.prisma.comment.findUnique({
-        where: { id: commentId },
-        include: {
-          video: {
-            select: { uploaderId: true },
-          },
-        },
-      });
+      const comment = await context.db.query.comment
+        .findFirst({
+          with: { video: { columns: { uploaderId: true } } },
+          where: and(eq(schema.comment.id, commentId)),
+        })
+        .then((row) => row ?? null);
 
       if (!comment || comment.isDeleted) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "评论不存在",
-        });
+        throw new ORPCError("NOT_FOUND", { message: "评论不存在" });
       }
 
       // 只有视频上传者或管理员可以置顶
       const isUploader = comment.video.uploaderId === userId;
-      const isAdmin = userRole === "ADMIN" || userRole === "OWNER";
 
-      if (!isUploader && !isAdmin) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "无权置顶评论",
-        });
+      if (!isUploader && !(await hasAdminScope(context.db, userId, "comment:manage"))) {
+        throw new ORPCError("FORBIDDEN", { message: "无权置顶评论" });
       }
 
       // 如果要置顶，先取消其他置顶
       if (isPinned) {
-        await ctx.prisma.comment.updateMany({
-          where: {
-            videoId: comment.videoId,
-            isPinned: true,
-          },
-          data: { isPinned: false },
-        });
+        await context.db
+          .update(schema.comment)
+          .set({ isPinned: false })
+          .where(
+            and(eq(schema.comment.videoId, comment.videoId), eq(schema.comment.isPinned, true)),
+          )
+          .returning()
+          .then((rows) => ({ count: rows.length }));
       }
 
-      await ctx.prisma.comment.update({
-        where: { id: commentId },
-        data: { isPinned },
-      });
+      await context.db
+        .update(schema.comment)
+        .set({ isPinned: isPinned })
+        .where(and(eq(schema.comment.id, commentId)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return { success: true };
     }),
-});
+};
