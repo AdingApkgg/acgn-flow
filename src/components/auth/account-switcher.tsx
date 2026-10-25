@@ -1,45 +1,42 @@
-"use client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Loader2, Plus, UserCircle, X } from "lucide-react";
 
-import { useEffect, useState, useRef } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useNavigate, useRevalidator } from "react-router";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { Check, Plus, UserCircle, X, Loader2 } from "lucide-react";
-import { useAccountsStore, type SavedAccount } from "@/stores/accounts";
-import { trpc } from "@/lib/trpc";
-import { toast } from "sonner";
+import { authClient, useSession } from "@/lib/auth-client";
+import { orpc } from "@/lib/orpc";
+import { type SavedAccount, useAccountsStore } from "@/stores/accounts";
 
 export function AccountSwitcher() {
   const { data: session, update: updateSession } = useSession();
-  const router = useRouter();
-  const { accounts, addAccount, removeAccount, setSwitchToken, getSwitchToken } = useAccountsStore();
+  const navigate = useNavigate();
+  const revalidator = useRevalidator();
+  const { accounts, addAccount, removeAccount } = useAccountsStore();
+  const queryClient = useQueryClient();
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
-  const hasGeneratedToken = useRef(false);
-
-  // 获取当前用户详细信息
-  const { data: currentUser } = trpc.user.me.useQuery(undefined, {
+  const { data: currentUser } = useQuery(
+    orpc.user.me.queryOptions({ enabled: !!session?.user?.id }),
+  );
+  const { data: deviceSessions = [], refetch: refetchDeviceSessions } = useQuery({
+    queryKey: ["auth", "device-sessions"],
+    queryFn: async () => {
+      const result = await authClient.multiSession.listDeviceSessions();
+      if (result.error) throw new Error(result.error.message || "获取账号会话失败");
+      return result.data || [];
+    },
     enabled: !!session?.user?.id,
   });
-
-  // 生成切换令牌
-  const generateTokenMutation = trpc.user.generateSwitchToken.useMutation({
-    onSuccess: (data) => {
-      if (currentUser) {
-        setSwitchToken(currentUser.id, data.token);
-      }
-    },
-  });
-
-  // 当登录成功时保存账号信息并生成切换令牌
   useEffect(() => {
-    if (currentUser && session?.user) {
+    if (currentUser && session?.user?.id)
       addAccount({
         id: currentUser.id,
         email: currentUser.email,
@@ -47,80 +44,48 @@ export function AccountSwitcher() {
         nickname: currentUser.nickname,
         avatar: currentUser.avatar,
       });
-
-      // 检查是否已有切换令牌，没有则生成（只生成一次）
-      const existingToken = getSwitchToken(currentUser.id);
-      if (!existingToken && !hasGeneratedToken.current && !generateTokenMutation.isPending) {
-        hasGeneratedToken.current = true;
-        generateTokenMutation.mutate();
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在用户 ID 变化时执行，避免无限循环
-  }, [currentUser?.id, session?.user?.id]);
-
-  // 过滤掉当前账号
-  const otherAccounts = accounts.filter((a) => a.id !== session?.user?.id);
-
-  // 快速切换账号（无需密码）
+  }, [currentUser, session?.user?.id, addAccount]);
+  const otherAccounts = accounts.filter((account) => account.id !== session?.user?.id);
   const switchToAccount = async (account: SavedAccount) => {
-    const token = getSwitchToken(account.id);
-    
-    if (!token) {
-      // 没有令牌，需要重新登录
-      toast.error("需要重新登录", { description: "该账号的快速切换令牌已过期" });
-      router.push(`/login?account=${encodeURIComponent(account.email)}`);
-      return;
-    }
-
     setSwitchingTo(account.id);
-
     try {
-      const response = await fetch("/api/auth/switch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        // 令牌无效，清除并提示重新登录
-        if (response.status === 401 || response.status === 404) {
-          setSwitchToken(account.id, "");
-          toast.error("需要重新登录", { description: data.error || "快速切换令牌已过期" });
-          router.push(`/login?account=${encodeURIComponent(account.email)}`);
-        } else {
-          toast.error("切换失败", { description: data.error });
-        }
+      const sessions = await refetchDeviceSessions();
+      const target = sessions.data?.find((item) => item.user.id === account.id);
+      if (!target) {
+        toast.error("需要重新登录", { description: "该账号的登录会话已过期或被撤销" });
+        navigate(`/login?account=${encodeURIComponent(account.email)}`);
         return;
       }
-
-      // 切换成功，更新 session 并刷新页面
-      toast.success("已切换账号", { description: `欢迎回来，${data.user.name}` });
-      
-      // 强制刷新 session
+      const result = await authClient.multiSession.setActive({
+        sessionToken: target.session.token,
+      });
+      if (result.error) throw new Error(result.error.message || "切换失败");
+      queryClient.clear();
       await updateSession();
-      
-      // 刷新页面以确保所有状态更新
-      router.refresh();
+      await revalidator.revalidate();
+      toast.success("已切换账号", {
+        description: `欢迎回来，${account.nickname || account.username}`,
+      });
     } catch (error) {
-      console.error("Switch account error:", error);
-      toast.error("切换失败", { description: "网络错误，请重试" });
+      toast.error("切换失败", { description: error instanceof Error ? error.message : "请重试" });
     } finally {
       setSwitchingTo(null);
     }
   };
-
-  // 添加新账号
-  const addNewAccount = () => {
-    router.push("/login?new=1");
-  };
-
-  // 移除已保存的账号
-  const handleRemoveAccount = (e: React.MouseEvent, accountId: string) => {
-    e.stopPropagation();
-    removeAccount(accountId);
-    toast.success("已移除账号");
+  const addNewAccount = () => navigate("/login?new=1");
+  const handleRemoveAccount = async (event: React.MouseEvent, accountId: string) => {
+    event.stopPropagation();
+    try {
+      for (const item of deviceSessions.filter((item) => item.user.id === accountId)) {
+        const result = await authClient.multiSession.revoke({ sessionToken: item.session.token });
+        if (result.error) throw new Error(result.error.message || "撤销会话失败");
+      }
+      removeAccount(accountId);
+      await refetchDeviceSessions();
+      toast.success("已移除账号");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "移除账号失败");
+    }
   };
 
   if (otherAccounts.length === 0) {
@@ -152,9 +117,7 @@ export function AccountSwitcher() {
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{session.user.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {session.user.email}
-                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
                 </div>
                 <Check className="h-4 w-4 text-primary flex-shrink-0" />
               </div>
@@ -165,8 +128,8 @@ export function AccountSwitcher() {
           {/* 其他已保存的账号 */}
           {otherAccounts.map((account) => {
             const isSwitching = switchingTo === account.id;
-            const hasToken = !!getSwitchToken(account.id);
-            
+            const hasToken = deviceSessions.some((item) => item.user.id === account.id);
+
             return (
               <DropdownMenuItem
                 key={account.id}
@@ -193,6 +156,7 @@ export function AccountSwitcher() {
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 ) : (
                   <button
+                    type="button"
                     onClick={(e) => handleRemoveAccount(e, account.id)}
                     className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive/10 rounded transition-opacity"
                     title="移除账号"

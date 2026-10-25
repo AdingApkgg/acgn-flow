@@ -1,15 +1,6 @@
-"use client";
-
-import { usePathname } from "next/navigation";
-import Link from "next/link";
+import { AlertTriangle, Link2, Shield, Smartphone, User } from "lucide-react";
+import { Link, Outlet, useLocation } from "react-router";
 import { cn } from "@/lib/utils";
-import {
-  User,
-  Shield,
-  Link2,
-  Smartphone,
-  AlertTriangle,
-} from "lucide-react";
 
 const settingsNav = [
   { title: "个人资料", href: "/settings", icon: User },
@@ -19,12 +10,9 @@ const settingsNav = [
   { title: "危险操作", href: "/settings/danger", icon: AlertTriangle, danger: true },
 ];
 
-export default function SettingsLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const pathname = usePathname();
+export default function SettingsLayout() {
+  const children = <Outlet />;
+  const pathname = useLocation().pathname;
 
   return (
     <div className="container py-6 max-w-4xl">
@@ -33,21 +21,21 @@ export default function SettingsLayout({
         <nav className="w-full md:w-52 flex-shrink-0">
           <div className="flex md:flex-col gap-0.5 overflow-x-auto md:overflow-x-visible pb-3 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0 border-b md:border-b-0">
             {settingsNav.map((item) => {
-              const isActive = 
-                item.href === "/settings" 
+              const isActive =
+                item.href === "/settings"
                   ? pathname === "/settings"
                   : pathname.startsWith(item.href);
-              
+
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  to={item.href}
                   className={cn(
                     "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors whitespace-nowrap",
                     isActive
                       ? "bg-accent font-medium"
                       : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
-                    item.danger && "text-destructive hover:text-destructive"
+                    item.danger && "text-destructive hover:text-destructive",
                   )}
                 >
                   <item.icon className="h-4 w-4" />
@@ -59,9 +47,7 @@ export default function SettingsLayout({
         </nav>
 
         {/* 内容区域 */}
-        <main className="flex-1 min-w-0">
-          {children}
-        </main>
+        <main className="flex-1 min-w-0">{children}</main>
       </div>
     </div>
   );

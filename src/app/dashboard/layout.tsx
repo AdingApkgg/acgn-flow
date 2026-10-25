@@ -1,32 +1,26 @@
-"use client";
-
-import { useSession } from "next-auth/react";
-import { useRouter, usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Sheet,
-  SheetContent,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import {
+  ChevronLeft,
   LayoutDashboard,
-  Users,
-  Video,
-  Tag,
+  Menu,
+  MessageSquare,
   Settings,
   Shield,
-  MessageSquare,
-  Menu,
   Sparkles,
-  ChevronLeft,
+  Tag,
+  Users,
+  Video,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Link, Outlet, useLocation, useNavigate } from "react-router";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSession } from "@/lib/auth-client";
+import { orpc } from "@/lib/orpc";
+import { cn } from "@/lib/utils";
 
 const menuItems = [
   {
@@ -72,12 +66,14 @@ function SidebarContent({
   pathname,
   onItemClick,
 }: {
-  permissions: {
-    isOwner: boolean;
-    isAdmin: boolean;
-    scopes: string[];
-    allScopes: Record<string, string>;
-  } | undefined;
+  permissions:
+    | {
+        isOwner: boolean;
+        isAdmin: boolean;
+        scopes: string[];
+        allScopes: Record<string, string>;
+      }
+    | undefined;
   pathname: string;
   onItemClick?: () => void;
 }) {
@@ -109,7 +105,7 @@ function SidebarContent({
     <div className="flex flex-col h-full">
       {/* Logo / 标题 */}
       <div className="h-16 flex items-center px-4 border-b">
-        <Link href="/dashboard" className="flex items-center gap-2 text-lg font-semibold">
+        <Link to="/dashboard" className="flex items-center gap-2 text-lg font-semibold">
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
             <Shield className="h-4 w-4 text-primary-foreground" />
           </div>
@@ -127,13 +123,13 @@ function SidebarContent({
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                to={item.href}
                 onClick={onItemClick}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
                   isActive
                     ? "bg-primary text-primary-foreground shadow-md"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -168,7 +164,7 @@ function SidebarContent({
 
         {/* 返回首页 */}
         <Button variant="outline" size="sm" asChild className="w-full">
-          <Link href="/">
+          <Link to="/">
             <ChevronLeft className="mr-2 h-4 w-4" />
             返回首页
           </Link>
@@ -178,31 +174,34 @@ function SidebarContent({
   );
 }
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function DashboardLayout() {
+  const children = <Outlet />;
   const { data: session, status } = useSession();
-  const router = useRouter();
-  const pathname = usePathname();
+  const navigate = useNavigate();
+  const pathname = useLocation().pathname;
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const { data: permissions, isLoading: permissionsLoading } =
-    trpc.admin.getMyPermissions.useQuery(undefined, {
-      enabled: !!session,
-    });
+  const { data: permissions, isLoading: permissionsLoading } = useQuery(
+    orpc.admin.getMyPermissions.queryOptions({
+      input: undefined,
+      ...{
+        enabled: !!session,
+      },
+    }),
+  );
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.push("/login?callbackUrl=/dashboard");
+      navigate("/login?callbackUrl=/dashboard");
     }
-  }, [status, router]);
+  }, [status, navigate]);
 
-  // 路由变化时关闭移动端菜单
+  const previousPathname = useRef(pathname);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMobileOpen(false);
+    if (previousPathname.current !== pathname) {
+      previousPathname.current = pathname;
+      setMobileOpen(false);
+    }
   }, [pathname]);
 
   if (status === "loading" || permissionsLoading) {
@@ -271,11 +270,11 @@ export default function DashboardLayout({
 
         {/* 主内容区 */}
         <main className="flex-1 overflow-auto">
-          <div className="p-4 lg:p-6 pt-20 lg:pt-6 min-h-full">
-            {children}
-          </div>
+          <div className="p-4 lg:p-6 pt-20 lg:pt-6 min-h-full">{children}</div>
         </main>
       </div>
     </div>
   );
 }
+
+export { requireAdmin as loader } from "@/routes/data.server";

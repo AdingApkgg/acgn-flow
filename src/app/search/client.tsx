@@ -1,11 +1,10 @@
-"use client";
-
-import { trpc } from "@/lib/trpc";
-import { VideoGrid } from "@/components/video/video-grid";
-import { Button } from "@/components/ui/button";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { ArrowUpDown, Clock, Search } from "lucide-react";
+import { useEffect } from "react";
 import { useInView } from "react-intersection-observer";
-import { useEffect, useState } from "react";
-import { Search, ArrowUpDown, Clock } from "lucide-react";
+import { useSearchParams } from "react-router";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -13,7 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+import { VideoGrid } from "@/components/video/video-grid";
+import { orpc } from "@/lib/orpc";
 
 interface SearchContentProps {
   query: string;
@@ -38,21 +38,42 @@ const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
 
 export function SearchContent({ query }: SearchContentProps) {
   const { ref, inView } = useInView();
-  const [sortBy, setSortBy] = useState<SortBy>("latest");
-  const [timeRange, setTimeRange] = useState<TimeRange>("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSort = searchParams.get("sort");
+  const sortBy: SortBy =
+    requestedSort && ["latest", "views", "likes", "recommend"].includes(requestedSort)
+      ? (requestedSort as SortBy)
+      : "latest";
+  const requestedTime = searchParams.get("time");
+  const timeRange: TimeRange =
+    requestedTime && ["all", "today", "week", "month"].includes(requestedTime)
+      ? (requestedTime as TimeRange)
+      : "all";
+  const setSortBy = (sort: SortBy) =>
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("sort", sort);
+      return next;
+    });
+  const setTimeRange = (time: TimeRange) =>
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("time", time);
+      return next;
+    });
 
-  const {
-    data,
-    isLoading,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = trpc.video.list.useInfiniteQuery(
-    { limit: 20, search: query, sortBy, timeRange },
-    {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-      enabled: !!query,
-    }
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery(
+    orpc.video.list.infiniteOptions({
+      input: (cursor: string | undefined) => ({
+        ...{ limit: 20, search: query, sortBy, timeRange },
+        cursor,
+      }),
+      initialPageParam: undefined as string | undefined,
+      ...{
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+        enabled: !!query,
+      },
+    }),
   );
 
   useEffect(() => {
@@ -66,8 +87,12 @@ export function SearchContent({ query }: SearchContentProps) {
   const hasFilters = sortBy !== "latest" || timeRange !== "all";
 
   const resetFilters = () => {
-    setSortBy("latest");
-    setTimeRange("all");
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("sort");
+      next.delete("time");
+      return next;
+    });
   };
 
   if (!query) {
@@ -88,9 +113,7 @@ export function SearchContent({ query }: SearchContentProps) {
             <h1 className="text-2xl font-bold">搜索结果</h1>
             <p className="text-muted-foreground">
               关键词: &quot;{query}&quot;
-              {!isLoading && (
-                <span> - 找到 {totalCount} 个结果</span>
-              )}
+              {!isLoading && <span> - 找到 {totalCount} 个结果</span>}
             </p>
           </div>
 
@@ -112,10 +135,7 @@ export function SearchContent({ query }: SearchContentProps) {
             </Select>
 
             {/* 时间范围 */}
-            <Select
-              value={timeRange}
-              onValueChange={(v) => setTimeRange(v as TimeRange)}
-            >
+            <Select value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRange)}>
               <SelectTrigger className="w-[120px] h-9">
                 <Clock className="h-4 w-4 mr-2" />
                 <SelectValue />
@@ -131,12 +151,7 @@ export function SearchContent({ query }: SearchContentProps) {
 
             {/* 重置筛选 */}
             {hasFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={resetFilters}
-                className="h-9"
-              >
+              <Button variant="ghost" size="sm" onClick={resetFilters} className="h-9">
                 重置
               </Button>
             )}

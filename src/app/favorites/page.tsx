@@ -1,12 +1,9 @@
-"use client";
-
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { CheckSquare, Eye, Heart, Loader2, Star, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useInView } from "react-intersection-observer";
+import { Link, useNavigate } from "react-router";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,65 +15,67 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Star, Loader2, Trash2, X, CheckSquare, Eye, Heart } from "lucide-react";
-import { useInView } from "react-intersection-observer";
-import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
-import Link from "next/link";
-import Image from "next/image";
-import { formatViews, formatRelativeTime } from "@/lib/format";
+import { Skeleton, skeletonKeys } from "@/components/ui/skeleton";
+import { useSession } from "@/lib/auth-client";
+import { formatRelativeTime, formatViews } from "@/lib/format";
+import { orpc } from "@/lib/orpc";
+import { pageMeta } from "@/routes/metadata";
 
 export default function FavoritesPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const navigate = useNavigate();
   const { ref, inView } = useInView();
-  const utils = trpc.useUtils();
-  
+  const queryClient = useQueryClient();
+
   // 选择模式
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const {
-    data,
-    isLoading,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = trpc.video.getFavorites.useInfiniteQuery(
-    { limit: 20 },
-    {
-      enabled: !!session,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-    }
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery(
+    orpc.video.getFavorites.infiniteOptions({
+      input: (cursor: string | undefined) => ({ ...{ limit: 20 }, cursor }),
+      initialPageParam: undefined as string | undefined,
+      ...{
+        enabled: !!session,
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+      },
+    }),
   );
 
-  const unfavoriteMutation = trpc.video.unfavorite.useMutation({
-    onSuccess: () => {
-      toast.success("已取消收藏");
-      utils.video.getFavorites.invalidate();
-    },
-    onError: () => {
-      toast.error("操作失败");
-    },
-  });
+  const unfavoriteMutation = useMutation(
+    orpc.video.unfavorite.mutationOptions({
+      onSuccess: () => {
+        toast.success("已取消收藏");
+        queryClient.invalidateQueries({ queryKey: orpc.video.getFavorites.key() });
+      },
+      onError: () => {
+        toast.error("操作失败");
+      },
+    }),
+  );
 
-  const batchUnfavoriteMutation = trpc.video.batchUnfavorite.useMutation({
-    onSuccess: (data) => {
-      toast.success(`已取消收藏 ${data.count} 个视频`);
-      setSelectedIds(new Set());
-      setSelectMode(false);
-      utils.video.getFavorites.invalidate();
-    },
-    onError: () => {
-      toast.error("操作失败");
-    },
-  });
+  const batchUnfavoriteMutation = useMutation(
+    orpc.video.batchUnfavorite.mutationOptions({
+      onSuccess: (data) => {
+        toast.success(`已取消收藏 ${data.count} 个视频`);
+        setSelectedIds(new Set());
+        setSelectMode(false);
+        queryClient.invalidateQueries({ queryKey: orpc.video.getFavorites.key() });
+      },
+      onError: () => {
+        toast.error("操作失败");
+      },
+    }),
+  );
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.push("/login?callbackUrl=/favorites");
+      navigate("/login?callbackUrl=/favorites");
     }
-  }, [status, router]);
+  }, [status, navigate]);
 
   useEffect(() => {
     if (inView && hasNextPage && !isFetchingNextPage) {
@@ -89,8 +88,8 @@ export default function FavoritesPage() {
       <div className="px-4 md:px-6 py-6">
         <Skeleton className="h-10 w-48 mb-6" />
         <div className="space-y-3">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 w-full rounded-lg" />
+          {skeletonKeys(8).map((skeletonKey) => (
+            <Skeleton key={skeletonKey} className="h-24 w-full rounded-lg" />
           ))}
         </div>
       </div>
@@ -117,7 +116,7 @@ export default function FavoritesPage() {
     if (selectedIds.size === favorites.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(favorites.map(v => v.id)));
+      setSelectedIds(new Set(favorites.map((v) => v.id)));
     }
   };
 
@@ -173,10 +172,14 @@ export default function FavoritesPage() {
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
-                <Button variant="ghost" size="sm" onClick={() => {
-                  setSelectMode(false);
-                  setSelectedIds(new Set());
-                }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSelectMode(false);
+                    setSelectedIds(new Set());
+                  }}
+                >
                   <X className="h-4 w-4" />
                 </Button>
               </>
@@ -196,7 +199,7 @@ export default function FavoritesPage() {
           description="发现喜欢的视频后，点击收藏按钮即可添加到这里"
           action={{
             label: "去发现视频",
-            onClick: () => router.push("/"),
+            onClick: () => navigate("/"),
           }}
         />
       ) : (
@@ -218,15 +221,14 @@ export default function FavoritesPage() {
 
                 {/* 封面 */}
                 <Link
-                  href={`/video/${video.id}`}
+                  to={`/video/${video.id}`}
                   className="relative w-40 h-24 flex-shrink-0 rounded-md overflow-hidden bg-muted"
                 >
                   {video.coverUrl ? (
-                    <Image
+                    <img
                       src={video.coverUrl}
                       alt={video.title}
-                      fill
-                      className="object-cover"
+                      className="absolute inset-0 w-full h-full object-cover"
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full">
@@ -235,7 +237,8 @@ export default function FavoritesPage() {
                   )}
                   {video.duration && (
                     <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/80 text-white text-xs rounded">
-                      {Math.floor(video.duration / 60)}:{String(video.duration % 60).padStart(2, "0")}
+                      {Math.floor(video.duration / 60)}:
+                      {String(video.duration % 60).padStart(2, "0")}
                     </div>
                   )}
                 </Link>
@@ -243,13 +246,13 @@ export default function FavoritesPage() {
                 {/* 信息 */}
                 <div className="flex-1 min-w-0">
                   <Link
-                    href={`/video/${video.id}`}
+                    to={`/video/${video.id}`}
                     className="font-medium hover:text-primary line-clamp-2"
                   >
                     {video.title}
                   </Link>
                   <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                    <Link href={`/user/${video.uploader.id}`} className="hover:text-primary">
+                    <Link to={`/user/${video.uploader.id}`} className="hover:text-primary">
                       {video.uploader.nickname || video.uploader.username}
                     </Link>
                   </div>
@@ -292,3 +295,5 @@ export default function FavoritesPage() {
     </div>
   );
 }
+
+export const meta = () => pageMeta("我的收藏", "查看您收藏的视频", "/favorites", { noindex: true });

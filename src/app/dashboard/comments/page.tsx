@@ -1,20 +1,28 @@
-"use client";
-
-import { useState, useCallback, useMemo } from "react";
-import Link from "next/link";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  CheckSquare,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Globe,
+  Globe2,
+  MapPin,
+  MessageSquare,
+  Monitor,
+  RotateCcw,
+  Smartphone,
+  Square,
+  Tablet,
+  ThumbsDown,
+  ThumbsUp,
+  Trash2,
+  XCircle,
+} from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Link } from "react-router";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,36 +34,25 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import {
-  Collapsible,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
-import { Card, CardContent } from "@/components/ui/card";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
 import {
-  MessageSquare,
-  Trash2,
-  EyeOff,
-  Eye,
-  RotateCcw,
-  ChevronDown,
-  ChevronUp,
-  Globe,
-  Globe2,
-  MapPin,
-  Smartphone,
-  Monitor,
-  Tablet,
-  ThumbsUp,
-  ThumbsDown,
-  ExternalLink,
-  CheckSquare,
-  Square,
-  XCircle,
-} from "lucide-react";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton, skeletonKeys } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/format";
-import { toast } from "sonner";
+import { orpc } from "@/lib/orpc";
 import { cn } from "@/lib/utils";
+import { pageMeta } from "@/routes/metadata";
 
 type StatusFilter = "ALL" | "VISIBLE" | "HIDDEN" | "DELETED";
 
@@ -65,90 +62,101 @@ export default function AdminCommentsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   // 评论列表
-  const {
-    data,
-    isLoading,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = trpc.admin.listComments.useInfiniteQuery(
-    { limit: 20, search: search || undefined, status },
-    { getNextPageParam: (lastPage) => lastPage.nextCursor }
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery(
+    orpc.admin.listComments.infiniteOptions({
+      input: (cursor: string | undefined) => ({
+        ...{ limit: 20, search: search || undefined, status },
+        cursor,
+      }),
+      initialPageParam: undefined as string | undefined,
+      ...{ getNextPageParam: (lastPage) => lastPage.nextCursor },
+    }),
   );
 
   // 评论统计
-  const { data: stats } = trpc.admin.getCommentStats.useQuery();
-
-  const comments = useMemo(
-    () => data?.pages.flatMap((page) => page.comments) ?? [],
-    [data?.pages]
+  const { data: stats } = useQuery(
+    orpc.admin.getCommentStats.queryOptions({ input: undefined, ...{} }),
   );
 
+  const comments = useMemo(() => data?.pages.flatMap((page) => page.comments) ?? [], [data?.pages]);
+
   // 隐藏/显示
-  const toggleHiddenMutation = trpc.admin.toggleCommentHidden.useMutation({
-    onSuccess: () => {
-      utils.admin.listComments.invalidate();
-      utils.admin.getCommentStats.invalidate();
-      toast.success("操作成功");
-    },
-    onError: (error) => toast.error(error.message || "操作失败"),
-  });
+  const toggleHiddenMutation = useMutation(
+    orpc.admin.toggleCommentHidden.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listComments.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getCommentStats.key() });
+        toast.success("操作成功");
+      },
+      onError: (error) => toast.error(error.message || "操作失败"),
+    }),
+  );
 
   // 删除
-  const deleteMutation = trpc.admin.deleteComment.useMutation({
-    onSuccess: () => {
-      utils.admin.listComments.invalidate();
-      utils.admin.getCommentStats.invalidate();
-      setSelectedIds(new Set());
-      toast.success("评论已删除");
-    },
-    onError: (error) => toast.error(error.message || "删除失败"),
-  });
+  const deleteMutation = useMutation(
+    orpc.admin.deleteComment.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listComments.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getCommentStats.key() });
+        setSelectedIds(new Set());
+        toast.success("评论已删除");
+      },
+      onError: (error) => toast.error(error.message || "删除失败"),
+    }),
+  );
 
   // 恢复
-  const restoreMutation = trpc.admin.restoreComment.useMutation({
-    onSuccess: () => {
-      utils.admin.listComments.invalidate();
-      utils.admin.getCommentStats.invalidate();
-      toast.success("评论已恢复");
-    },
-    onError: (error) => toast.error(error.message || "恢复失败"),
-  });
+  const restoreMutation = useMutation(
+    orpc.admin.restoreComment.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listComments.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getCommentStats.key() });
+        toast.success("评论已恢复");
+      },
+      onError: (error) => toast.error(error.message || "恢复失败"),
+    }),
+  );
 
   // 批量操作
-  const batchMutation = trpc.admin.batchCommentAction.useMutation({
-    onSuccess: (result) => {
-      utils.admin.listComments.invalidate();
-      utils.admin.getCommentStats.invalidate();
-      setSelectedIds(new Set());
-      toast.success(`已处理 ${result.count} 条评论`);
-    },
-    onError: (error) => toast.error(error.message || "批量操作失败"),
-  });
+  const batchMutation = useMutation(
+    orpc.admin.batchCommentAction.mutationOptions({
+      onSuccess: (result) => {
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listComments.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getCommentStats.key() });
+        setSelectedIds(new Set());
+        toast.success(`已处理 ${result.count} 条评论`);
+      },
+      onError: (error) => toast.error(error.message || "批量操作失败"),
+    }),
+  );
 
   // 硬删除
-  const hardDeleteMutation = trpc.admin.hardDeleteComment.useMutation({
-    onSuccess: () => {
-      utils.admin.listComments.invalidate();
-      utils.admin.getCommentStats.invalidate();
-      toast.success("评论已彻底删除");
-    },
-    onError: (error) => toast.error(error.message || "删除失败"),
-  });
+  const hardDeleteMutation = useMutation(
+    orpc.admin.hardDeleteComment.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listComments.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getCommentStats.key() });
+        toast.success("评论已彻底删除");
+      },
+      onError: (error) => toast.error(error.message || "删除失败"),
+    }),
+  );
 
   // 批量硬删除
-  const batchHardDeleteMutation = trpc.admin.batchHardDeleteComments.useMutation({
-    onSuccess: (result) => {
-      utils.admin.listComments.invalidate();
-      utils.admin.getCommentStats.invalidate();
-      setSelectedIds(new Set());
-      toast.success(`已彻底删除 ${result.count} 条评论`);
-    },
-    onError: (error) => toast.error(error.message || "批量删除失败"),
-  });
+  const batchHardDeleteMutation = useMutation(
+    orpc.admin.batchHardDeleteComments.mutationOptions({
+      onSuccess: (result) => {
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listComments.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getCommentStats.key() });
+        setSelectedIds(new Set());
+        toast.success(`已彻底删除 ${result.count} 条评论`);
+      },
+      onError: (error) => toast.error(error.message || "批量删除失败"),
+    }),
+  );
 
   // 选择/取消选择
   const toggleSelect = useCallback((id: string) => {
@@ -194,7 +202,7 @@ export default function AdminCommentsPage() {
         action,
       });
     },
-    [selectedIds, batchMutation]
+    [selectedIds, batchMutation],
   );
 
   // 设备图标
@@ -264,12 +272,7 @@ export default function AdminCommentsPage() {
       {/* 批量操作栏 */}
       {comments.length > 0 && (
         <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleSelectAll}
-            className="gap-1"
-          >
+          <Button variant="ghost" size="sm" onClick={toggleSelectAll} className="gap-1">
             {selectedIds.size === comments.length ? (
               <CheckSquare className="h-4 w-4" />
             ) : (
@@ -280,9 +283,7 @@ export default function AdminCommentsPage() {
 
           {selectedIds.size > 0 && (
             <>
-              <span className="text-sm text-muted-foreground">
-                已选 {selectedIds.size} 条
-              </span>
+              <span className="text-sm text-muted-foreground">已选 {selectedIds.size} 条</span>
               <div className="flex items-center gap-2 ml-auto">
                 <Button
                   variant="outline"
@@ -360,7 +361,9 @@ export default function AdminCommentsPage() {
                       <AlertDialogCancel>取消</AlertDialogCancel>
                       <AlertDialogAction
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        onClick={() => batchHardDeleteMutation.mutate({ commentIds: Array.from(selectedIds) })}
+                        onClick={() =>
+                          batchHardDeleteMutation.mutate({ commentIds: Array.from(selectedIds) })
+                        }
                       >
                         永久删除
                       </AlertDialogAction>
@@ -376,15 +379,13 @@ export default function AdminCommentsPage() {
       {/* 评论列表 */}
       {isLoading ? (
         <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 w-full" />
+          {skeletonKeys(4).map((skeletonKey) => (
+            <Skeleton key={skeletonKey} className="h-32 w-full" />
           ))}
         </div>
       ) : comments.length === 0 ? (
         <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            暂无评论
-          </CardContent>
+          <CardContent className="py-12 text-center text-muted-foreground">暂无评论</CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
@@ -414,7 +415,7 @@ export default function AdminCommentsPage() {
                 className={cn(
                   "transition-colors",
                   isSelected && "ring-2 ring-primary",
-                  comment.isDeleted && "opacity-60"
+                  comment.isDeleted && "opacity-60",
                 )}
               >
                 <CardContent className="p-4">
@@ -437,7 +438,7 @@ export default function AdminCommentsPage() {
                       {/* 用户名和时间 */}
                       <div className="flex items-center gap-2 flex-wrap">
                         <Link
-                          href={`/user/${comment.user.id}`}
+                          to={`/user/${comment.user.id}`}
                           className="font-medium hover:underline"
                         >
                           {comment.user.nickname || comment.user.username}
@@ -446,14 +447,16 @@ export default function AdminCommentsPage() {
                           {formatRelativeTime(comment.createdAt)}
                         </span>
                         {comment.isDeleted && (
-                          <Badge variant="destructive" className="text-xs">已删除</Badge>
+                          <Badge variant="destructive" className="text-xs">
+                            已删除
+                          </Badge>
                         )}
                         {comment.isHidden && !comment.isDeleted && (
-                          <Badge variant="secondary" className="text-xs">已隐藏</Badge>
+                          <Badge variant="secondary" className="text-xs">
+                            已隐藏
+                          </Badge>
                         )}
-                        {comment.isPinned && (
-                          <Badge className="text-xs">已置顶</Badge>
-                        )}
+                        {comment.isPinned && <Badge className="text-xs">已置顶</Badge>}
                       </div>
 
                       {/* 评论内容 */}
@@ -464,7 +467,7 @@ export default function AdminCommentsPage() {
                       {/* 视频链接和互动数据 */}
                       <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
                         <Link
-                          href={`/video/${comment.video.id}`}
+                          to={`/video/${comment.video.id}`}
                           className="hover:underline flex items-center gap-1"
                         >
                           <ExternalLink className="h-3 w-3" />
@@ -564,7 +567,9 @@ export default function AdminCommentsPage() {
                                 <AlertDialogCancel>取消</AlertDialogCancel>
                                 <AlertDialogAction
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={() => hardDeleteMutation.mutate({ commentId: comment.id })}
+                                  onClick={() =>
+                                    hardDeleteMutation.mutate({ commentId: comment.id })
+                                  }
                                 >
                                   永久删除
                                 </AlertDialogAction>
@@ -626,7 +631,9 @@ export default function AdminCommentsPage() {
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                           <div>
                             <div className="font-medium text-foreground mb-1">评论 ID</div>
-                            <code className="text-xs bg-muted px-1 py-0.5 rounded">{comment.id}</code>
+                            <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                              {comment.id}
+                            </code>
                           </div>
                           <div>
                             <div className="font-medium text-foreground mb-1">IPv4 地址</div>
@@ -650,19 +657,24 @@ export default function AdminCommentsPage() {
                             </div>
                             <div>
                               <div className="font-medium text-foreground mb-1">操作系统</div>
-                              {[deviceInfo.os, deviceInfo.osVersion].filter(Boolean).join(" ") || "-"}
+                              {[deviceInfo.os, deviceInfo.osVersion].filter(Boolean).join(" ") ||
+                                "-"}
                             </div>
                             <div>
                               <div className="font-medium text-foreground mb-1">浏览器</div>
-                              {[deviceInfo.browser, deviceInfo.browserVersion].filter(Boolean).join(" ") || "-"}
+                              {[deviceInfo.browser, deviceInfo.browserVersion]
+                                .filter(Boolean)
+                                .join(" ") || "-"}
                             </div>
                             <div>
                               <div className="font-medium text-foreground mb-1">设备</div>
-                              {[deviceInfo.brand, deviceInfo.model].filter(Boolean).join(" ") || "-"}
+                              {[deviceInfo.brand, deviceInfo.model].filter(Boolean).join(" ") ||
+                                "-"}
                             </div>
                             <div>
                               <div className="font-medium text-foreground mb-1">屏幕</div>
-                              {deviceInfo.screen || "-"} {deviceInfo.pixelRatio && `@${deviceInfo.pixelRatio}x`}
+                              {deviceInfo.screen || "-"}{" "}
+                              {deviceInfo.pixelRatio && `@${deviceInfo.pixelRatio}x`}
                             </div>
                             <div>
                               <div className="font-medium text-foreground mb-1">语言</div>
@@ -711,3 +723,6 @@ export default function AdminCommentsPage() {
     </div>
   );
 }
+
+export const meta = () =>
+  pageMeta("评论管理", "管理站点评论", "/dashboard/comments", { noindex: true });

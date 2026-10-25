@@ -15,7 +15,7 @@ const REQUEST_TIMEOUT = 5000;
 async function fetchWithTimeout(
   url: string,
   options: RequestInit,
-  timeout: number
+  timeout: number,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -72,7 +72,7 @@ export async function submitToIndexNow(urls: string | string[]): Promise<boolean
         const response = await fetchWithTimeout(
           endpoint.url,
           { method: "POST", headers, body: payload },
-          REQUEST_TIMEOUT
+          REQUEST_TIMEOUT,
         );
 
         if (response.ok || response.status === 202) {
@@ -80,7 +80,7 @@ export async function submitToIndexNow(urls: string | string[]): Promise<boolean
           return true;
         }
         throw new Error(`${endpoint.name}: ${response.status}`);
-      })
+      }),
     );
     return true;
   } catch {
@@ -94,9 +94,9 @@ export async function submitToIndexNow(urls: string | string[]): Promise<boolean
  * @param videoId 视频ID
  */
 export async function submitVideoToIndexNow(videoId: string): Promise<boolean> {
-  const appUrl = env.NEXT_PUBLIC_APP_URL;
+  const appUrl = env.APP_URL;
   if (!appUrl) return false;
-  
+
   const videoUrl = `${appUrl}/video/${videoId}`;
   return submitToIndexNow(videoUrl);
 }
@@ -106,14 +106,16 @@ export async function submitVideoToIndexNow(videoId: string): Promise<boolean> {
  * IndexNow 每次最多提交 10000 个 URL
  * @param videoIds 视频ID列表
  */
-export async function submitVideosToIndexNow(videoIds: string[]): Promise<{ success: number; failed: number }> {
-  const appUrl = env.NEXT_PUBLIC_APP_URL;
+export async function submitVideosToIndexNow(
+  videoIds: string[],
+): Promise<{ success: number; failed: number }> {
+  const appUrl = env.APP_URL;
   if (!appUrl || !env.INDEXNOW_KEY) {
     return { success: 0, failed: videoIds.length };
   }
 
   const urls = videoIds.map((id) => `${appUrl}/video/${id}`);
-  
+
   // IndexNow 限制每次最多 10000 个 URL，分批提交
   const batchSize = 10000;
   let success = 0;
@@ -136,14 +138,10 @@ export async function submitVideosToIndexNow(videoIds: string[]): Promise<{ succ
  * 提交首页和其他重要页面
  */
 export async function submitSitePages(): Promise<boolean> {
-  const appUrl = env.NEXT_PUBLIC_APP_URL;
+  const appUrl = env.APP_URL;
   if (!appUrl) return false;
 
-  const pages = [
-    appUrl,
-    `${appUrl}/tags`,
-    `${appUrl}/search`,
-  ];
+  const pages = [appUrl, `${appUrl}/tags`, `${appUrl}/search`];
 
   return submitToIndexNow(pages);
 }

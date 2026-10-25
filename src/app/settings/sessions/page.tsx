@@ -1,22 +1,7 @@
-"use client";
-
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Clock, Laptop, LogOut, MapPin, Smartphone, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { 
-  Laptop, 
-  Smartphone, 
-  Trash2, 
-  MapPin, 
-  Clock, 
-  LogOut,
-  AlertTriangle,
-} from "lucide-react";
-import { formatRelativeTime } from "@/lib/format";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -29,47 +14,64 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSession } from "@/lib/auth-client";
+import { formatRelativeTime } from "@/lib/format";
+import { orpc } from "@/lib/orpc";
+import { pageMeta } from "@/routes/metadata";
 
 export default function SessionsPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const navigate = useNavigate();
   const [hasRecorded, setHasRecorded] = useState(false);
 
-  const utils = trpc.useUtils();
-  
-  const { data: sessionsData, isLoading: isLoadingSessions } = trpc.user.getLoginSessions.useQuery(
-    { limit: 20 },
-    { enabled: !!session?.user?.id }
+  const queryClient = useQueryClient();
+
+  const { data: sessionsData, isLoading: isLoadingSessions } = useQuery(
+    orpc.user.getLoginSessions.queryOptions({
+      input: { limit: 20 },
+      ...{ enabled: !!session?.user?.id },
+    }),
   );
 
-  const { data: devices, isLoading: isLoadingDevices } = trpc.user.getDevices.useQuery(
-    { userId: session?.user?.id || "", limit: 10 },
-    { enabled: !!session?.user?.id }
+  const { data: devices, isLoading: isLoadingDevices } = useQuery(
+    orpc.user.getDevices.queryOptions({
+      input: { userId: session?.user?.id || "", limit: 10 },
+      ...{ enabled: !!session?.user?.id },
+    }),
   );
 
-  const revokeMutation = trpc.user.revokeLoginSession.useMutation({
-    onSuccess: () => {
-      utils.user.getLoginSessions.invalidate();
-      toast.success("已撤销该会话");
-    },
-    onError: (error) => toast.error(error.message),
-  });
+  const revokeMutation = useMutation(
+    orpc.user.revokeLoginSession.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: orpc.user.getLoginSessions.key() });
+        toast.success("已撤销该会话");
+      },
+      onError: (error) => toast.error(error.message),
+    }),
+  );
 
-  const revokeAllMutation = trpc.user.revokeAllOtherSessions.useMutation({
-    onSuccess: (data) => {
-      utils.user.getLoginSessions.invalidate();
-      toast.success(`已撤销 ${data.count} 个会话`);
-    },
-    onError: (error) => toast.error(error.message),
-  });
+  const revokeAllMutation = useMutation(
+    orpc.user.revokeAllOtherSessions.mutationOptions({
+      onSuccess: (data) => {
+        queryClient.invalidateQueries({ queryKey: orpc.user.getLoginSessions.key() });
+        toast.success(`已撤销 ${data.count} 个会话`);
+      },
+      onError: (error) => toast.error(error.message),
+    }),
+  );
 
-  const removeDeviceMutation = trpc.user.removeDevice.useMutation({
-    onSuccess: () => {
-      utils.user.getDevices.invalidate();
-      toast.success("设备记录已移除");
-    },
-    onError: (error) => toast.error(error.message),
-  });
+  const removeDeviceMutation = useMutation(
+    orpc.user.removeDevice.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: orpc.user.getDevices.key() });
+        toast.success("设备记录已移除");
+      },
+      onError: (error) => toast.error(error.message),
+    }),
+  );
 
   // 记录当前会话信息
   useEffect(() => {
@@ -78,24 +80,28 @@ export default function SessionsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
-      }).then(() => {
-        setHasRecorded(true);
-        utils.user.getLoginSessions.invalidate();
-      }).catch(console.error);
+      })
+        .then(() => {
+          setHasRecorded(true);
+          queryClient.invalidateQueries({ queryKey: orpc.user.getLoginSessions.key() });
+        })
+        .catch(console.error);
     }
-  }, [session?.jti, hasRecorded, utils.user.getLoginSessions]);
+  }, [session?.jti, hasRecorded, queryClient]);
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.push("/login?callbackUrl=/settings/sessions");
+      navigate("/login?callbackUrl=/settings/sessions");
     }
-  }, [status, router]);
+  }, [status, navigate]);
 
   if (status === "loading" || isLoadingSessions) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-32" />
-        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 w-full" />)}
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-24 w-full" />
+        ))}
       </div>
     );
   }
@@ -104,7 +110,7 @@ export default function SessionsPage() {
 
   const sessions = sessionsData?.sessions || [];
   const currentJti = sessionsData?.currentJti;
-  const otherSessions = sessions.filter(s => s.jti !== currentJti);
+  const otherSessions = sessions.filter((s) => s.jti !== currentJti);
 
   return (
     <div className="space-y-8">
@@ -112,11 +118,9 @@ export default function SessionsPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold">登录管理</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            管理你的登录设备和会话
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">管理你的登录设备和会话</p>
         </div>
-        
+
         {otherSessions.length > 0 && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -129,13 +133,14 @@ export default function SessionsPage() {
               <AlertDialogHeader>
                 <AlertDialogTitle>确认登出所有其他设备？</AlertDialogTitle>
                 <AlertDialogDescription>
-                  这将撤销除当前设备外的所有 {otherSessions.length} 个登录会话。被撤销的设备需要重新登录。
+                  这将撤销除当前设备外的所有 {otherSessions.length}{" "}
+                  个登录会话。被撤销的设备需要重新登录。
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>取消</AlertDialogCancel>
                 <AlertDialogAction
-                  onClick={() => revokeAllMutation.mutate()}
+                  onClick={() => revokeAllMutation.mutate(undefined)}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
                   确认登出
@@ -154,55 +159,74 @@ export default function SessionsPage() {
         ) : (
           <div className="space-y-2">
             {sessions.map((loginSession) => {
-              const isMobile = loginSession.deviceType === "mobile" || loginSession.deviceType === "tablet";
+              const isMobile =
+                loginSession.deviceType === "mobile" || loginSession.deviceType === "tablet";
               const DeviceIcon = isMobile ? Smartphone : Laptop;
               const isCurrent = loginSession.jti === currentJti;
-              const location = loginSession.ipv4Location || loginSession.ipv6Location || loginSession.gpsLocation;
+              const location =
+                loginSession.ipv4Location || loginSession.ipv6Location || loginSession.gpsLocation;
 
               return (
-                <div 
-                  key={loginSession.id} 
-                  className={`flex items-start gap-4 p-4 rounded-lg border ${isCurrent ? 'border-primary/30 bg-primary/5' : 'bg-card'}`}
+                <div
+                  key={loginSession.id}
+                  className={`flex items-start gap-4 p-4 rounded-lg border ${isCurrent ? "border-primary/30 bg-primary/5" : "bg-card"}`}
                 >
-                  <div className={`p-2 rounded-lg ${isCurrent ? 'bg-primary/10' : 'bg-muted'}`}>
-                    <DeviceIcon className={`h-5 w-5 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <div className={`p-2 rounded-lg ${isCurrent ? "bg-primary/10" : "bg-muted"}`}>
+                    <DeviceIcon
+                      className={`h-5 w-5 ${isCurrent ? "text-primary" : "text-muted-foreground"}`}
+                    />
                   </div>
-                  
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">
-                        {loginSession.brand || ""} {loginSession.model || loginSession.deviceType || "未知设备"}
+                        {loginSession.brand || ""}{" "}
+                        {loginSession.model || loginSession.deviceType || "未知设备"}
                       </span>
-                      {isCurrent && <Badge variant="default" className="text-xs">当前</Badge>}
+                      {isCurrent && (
+                        <Badge variant="default" className="text-xs">
+                          当前
+                        </Badge>
+                      )}
                     </div>
                     <div className="text-sm text-muted-foreground mt-1">
                       {[loginSession.os, loginSession.osVersion].filter(Boolean).join(" ")}
                       {" · "}
-                      {[loginSession.browser, loginSession.browserVersion].filter(Boolean).join(" ")}
+                      {[loginSession.browser, loginSession.browserVersion]
+                        .filter(Boolean)
+                        .join(" ")}
                     </div>
                     <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                       {location && (
                         <span className="inline-flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />{location}
+                          <MapPin className="h-3 w-3" />
+                          {location}
                         </span>
                       )}
                       <span className="inline-flex items-center gap-1">
-                        <Clock className="h-3 w-3" />{formatRelativeTime(loginSession.createdAt)}
+                        <Clock className="h-3 w-3" />
+                        {formatRelativeTime(loginSession.createdAt)}
                       </span>
                     </div>
                   </div>
-                  
+
                   {!isCurrent && (
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive shrink-0"
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>撤销此会话？</AlertDialogTitle>
-                          <AlertDialogDescription>该设备将被登出，需要重新登录才能访问账号。</AlertDialogDescription>
+                          <AlertDialogDescription>
+                            该设备将被登出，需要重新登录才能访问账号。
+                          </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>取消</AlertDialogCancel>
@@ -230,7 +254,9 @@ export default function SessionsPage() {
 
         {isLoadingDevices ? (
           <div className="space-y-2">
-            {[1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+            {[1, 2].map((i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
           </div>
         ) : !devices?.length ? (
           <p className="text-sm text-muted-foreground py-4">暂无设备历史</p>
@@ -242,10 +268,15 @@ export default function SessionsPage() {
               const location = device.ipv4Location || device.ipv6Location || device.gpsLocation;
 
               return (
-                <div key={device.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card text-sm">
+                <div
+                  key={device.id}
+                  className="flex items-center gap-3 p-3 rounded-lg border bg-card text-sm"
+                >
                   <DeviceIcon className="h-4 w-4 text-muted-foreground shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <span>{device.brand || ""} {device.model || device.deviceType || "未知设备"}</span>
+                    <span>
+                      {device.brand || ""} {device.model || device.deviceType || "未知设备"}
+                    </span>
                     <span className="text-muted-foreground"> · {device.browser}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
@@ -280,3 +311,6 @@ export default function SessionsPage() {
     </div>
   );
 }
+
+export const meta = () =>
+  pageMeta("登录管理", "管理登录会话与设备", "/settings/sessions", { noindex: true });

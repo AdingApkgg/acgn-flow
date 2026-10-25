@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
-
+import { redirect } from "react-router";
+export const loader = () => redirect("/settings");
 export default function ProfilePage() {
-  redirect("/settings");
+  return null;
 }

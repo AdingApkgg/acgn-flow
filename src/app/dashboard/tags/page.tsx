@@ -1,22 +1,21 @@
-"use client";
-
-import { useState, useCallback, useMemo } from "react";
-import Link from "next/link";
-import { trpc } from "@/lib/trpc";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Calendar,
+  CheckSquare,
+  Edit2,
+  ExternalLink,
+  Loader2,
+  Merge,
+  Plus,
+  Search,
+  Square,
+  Tag,
+  Trash2,
+  Video,
+} from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Link } from "react-router";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +26,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -34,22 +46,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
-import {
-  Tag,
-  Search,
-  Edit2,
-  Trash2,
-  Loader2,
-  Video,
-  Plus,
-  Merge,
-  CheckSquare,
-  Square,
-  ExternalLink,
-  Calendar,
-} from "lucide-react";
+import { Skeleton, skeletonKeys } from "@/components/ui/skeleton";
+import { orpc } from "@/lib/orpc";
 import { cn } from "@/lib/utils";
+import { pageMeta } from "@/routes/metadata";
 
 interface TagItem {
   id: string;
@@ -73,80 +73,99 @@ export default function AdminTagsPage() {
   const [newName, setNewName] = useState("");
   const [newSlug, setNewSlug] = useState("");
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const { data: permissions } = trpc.admin.getMyPermissions.useQuery();
-  const { data: stats } = trpc.admin.getTagStats.useQuery(undefined, {
-    enabled: permissions?.scopes.includes("tag:manage"),
-  });
+  const { data: permissions } = useQuery(
+    orpc.admin.getMyPermissions.queryOptions({ input: undefined, ...{} }),
+  );
+  const { data: stats } = useQuery(
+    orpc.admin.getTagStats.queryOptions({
+      input: undefined,
+      ...{
+        enabled: permissions?.scopes.includes("tag:manage"),
+      },
+    }),
+  );
 
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    trpc.admin.listTags.useInfiniteQuery(
-      { limit: 50, search: search || undefined },
-      {
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery(
+    orpc.admin.listTags.infiniteOptions({
+      input: (cursor: string | undefined) => ({
+        ...{ limit: 50, search: search || undefined },
+        cursor,
+      }),
+      initialPageParam: undefined as string | undefined,
+      ...{
         getNextPageParam: (lastPage) => lastPage.nextCursor,
         enabled: permissions?.scopes.includes("tag:manage"),
-      }
-    );
-
-  const createMutation = trpc.admin.createTag.useMutation({
-    onSuccess: () => {
-      toast.success("标签已创建");
-      utils.admin.listTags.invalidate();
-      utils.admin.getTagStats.invalidate();
-      setIsCreating(false);
-      setNewName("");
-      setNewSlug("");
-    },
-    onError: (error) => toast.error(error.message || "创建失败"),
-  });
-
-  const updateMutation = trpc.admin.updateTag.useMutation({
-    onSuccess: () => {
-      toast.success("标签已更新");
-      utils.admin.listTags.invalidate();
-      setEditingTag(null);
-    },
-    onError: (error) => toast.error(error.message || "更新失败"),
-  });
-
-  const deleteMutation = trpc.admin.deleteTag.useMutation({
-    onSuccess: () => {
-      toast.success("标签已删除");
-      utils.admin.listTags.invalidate();
-      utils.admin.getTagStats.invalidate();
-      setDeletingId(null);
-    },
-    onError: (error) => toast.error(error.message || "删除失败"),
-  });
-
-  const batchDeleteMutation = trpc.admin.batchDeleteTags.useMutation({
-    onSuccess: (result) => {
-      toast.success(`已删除 ${result.count} 个标签`);
-      utils.admin.listTags.invalidate();
-      utils.admin.getTagStats.invalidate();
-      setSelectedIds(new Set());
-      setBatchAction(null);
-    },
-    onError: (error) => toast.error(error.message || "批量删除失败"),
-  });
-
-  const mergeMutation = trpc.admin.mergeTags.useMutation({
-    onSuccess: (result) => {
-      toast.success(`已将 ${result.mergedCount} 个标签合并到目标标签`);
-      utils.admin.listTags.invalidate();
-      utils.admin.getTagStats.invalidate();
-      setSelectedIds(new Set());
-      setBatchAction(null);
-      setMergeTargetId("");
-    },
-    onError: (error) => toast.error(error.message || "合并失败"),
-  });
-
-  const tags = useMemo(
-    () => data?.pages.flatMap((page) => page.tags) || [],
-    [data?.pages]
+      },
+    }),
   );
+
+  const createMutation = useMutation(
+    orpc.admin.createTag.mutationOptions({
+      onSuccess: () => {
+        toast.success("标签已创建");
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listTags.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getTagStats.key() });
+        setIsCreating(false);
+        setNewName("");
+        setNewSlug("");
+      },
+      onError: (error) => toast.error(error.message || "创建失败"),
+    }),
+  );
+
+  const updateMutation = useMutation(
+    orpc.admin.updateTag.mutationOptions({
+      onSuccess: () => {
+        toast.success("标签已更新");
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listTags.key() });
+        setEditingTag(null);
+      },
+      onError: (error) => toast.error(error.message || "更新失败"),
+    }),
+  );
+
+  const deleteMutation = useMutation(
+    orpc.admin.deleteTag.mutationOptions({
+      onSuccess: () => {
+        toast.success("标签已删除");
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listTags.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getTagStats.key() });
+        setDeletingId(null);
+      },
+      onError: (error) => toast.error(error.message || "删除失败"),
+    }),
+  );
+
+  const batchDeleteMutation = useMutation(
+    orpc.admin.batchDeleteTags.mutationOptions({
+      onSuccess: (result) => {
+        toast.success(`已删除 ${result.count} 个标签`);
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listTags.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getTagStats.key() });
+        setSelectedIds(new Set());
+        setBatchAction(null);
+      },
+      onError: (error) => toast.error(error.message || "批量删除失败"),
+    }),
+  );
+
+  const mergeMutation = useMutation(
+    orpc.admin.mergeTags.mutationOptions({
+      onSuccess: (result) => {
+        toast.success(`已将 ${result.mergedCount} 个标签合并到目标标签`);
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listTags.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getTagStats.key() });
+        setSelectedIds(new Set());
+        setBatchAction(null);
+        setMergeTargetId("");
+      },
+      onError: (error) => toast.error(error.message || "合并失败"),
+    }),
+  );
+
+  const tags = useMemo(() => data?.pages.flatMap((page) => page.tags) || [], [data?.pages]);
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -270,12 +289,7 @@ export default function AdminTagsPage() {
       {/* 批量操作栏 */}
       {tags.length > 0 && (
         <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleSelectAll}
-            className="gap-1"
-          >
+          <Button variant="ghost" size="sm" onClick={toggleSelectAll} className="gap-1">
             {selectedIds.size === tags.length && tags.length > 0 ? (
               <CheckSquare className="h-4 w-4" />
             ) : (
@@ -286,25 +300,15 @@ export default function AdminTagsPage() {
 
           {selectedIds.size > 0 && (
             <>
-              <span className="text-sm text-muted-foreground">
-                已选 {selectedIds.size} 个
-              </span>
+              <span className="text-sm text-muted-foreground">已选 {selectedIds.size} 个</span>
               <div className="flex items-center gap-2 ml-auto">
                 {selectedIds.size >= 2 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setBatchAction("merge")}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => setBatchAction("merge")}>
                     <Merge className="h-4 w-4 mr-1" />
                     合并标签
                   </Button>
                 )}
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setBatchAction("delete")}
-                >
+                <Button variant="destructive" size="sm" onClick={() => setBatchAction("delete")}>
                   <Trash2 className="h-4 w-4 mr-1" />
                   批量删除
                 </Button>
@@ -317,8 +321,8 @@ export default function AdminTagsPage() {
       {/* 标签列表 */}
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {Array.from({ length: 9 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-lg" />
+          {skeletonKeys(9).map((skeletonKey) => (
+            <Skeleton key={skeletonKey} className="h-24 rounded-lg" />
           ))}
         </div>
       ) : tags.length === 0 ? (
@@ -338,7 +342,7 @@ export default function AdminTagsPage() {
                   key={tag.id}
                   className={cn(
                     "transition-colors hover:bg-muted/50",
-                    isSelected && "ring-2 ring-primary"
+                    isSelected && "ring-2 ring-primary",
                   )}
                 >
                   <CardContent className="p-4">
@@ -352,23 +356,16 @@ export default function AdminTagsPage() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <Link
-                              href={`/tag/${tag.slug}`}
+                              to={`/tag/${tag.slug}`}
                               className="font-medium hover:underline block truncate"
                             >
                               {tag.name}
                             </Link>
-                            <div className="text-sm text-muted-foreground mt-0.5">
-                              /{tag.slug}
-                            </div>
+                            <div className="text-sm text-muted-foreground mt-0.5">/{tag.slug}</div>
                           </div>
                           <div className="flex gap-1 shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              asChild
-                            >
-                              <Link href={`/tag/${tag.slug}`} target="_blank">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
+                              <Link to={`/tag/${tag.slug}`} target="_blank">
                                 <ExternalLink className="h-3 w-3" />
                               </Link>
                             </Button>
@@ -415,9 +412,7 @@ export default function AdminTagsPage() {
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
               >
-                {isFetchingNextPage ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
+                {isFetchingNextPage ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 加载更多
               </Button>
             </div>
@@ -434,16 +429,22 @@ export default function AdminTagsPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">标签名称 *</label>
+              <label className="text-sm font-medium" htmlFor="dashboard-tags-field-1">
+                标签名称 *
+              </label>
               <Input
+                id="dashboard-tags-field-1"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="例如：动画"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">URL 标识 (slug)</label>
+              <label className="text-sm font-medium" htmlFor="dashboard-tags-field-2">
+                URL 标识 (slug)
+              </label>
               <Input
+                id="dashboard-tags-field-2"
                 value={newSlug}
                 onChange={(e) => setNewSlug(e.target.value)}
                 placeholder="例如：animation（留空自动生成）"
@@ -474,16 +475,22 @@ export default function AdminTagsPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">标签名称</label>
+              <label className="text-sm font-medium" htmlFor="dashboard-tags-field-3">
+                标签名称
+              </label>
               <Input
+                id="dashboard-tags-field-3"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 placeholder="标签名称"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">URL 标识 (slug)</label>
+              <label className="text-sm font-medium" htmlFor="dashboard-tags-field-4">
+                URL 标识 (slug)
+              </label>
               <Input
+                id="dashboard-tags-field-4"
                 value={editSlug}
                 onChange={(e) => setEditSlug(e.target.value)}
                 placeholder="url-slug"
@@ -558,9 +565,11 @@ export default function AdminTagsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <label className="text-sm font-medium">选择目标标签</label>
+            <label className="text-sm font-medium" htmlFor="dashboard-tags-field-5">
+              选择目标标签
+            </label>
             <Select value={mergeTargetId} onValueChange={setMergeTargetId}>
-              <SelectTrigger className="mt-2">
+              <SelectTrigger id="dashboard-tags-field-5" className="mt-2">
                 <SelectValue placeholder="选择保留的目标标签" />
               </SelectTrigger>
               <SelectContent>
@@ -591,3 +600,6 @@ export default function AdminTagsPage() {
     </div>
   );
 }
+
+export const meta = () =>
+  pageMeta("标签管理", "管理站点标签", "/dashboard/tags", { noindex: true });

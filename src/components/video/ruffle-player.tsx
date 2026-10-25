@@ -1,19 +1,10 @@
-"use client";
-
-import { useRef, useEffect, useState, useCallback } from "react";
-import Image from "next/image";
-import { Skeleton } from "@/components/ui/skeleton";
+import { AlertCircle, Loader2, Maximize, Minimize, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import {
-  Maximize,
-  Minimize,
-  AlertCircle,
-  Loader2,
-  RotateCcw,
-} from "lucide-react";
 
-const RUFFLE_LOCAL_URL = "/ruffle/ruffle.js";
+const LOAD_TIMEOUT_MS = 45_000;
 
 interface RufflePlayerProps {
   url: string;
@@ -21,126 +12,58 @@ interface RufflePlayerProps {
   className?: string;
 }
 
-interface RuffleInstance {
-  load: (options: { url: string }) => Promise<void>;
-  remove: () => void;
-  play: () => void;
-  pause: () => void;
-}
-
-interface RufflePublicAPI {
-  newest: () => {
-    createPlayer: () => RuffleInstance & HTMLElement;
-  };
-}
-
-declare global {
-  interface Window {
-    RufflePlayer?: RufflePublicAPI;
-  }
-}
-
 export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<RuffleInstance | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-
-  const createRufflePlayer = useCallback(async () => {
-    if (!window.RufflePlayer) {
-      await new Promise<void>((resolve, reject) => {
-        const existing = document.querySelector(
-          `script[src="${RUFFLE_LOCAL_URL}"]`
-        );
-        if (existing) {
-          if (window.RufflePlayer) {
-            resolve();
-          } else {
-            existing.addEventListener("load", () => resolve());
-            existing.addEventListener("error", () =>
-              reject(new Error("Ruffle 加载失败"))
-            );
-          }
-          return;
-        }
-
-        const script = document.createElement("script");
-        script.src = RUFFLE_LOCAL_URL;
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error("Ruffle 加载失败"));
-        document.head.appendChild(script);
-      });
-    }
-
-    const ruffle = window.RufflePlayer!.newest();
-    const player = ruffle.createPlayer();
-
-    player.style.width = "100%";
-    player.style.height = "100%";
-
-    if (containerRef.current) {
-      containerRef.current.innerHTML = "";
-      containerRef.current.appendChild(player);
-    }
-
-    // 给 load() 加超时兜底：卡死（既不 resolve 也不 reject）时进入错误态可重试
-    const LOAD_TIMEOUT_MS = 20000;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        player.load({ url }),
-        new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(
-            () => reject(new Error("Flash 内容加载超时")),
-            LOAD_TIMEOUT_MS
-          );
-        }),
-      ]);
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
-    }
-    return player;
-  }, [url]);
+  const [reloadVersion, setReloadVersion] = useState(0);
 
   useEffect(() => {
-    let cancelled = false;
-
-    createRufflePlayer()
-      .then((player) => {
-        if (cancelled) return;
-        playerRef.current = player;
+    if (!containerRef.current) return;
+    // 重载序号使每次手动重试拥有独立的清理函数。
+    void reloadVersion;
+    setIsLoading(true);
+    setError(null);
+    const frame = document.createElement("iframe");
+    frame.title = "Flash 内容沙箱";
+    frame.setAttribute("sandbox", "allow-scripts");
+    frame.setAttribute("allow", "autoplay; fullscreen");
+    frame.referrerPolicy = "no-referrer";
+    frame.className = "h-full w-full border-0";
+    frame.src = `/flash-frame?url=${encodeURIComponent(url)}`;
+    const fail = () => {
+      setError("Flash 内容加载失败，请确认文件可匿名访问且支持 CORS");
+      setIsLoading(false);
+    };
+    const timer = setTimeout(fail, LOAD_TIMEOUT_MS);
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== frame.contentWindow || event.origin !== "null") return;
+      if (event.data?.channel !== "acgn-flash") return;
+      if (event.data.type !== "ready" && event.data.type !== "error") return;
+      clearTimeout(timer);
+      if (event.data.type === "error") fail();
+      else {
         setIsLoading(false);
         wrapperRef.current?.focus();
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        console.error("Ruffle load error:", e);
-        setError(e instanceof Error ? e.message : "Flash 内容加载失败");
-        setIsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-      if (playerRef.current) {
-        try {
-          playerRef.current.remove();
-        } catch {
-          // player might already be removed
-        }
-        playerRef.current = null;
       }
     };
-  }, [createRufflePlayer]);
+    window.addEventListener("message", onMessage);
+    containerRef.current.appendChild(frame);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("message", onMessage);
+      frame.remove();
+    };
+  }, [url, reloadVersion]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      setIsFullscreen(document.fullscreenElement === wrapperRef.current);
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () =>
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
   const toggleFullscreen = useCallback(async () => {
@@ -152,36 +75,13 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
         await wrapperRef.current.requestFullscreen();
       }
     } catch {
-      // fullscreen not supported
+      // 浏览器可能不支持全屏，保留普通播放。
     }
   }, []);
 
   const handleReload = useCallback(() => {
-    if (playerRef.current) {
-      try {
-        playerRef.current.remove();
-      } catch {
-        // ignore
-      }
-      playerRef.current = null;
-    }
-    if (containerRef.current) {
-      containerRef.current.innerHTML = "";
-    }
-    setIsLoading(true);
-    setError(null);
-    createRufflePlayer()
-      .then((player) => {
-        playerRef.current = player;
-        setIsLoading(false);
-        wrapperRef.current?.focus();
-      })
-      .catch((e) => {
-        console.error("Ruffle load error:", e);
-        setError(e instanceof Error ? e.message : "Flash 内容加载失败");
-        setIsLoading(false);
-      });
-  }, [createRufflePlayer]);
+    setReloadVersion((version) => version + 1);
+  }, []);
 
   // 键盘快捷键
   const handleKeyDown = useCallback(
@@ -195,7 +95,7 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
         case "Escape":
           if (document.fullscreenElement) {
             e.preventDefault();
-            document.exitFullscreen();
+            void document.exitFullscreen().catch(() => {});
           }
           break;
         case "r":
@@ -205,45 +105,40 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
           break;
       }
     },
-    [toggleFullscreen, handleReload]
+    [toggleFullscreen, handleReload],
   );
-
-  if (error) {
-    return (
-      <div
-        className={cn(
-          "relative flex aspect-video items-center justify-center rounded-lg bg-black",
-          className
-        )}
-      >
-        <div className="flex flex-col items-center gap-3 text-white">
-          <AlertCircle className="h-12 w-12 text-red-400" />
-          <p className="text-sm text-neutral-300">{error}</p>
-          <Button variant="outline" size="sm" onClick={handleReload}>
-            <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-            重试
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div
       ref={wrapperRef}
       className={cn("group relative rounded-lg bg-black outline-none", className)}
-      tabIndex={0}
+      role="application"
+      aria-label="Flash 播放器"
+      tabIndex={-1}
       onKeyDown={handleKeyDown}
     >
+      {error && (
+        <div
+          className="absolute inset-0 z-30 flex items-center justify-center rounded-lg bg-black"
+          role="alert"
+        >
+          <div className="flex flex-col items-center gap-3 text-white">
+            <AlertCircle className="h-12 w-12 text-red-400" />
+            <p className="text-sm text-neutral-300">{error}</p>
+            <Button type="button" variant="outline" size="sm" onClick={handleReload}>
+              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+              重试
+            </Button>
+          </div>
+        </div>
+      )}
       {isLoading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center">
           {poster ? (
-            <Image
+            <img
               src={poster}
-              alt="Flash cover"
-              fill
-              unoptimized
-              className="absolute inset-0 rounded-lg object-cover opacity-50"
+              alt="Flash 封面"
+              className="absolute inset-0 h-full w-full rounded-lg object-cover opacity-50"
             />
           ) : (
             <Skeleton className="absolute inset-0 rounded-lg" />
@@ -255,14 +150,12 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
         </div>
       )}
 
-      <div
-        ref={containerRef}
-        className="aspect-video w-full overflow-hidden rounded-lg"
-      />
+      <div ref={containerRef} className="aspect-video w-full overflow-hidden rounded-lg" />
 
-      {/* Toolbar overlay */}
-      <div className="absolute right-2 bottom-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      {/* 播放器工具栏 */}
+      <div className="absolute right-2 bottom-2 flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
         <Button
+          type="button"
           variant="ghost"
           size="icon"
           className="h-8 w-8 bg-black/50 text-white hover:bg-black/70"
@@ -272,17 +165,14 @@ export function RufflePlayer({ url, poster, className }: RufflePlayerProps) {
           <RotateCcw className="h-4 w-4" />
         </Button>
         <Button
+          type="button"
           variant="ghost"
           size="icon"
           className="h-8 w-8 bg-black/50 text-white hover:bg-black/70"
           onClick={toggleFullscreen}
           title={isFullscreen ? "退出全屏 (F)" : "全屏 (F)"}
         >
-          {isFullscreen ? (
-            <Minimize className="h-4 w-4" />
-          ) : (
-            <Maximize className="h-4 w-4" />
-          )}
+          {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
         </Button>
       </div>
     </div>

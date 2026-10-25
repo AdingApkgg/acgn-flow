@@ -1,21 +1,27 @@
-"use client";
-
-import { useState, Suspense } from "react";
-import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { CaptchaInput } from "@/components/ui/captcha-input";
+
+import { Suspense, useState } from "react";
+import { useForm } from "react-hook-form";
+import { Link, useNavigate, useRevalidator, useSearchParams } from "react-router";
+import { toast } from "sonner";
+import { z } from "zod";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
+import { Button } from "@/components/ui/button";
+import { CaptchaInput } from "@/components/ui/captcha-input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { signIn } from "@/lib/auth-client";
+import { pageMeta } from "@/routes/metadata";
 
 const loginSchema = z.object({
   identifier: z.string().min(1, "请输入邮箱或用户名"),
@@ -26,9 +32,14 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>;
 
 function LoginForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") || "/";
+  const navigate = useNavigate();
+  const revalidator = useRevalidator();
+  const [searchParams] = useSearchParams();
+  const requestedCallback = searchParams.get("callbackUrl") || "/";
+  const callbackUrl =
+    requestedCallback.startsWith("/") && !requestedCallback.startsWith("//")
+      ? requestedCallback
+      : "/";
   const prefillAccount = searchParams.get("account") || "";
   const isNewAccount = searchParams.get("new") === "1";
   const [isLoading, setIsLoading] = useState(false);
@@ -47,25 +58,10 @@ function LoginForm() {
   async function onSubmit(data: LoginForm) {
     setIsLoading(true);
     try {
-      // 验证验证码
-      const captchaRes = await fetch("/api/captcha", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ captcha: data.captcha }),
-      });
-      const captchaResult = await captchaRes.json();
-
-      if (!captchaResult.valid) {
-        toast.error("验证码错误");
-        setCaptchaKey((k) => k + 1);
-        form.setValue("captcha", "");
-        setIsLoading(false);
-        return;
-      }
-
       const result = await signIn("credentials", {
         identifier: data.identifier,
         password: data.password,
+        captcha: data.captcha,
         redirect: false,
       });
 
@@ -75,8 +71,8 @@ function LoginForm() {
         form.setValue("captcha", "");
       } else {
         toast.success("登录成功");
-        router.push(callbackUrl);
-        router.refresh();
+        navigate(callbackUrl);
+        revalidator.revalidate();
       }
     } catch {
       toast.error("登录失败", { description: "发生未知错误" });
@@ -95,90 +91,86 @@ function LoginForm() {
                 {isNewAccount ? "添加账号" : prefillAccount ? "切换账号" : "登录"}
               </CardTitle>
               <CardDescription>
-                {isNewAccount 
-                  ? "登录其他账号以添加到账号列表" 
-                  : prefillAccount 
-                  ? "请输入密码以切换账号" 
-                  : "登录您的账户继续"}
+                {isNewAccount
+                  ? "登录其他账号以添加到账号列表"
+                  : prefillAccount
+                    ? "请输入密码以切换账号"
+                    : "登录您的账户继续"}
               </CardDescription>
             </div>
           </CardHeader>
           <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="identifier"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>邮箱或用户名</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="text"
-                        placeholder="邮箱或用户名"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>密码</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="******" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="captcha"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>验证码</FormLabel>
-                    <FormControl>
-                      <CaptchaInput
-                        key={captchaKey}
-                        value={field.value}
-                        onChange={field.onChange}
-                        error={form.formState.errors.captcha?.message}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                登录
-              </Button>
-            </form>
-          </Form>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="identifier"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>邮箱或用户名</FormLabel>
+                      <FormControl>
+                        <Input type="text" placeholder="邮箱或用户名" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>密码</FormLabel>
+                      <FormControl>
+                        <Input type="password" placeholder="******" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="captcha"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>验证码</FormLabel>
+                      <FormControl>
+                        <CaptchaInput
+                          key={captchaKey}
+                          value={field.value}
+                          onChange={field.onChange}
+                          error={form.formState.errors.captcha?.message}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  登录
+                </Button>
+              </form>
+            </Form>
 
-          <div className="mt-6">
-            <OAuthButtons callbackUrl={callbackUrl} />
-          </div>
+            <div className="mt-6">
+              <OAuthButtons callbackUrl={callbackUrl} />
+            </div>
 
-          <div className="mt-6 text-center text-sm text-muted-foreground space-y-2">
-            <div>
-              <Link href="/forgot-password" className="text-primary hover:underline">
-                忘记密码？
-              </Link>
+            <div className="mt-6 text-center text-sm text-muted-foreground space-y-2">
+              <div>
+                <Link to="/forgot-password" className="text-primary hover:underline">
+                  忘记密码？
+                </Link>
+              </div>
+              <div>
+                还没有账户？{" "}
+                <Link to="/register" className="text-primary hover:underline">
+                  立即注册
+                </Link>
+              </div>
             </div>
-            <div>
-              还没有账户？{" "}
-              <Link href="/register" className="text-primary hover:underline">
-                立即注册
-              </Link>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
@@ -210,3 +202,5 @@ export default function LoginPage() {
     </Suspense>
   );
 }
+
+export const meta = () => pageMeta("登录", "登录您的账户", "/login", { noindex: true });

@@ -4,10 +4,8 @@ const path = require("path");
 const src = path.join(__dirname, "..", "node_modules", "@ruffle-rs", "ruffle");
 const dest = path.join(__dirname, "..", "public", "ruffle");
 
-if (!existsSync(src)) {
-  console.log("[copy-ruffle] @ruffle-rs/ruffle not installed, skipping.");
-  process.exit(0);
-}
+if (!existsSync(src))
+  throw new Error("缺少 Ruffle 构建依赖，请先执行 bun install --frozen-lockfile");
 
 if (existsSync(dest)) {
   rmSync(dest, { recursive: true, force: true });
@@ -17,7 +15,6 @@ mkdirSync(dest, { recursive: true });
 const entries = readdirSync(src);
 for (const entry of entries) {
   if (entry.endsWith(".map")) continue;
-  if (entry.startsWith("LICENSE")) continue;
   if (entry === "package.json" || entry === "README.md") continue;
 
   cpSync(path.join(src, entry), path.join(dest, entry));

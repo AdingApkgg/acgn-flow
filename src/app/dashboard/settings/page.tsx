@@ -1,13 +1,23 @@
-"use client";
+import { useQuery } from "@tanstack/react-query";
+import {
+  CheckCircle,
+  Construction,
+  Globe,
+  Loader2,
+  Search,
+  Send,
+  Settings,
+  XCircle,
+} from "lucide-react";
 
-import { useState, useEffect } from "react";
-import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Settings, Construction, Search, Loader2, CheckCircle, XCircle, Globe, Send } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { orpc } from "@/lib/orpc";
+import { pageMeta } from "@/routes/metadata";
 
 interface SearchEngineStatus {
   indexnow: { configured: boolean; keyFile: string | null };
@@ -15,20 +25,28 @@ interface SearchEngineStatus {
 }
 
 export default function AdminSettingsPage() {
-  const { data: permissions } = trpc.admin.getMyPermissions.useQuery();
+  const { data: permissions } = useQuery(
+    orpc.admin.getMyPermissions.queryOptions({ input: undefined, ...{} }),
+  );
   const [engineStatus, setEngineStatus] = useState<SearchEngineStatus | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recentDays, setRecentDays] = useState(7);
-  const [lastResult, setLastResult] = useState<{ type: string; message: string; time: Date } | null>(null);
+  const [lastResult, setLastResult] = useState<{
+    type: string;
+    message: string;
+    time: Date;
+  } | null>(null);
 
   useEffect(() => {
     fetch("/api/indexnow")
       .then((res) => res.json())
       .then(setEngineStatus)
-      .catch(() => setEngineStatus({
-        indexnow: { configured: false, keyFile: null },
-        google: { configured: false, note: null },
-      }));
+      .catch(() =>
+        setEngineStatus({
+          indexnow: { configured: false, keyFile: null },
+          google: { configured: false, note: null },
+        }),
+      );
   }, []);
 
   const handleSubmit = async (type: "recent" | "all" | "site" | "sitemap") => {
@@ -68,9 +86,7 @@ export default function AdminSettingsPage() {
           <Settings className="h-6 w-6" />
           系统设置
         </h1>
-        <p className="text-muted-foreground mt-1">
-          配置网站的系统参数
-        </p>
+        <p className="text-muted-foreground mt-1">配置网站的系统参数</p>
       </div>
 
       {/* 搜索引擎推送 */}
@@ -80,9 +96,7 @@ export default function AdminSettingsPage() {
             <Search className="h-5 w-5" />
             搜索引擎推送
           </CardTitle>
-          <CardDescription>
-            主动通知搜索引擎索引新内容，加快收录速度
-          </CardDescription>
+          <CardDescription>主动通知搜索引擎索引新内容，加快收录速度</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* 配置状态 */}
@@ -140,7 +154,7 @@ export default function AdminSettingsPage() {
           {(engineStatus?.indexnow.configured || engineStatus?.google.configured) && (
             <div className="space-y-3 pt-2 border-t">
               <p className="text-sm font-medium">手动提交</p>
-              
+
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
@@ -148,7 +162,11 @@ export default function AdminSettingsPage() {
                   onClick={() => handleSubmit("site")}
                   disabled={isSubmitting}
                 >
-                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Globe className="h-4 w-4 mr-1" />}
+                  {isSubmitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  ) : (
+                    <Globe className="h-4 w-4 mr-1" />
+                  )}
                   提交站点页面
                 </Button>
 
@@ -159,7 +177,11 @@ export default function AdminSettingsPage() {
                     onClick={() => handleSubmit("recent")}
                     disabled={isSubmitting}
                   >
-                    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+                    {isSubmitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                    ) : (
+                      <Send className="h-4 w-4 mr-1" />
+                    )}
                     最近
                   </Button>
                   <Input
@@ -179,7 +201,11 @@ export default function AdminSettingsPage() {
                   onClick={() => handleSubmit("all")}
                   disabled={isSubmitting}
                 >
-                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+                  {isSubmitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  ) : (
+                    <Send className="h-4 w-4 mr-1" />
+                  )}
                   提交全部视频
                 </Button>
 
@@ -190,7 +216,11 @@ export default function AdminSettingsPage() {
                     onClick={() => handleSubmit("sitemap")}
                     disabled={isSubmitting}
                   >
-                    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Globe className="h-4 w-4 mr-1" />}
+                    {isSubmitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                    ) : (
+                      <Globe className="h-4 w-4 mr-1" />
+                    )}
                     通知 Google 更新 Sitemap
                   </Button>
                 )}
@@ -223,9 +253,7 @@ export default function AdminSettingsPage() {
             <Construction className="h-5 w-5" />
             更多功能开发中
           </CardTitle>
-          <CardDescription>
-            以下功能正在开发中，敬请期待
-          </CardDescription>
+          <CardDescription>以下功能正在开发中，敬请期待</CardDescription>
         </CardHeader>
         <CardContent>
           <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
@@ -240,3 +268,6 @@ export default function AdminSettingsPage() {
     </div>
   );
 }
+
+export const meta = () =>
+  pageMeta("站点设置", "管理站点设置", "/dashboard/settings", { noindex: true });

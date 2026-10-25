@@ -1,0 +1,750 @@
+import {
+  getBilibiliHeaders,
+  getUserVideosFromUploadPage,
+  getUserVideosWithWbi,
+  getVideoInfoWbi,
+  getVideoTags,
+  parseVideoId,
+} from "@/lib/bilibili";
+
+// B站视频信息接口
+interface BilibiliVideoInfo {
+  title: string;
+  description: string;
+  coverUrl: string;
+  duration: number;
+  tags: string[];
+  uploader: string;
+  bvid: string;
+  aid: number;
+  cid?: number; // 用于弹幕获取
+  videoUrl: string;
+}
+
+// 延迟函数
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 获取视频详细信息（使用 WBI 签名版 API）
+async function getVideoDetails(
+  bvid: string,
+): Promise<Omit<BilibiliVideoInfo, "videoUrl" | "tags"> | null> {
+  const info = await getVideoInfoWbi({ bvid });
+  if (!info) return null;
+
+  let coverPic = info.pic || "";
+  if (coverPic.startsWith("http://")) {
+    coverPic = coverPic.replace("http://", "https://");
+  }
+  const proxiedCover = coverPic ? `/api/bilibili/image?url=${encodeURIComponent(coverPic)}` : "";
+
+  return {
+    title: info.title,
+    description: info.desc,
+    coverUrl: proxiedCover,
+    duration: info.duration,
+    uploader: info.owner?.name || "",
+    bvid: info.bvid,
+    aid: info.aid,
+    cid: info.cid || 0,
+  };
+}
+
+// 获取用户视频列表（使用WBI签名，控制并发避免风控）
+async function getUserVideos(mid: number): Promise<{ bvid: string; aid: number; title: string }[]> {
+  const maxPages = 100;
+  const dedupeVideos = (videos: { bvid: string; aid: number; title: string }[]) => {
+    const deduped = new Map<string, { bvid: string; aid: number; title: string }>();
+    for (const video of videos) {
+      if (!deduped.has(video.bvid)) {
+        deduped.set(video.bvid, video);
+      }
+    }
+    return Array.from(deduped.values());
+  };
+
+  const crawlByPageSize = async (pageSize: number) => {
+    const allVideos: { bvid: string; aid: number; title: string }[] = [];
+    const fetchPageWithRetry = async (page: number, retries: number = 2) => {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        const videos = await getUserVideosWithWbi(mid, page, pageSize);
+        if (videos.length > 0) {
+          return videos;
+        }
+        if (attempt < retries) {
+          await delay(200 * (attempt + 1));
+        }
+      }
+      return [] as Awaited<ReturnType<typeof getUserVideosWithWbi>>;
+    };
+
+    const firstPage = await fetchPageWithRetry(1);
+    if (firstPage.length === 0) return [];
+
+    allVideos.push(
+      ...firstPage.map((v) => ({
+        bvid: v.bvid,
+        aid: v.aid,
+        title: v.title,
+      })),
+    );
+
+    if (firstPage.length < pageSize) {
+      return dedupeVideos(allVideos);
+    }
+
+    let page = 2;
+    while (page <= maxPages) {
+      const videos = await fetchPageWithRetry(page);
+      if (videos.length === 0) break;
+
+      allVideos.push(
+        ...videos.map((v) => ({
+          bvid: v.bvid,
+          aid: v.aid,
+          title: v.title,
+        })),
+      );
+
+      if (videos.length < pageSize) break;
+      page++;
+      await delay(100);
+    }
+
+    return dedupeVideos(allVideos);
+  };
+
+  try {
+    // 先用 pageSize=50（效率更高）
+    const videos50 = await crawlByPageSize(50);
+    if (videos50.length === 0) return [];
+
+    // 如果刚好卡在50，可能是第二页被风控/分页异常，降级为30再抓一次
+    if (videos50.length === 50) {
+      const videos30 = await crawlByPageSize(30);
+      const base = videos30.length > videos50.length ? videos30 : videos50;
+      // 再尝试从用户上传页面抓取，参考 https://space.bilibili.com/{mid}/upload/video
+      const videosFromPage = await getUserVideosFromUploadPage(mid, maxPages);
+      if (videosFromPage.length > base.length) {
+        return videosFromPage.map((v) => ({
+          bvid: v.bvid,
+          aid: v.aid,
+          title: v.title,
+        }));
+      }
+      return base;
+    }
+
+    return videos50;
+  } catch (error) {
+    console.error("获取用户视频列表失败:", error);
+    return [];
+  }
+}
+
+type UserVideoEmptyReason = "no_public_videos" | "invalid_uid" | "upstream_unavailable";
+
+// 诊断“用户投稿为空”的原因，避免把上游故障误报成UID错误
+async function diagnoseUserVideoEmpty(mid: number): Promise<UserVideoEmptyReason> {
+  try {
+    const query = new URLSearchParams({
+      mid: String(mid),
+      pn: "1",
+      ps: "1",
+      order: "pubdate",
+      tid: "0",
+      keyword: "",
+    });
+    const url = `https://api.bilibili.com/x/space/arc/search?${query.toString()}`;
+    const response = await fetch(url, {
+      headers: getBilibiliHeaders(`https://space.bilibili.com/${mid}`),
+    });
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return "upstream_unavailable";
+    }
+
+    const data = await response.json();
+    const code = typeof data?.code === "number" ? data.code : -1;
+
+    if (code === -404) {
+      return "invalid_uid";
+    }
+    if (code !== 0) {
+      return "upstream_unavailable";
+    }
+
+    const count = Number(data?.data?.page?.count ?? 0);
+    return count > 0 ? "upstream_unavailable" : "no_public_videos";
+  } catch {
+    return "upstream_unavailable";
+  }
+}
+
+// 获取收藏夹视频列表（自动分页获取全部）
+async function getFavoriteVideos(
+  mediaId: number,
+): Promise<{ bvid: string; aid: number; title: string }[]> {
+  const allVideos: { bvid: string; aid: number; title: string }[] = [];
+  const pageSize = 40; // B站API最大支持40
+  let page = 1;
+  let hasMore = true;
+
+  try {
+    while (hasMore) {
+      const url = `https://api.bilibili.com/x/v3/fav/resource/list?media_id=${mediaId}&pn=${page}&ps=${pageSize}&platform=web`;
+      const response = await fetch(url, {
+        headers: getBilibiliHeaders(),
+      });
+
+      const data = await response.json();
+
+      if (data.code !== 0) {
+        if (page === 1) {
+          // 返回更详细的错误信息
+          const errorMsg = data.code === -403 ? "收藏夹不存在或为私密" : data.message;
+          console.error("获取收藏夹失败:", errorMsg, `(code: ${data.code})`);
+        }
+        break;
+      }
+
+      if (!data.data?.medias) {
+        // 空收藏夹
+        break;
+      }
+
+      const videos = data.data.medias
+        .filter((m: { type: number }) => m.type === 2) // 只取视频类型
+        .map((m: { bvid: string; id: number; title: string }) => ({
+          bvid: m.bvid,
+          aid: m.id,
+          title: m.title,
+        }));
+
+      allVideos.push(...videos);
+
+      // 检查是否还有更多
+      hasMore = data.data.has_more || videos.length === pageSize;
+      page++;
+
+      // 安全限制，防止无限循环
+      if (page > 50) break;
+    }
+
+    return allVideos;
+  } catch (error) {
+    console.error("获取收藏夹失败:", error);
+    return allVideos.length > 0 ? allVideos : [];
+  }
+}
+
+// 获取合集视频列表 (需要mid和season_id，支持分页和重试)
+async function getSeasonVideos(
+  mid: number,
+  seasonId: number,
+): Promise<{ bvid: string; aid: number; title: string }[]> {
+  const allVideos: { bvid: string; aid: number; title: string }[] = [];
+  const pageSize = 30; // 使用较小的 pageSize 更稳定
+  let page = 1;
+  let hasMore = true;
+  let retryCount = 0;
+  const maxRetries = 3;
+
+  while (hasMore && page <= 50) {
+    const url = `https://api.bilibili.com/x/polymer/web-space/seasons_archives_list?mid=${mid}&season_id=${seasonId}&page_num=${page}&page_size=${pageSize}`;
+
+    try {
+      const response = await fetch(url, {
+        headers: getBilibiliHeaders(`https://space.bilibili.com/${mid}`),
+      });
+
+      // 检查风控
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        console.error("合集API返回非JSON响应，可能触发风控，重试中...");
+        if (retryCount < maxRetries) {
+          retryCount++;
+          await delay(500 * retryCount); // 递增延迟
+          continue;
+        }
+        break;
+      }
+
+      const data = await response.json();
+
+      if (data.code !== 0) {
+        console.error("获取合集失败:", data.message, data.code);
+        if (retryCount < maxRetries && (data.code === -412 || data.code === -799)) {
+          // 风控错误码，重试
+          retryCount++;
+          await delay(500 * retryCount);
+          continue;
+        }
+        break;
+      }
+
+      if (!data.data?.archives || data.data.archives.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      retryCount = 0; // 重置重试计数
+      const videos = data.data.archives.map((v: { bvid: string; aid: number; title: string }) => ({
+        bvid: v.bvid,
+        aid: v.aid,
+        title: v.title,
+      }));
+      allVideos.push(...videos);
+
+      // 检查是否有更多
+      hasMore = videos.length === pageSize;
+      page++;
+
+      // 分页间延迟
+      if (hasMore) {
+        await delay(150);
+      }
+    } catch (error) {
+      console.error("获取合集失败:", error);
+      if (retryCount < maxRetries) {
+        retryCount++;
+        await delay(500 * retryCount);
+        continue;
+      }
+      break;
+    }
+  }
+
+  return allVideos;
+}
+
+// 仅通过合集ID获取视频列表（不需要mid）
+async function getSeasonVideosById(
+  seasonId: number,
+): Promise<{ bvid: string; aid: number; title: string }[]> {
+  // 方法1: 直接通过合集视频列表API
+  const url = `https://api.bilibili.com/x/polymer/web-space/season/episodes?season_id=${seasonId}&page_num=1&page_size=100`;
+
+  try {
+    const response = await fetch(url, {
+      headers: getBilibiliHeaders(),
+    });
+
+    // 检查风控
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      console.error("合集API返回非JSON响应，可能触发风控");
+      // 继续尝试备用方法
+    } else {
+      const data = await response.json();
+      if (data.code === 0 && data.data?.archives?.length > 0) {
+        return data.data.archives.map((v: { bvid: string; aid: number; title: string }) => ({
+          bvid: v.bvid,
+          aid: v.aid,
+          title: v.title,
+        }));
+      }
+    }
+
+    // 备用方法不可靠，提示用户需要提供完整信息
+    console.error("获取合集失败（仅ID）: 无法获取合集信息，请提供 用户UID,合集ID 格式");
+    return [];
+  } catch (error) {
+    console.error("获取合集失败（仅ID）:", error);
+    return [];
+  }
+}
+
+// 获取视频分P列表（使用 WBI 签名的 view API + pagelist）
+async function getVideoPagesDetailed(
+  bvid: string,
+): Promise<
+  { bvid: string; aid: number; title: string; partTitle: string; cid: number; page: number }[]
+> {
+  try {
+    const info = await getVideoInfoWbi({ bvid });
+    if (!info) return [];
+
+    // 通过 pagelist 获取所有分P
+    const pagelistResp = await fetch(`https://api.bilibili.com/x/player/pagelist?bvid=${bvid}`, {
+      headers: getBilibiliHeaders(),
+    });
+    const pagelistData = await pagelistResp.json();
+
+    const pages: Array<{ cid: number; page: number; part: string }> =
+      pagelistData.code === 0 && pagelistData.data ? pagelistData.data : [];
+
+    if (pages.length <= 1) {
+      return [
+        {
+          bvid: info.bvid,
+          aid: info.aid,
+          title: info.title,
+          partTitle: info.title,
+          cid: pages[0]?.cid || info.cid || 0,
+          page: 1,
+        },
+      ];
+    }
+
+    return pages.map((p) => ({
+      bvid: info.bvid,
+      aid: info.aid,
+      title: `${info.title} - P${p.page} ${p.part}`,
+      partTitle: p.part,
+      cid: p.cid,
+      page: p.page,
+    }));
+  } catch (error) {
+    console.error("获取分P列表失败:", error);
+    return [];
+  }
+}
+
+// 解析合集/系列URL
+function parseCollectionUrl(
+  url: string,
+): { type: "season" | "series"; mid: number; id: number } | null {
+  // 新版合集: https://space.bilibili.com/xxx/lists?sid=xxx 或 https://space.bilibili.com/xxx/lists/xxx
+  const newListsMatch = url.match(/space\.bilibili\.com\/(\d+)\/lists(?:\?sid=|\/)(\d+)/);
+  if (newListsMatch) {
+    return { type: "season", mid: parseInt(newListsMatch[1]), id: parseInt(newListsMatch[2]) };
+  }
+
+  // 旧版合集: https://space.bilibili.com/xxx/channel/collectiondetail?sid=xxx
+  const collectionMatch = url.match(
+    /space\.bilibili\.com\/(\d+)\/channel\/collectiondetail\?sid=(\d+)/,
+  );
+  if (collectionMatch) {
+    return { type: "season", mid: parseInt(collectionMatch[1]), id: parseInt(collectionMatch[2]) };
+  }
+
+  // 系列: https://space.bilibili.com/xxx/channel/seriesdetail?sid=xxx
+  const seriesMatch = url.match(/space\.bilibili\.com\/(\d+)\/channel\/seriesdetail\?sid=(\d+)/);
+  if (seriesMatch) {
+    return { type: "series", mid: parseInt(seriesMatch[1]), id: parseInt(seriesMatch[2]) };
+  }
+
+  // 视频合集页面: https://www.bilibili.com/video/BVxxx?p=1 (合集形式)
+  // 或者直接传入 mid,sid 格式
+  const directMatch = url.match(/^(\d+)[,，](\d+)$/);
+  if (directMatch) {
+    return { type: "season", mid: parseInt(directMatch[1]), id: parseInt(directMatch[2]) };
+  }
+
+  return null;
+}
+
+// 解析用户UID输入（支持纯数字、space链接、uid=xxx、UID:xxx、全角数字）
+function parseUserUidInput(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+
+  // 将全角数字转为半角，避免中文输入法导致解析失败
+  const normalized = value
+    .trim()
+    .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+  if (!normalized) return null;
+
+  // 1) 纯数字
+  if (/^\d+$/.test(normalized)) {
+    const uid = Number(normalized);
+    return Number.isInteger(uid) && uid > 0 ? uid : null;
+  }
+
+  // 2) space主页/视频页链接（支持 http/https，可带后续路径和参数）
+  const spaceMatch = normalized.match(/(?:https?:\/\/)?space\.bilibili\.com\/(\d+)/i);
+  if (spaceMatch) {
+    const uid = Number(spaceMatch[1]);
+    return Number.isInteger(uid) && uid > 0 ? uid : null;
+  }
+
+  // 3) 通用 uid=xxx / UID:xxx / uid xxx
+  const uidMatch = normalized.match(/\buid\b\s*[:=]?\s*(\d+)/i);
+  if (uidMatch) {
+    const uid = Number(uidMatch[1]);
+    return Number.isInteger(uid) && uid > 0 ? uid : null;
+  }
+
+  return null;
+}
+
+// 获取视频系列列表
+async function getSeriesVideos(
+  mid: number,
+  seriesId: number,
+): Promise<{ bvid: string; aid: number; title: string }[]> {
+  const url = `https://api.bilibili.com/x/series/archives?mid=${mid}&series_id=${seriesId}&pn=1&ps=100`;
+
+  try {
+    const response = await fetch(url, {
+      headers: getBilibiliHeaders(`https://space.bilibili.com/${mid}`),
+    });
+
+    const data = await response.json();
+
+    if (data.code !== 0 || !data.data?.archives) {
+      console.error("获取系列失败:", data.message);
+      return [];
+    }
+
+    return data.data.archives.map((v: { bvid: string; aid: number; title: string }) => ({
+      bvid: v.bvid,
+      aid: v.aid,
+      title: v.title,
+    }));
+  } catch (error) {
+    console.error("获取系列失败:", error);
+    return [];
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { type, value } = body;
+
+    let videoList: { bvid: string; aid: number; title: string }[] = [];
+    let useLightweightResponse = false;
+
+    switch (type) {
+      case "videos": {
+        // 批量视频链接，每行一个
+        const urls = (value as string)
+          .split("\n")
+          .map((u) => u.trim())
+          .filter(Boolean);
+        for (const url of urls.slice(0, 50)) {
+          // 限制最多50个
+          const parsed = await parseVideoId(url);
+          if (parsed) {
+            videoList.push({
+              bvid: parsed.bvid,
+              aid: parsed.aid,
+              title: "",
+            });
+          }
+        }
+        break;
+      }
+
+      case "user": {
+        // 用户UID（自动获取全部投稿）
+        const mid = parseUserUidInput(value);
+        if (!mid) {
+          return Response.json({ error: "无效的用户UID" }, { status: 400 });
+        }
+        videoList = await getUserVideos(mid);
+        if (videoList.length === 0) {
+          const reason = await diagnoseUserVideoEmpty(mid);
+          if (reason === "invalid_uid") {
+            return Response.json({ error: "用户不存在或UID错误" }, { status: 404 });
+          }
+          if (reason === "no_public_videos") {
+            return Response.json({ error: "该用户没有可见的公开投稿视频" }, { status: 404 });
+          }
+          return Response.json({ error: "B站接口暂时不可用，请稍后重试" }, { status: 503 });
+        }
+        // 用户投稿列表可能很大，逐条补详情容易超时导致 502
+        useLightweightResponse = true;
+        break;
+      }
+
+      case "favorite": {
+        // 收藏夹ID
+        const mediaId = parseInt(value, 10);
+        if (Number.isNaN(mediaId)) {
+          return Response.json({ error: "无效的收藏夹ID" }, { status: 400 });
+        }
+        videoList = await getFavoriteVideos(mediaId);
+        break;
+      }
+
+      case "season": {
+        // 合集 - 支持URL、mid,sid 格式或仅合集ID
+        const parsed = parseCollectionUrl(value);
+        if (parsed && parsed.type === "season") {
+          videoList = await getSeasonVideos(parsed.mid, parsed.id);
+        } else {
+          // 尝试解析为 mid,sid 格式
+          const parts = (value as string).split(/[,，]/);
+          if (parts.length === 2) {
+            const mid = parseInt(parts[0].trim(), 10);
+            const seasonId = parseInt(parts[1].trim(), 10);
+            if (!Number.isNaN(mid) && !Number.isNaN(seasonId)) {
+              videoList = await getSeasonVideos(mid, seasonId);
+            }
+          } else if (parts.length === 1) {
+            // 仅合集ID - 尝试通过合集API直接获取
+            const seasonId = parseInt(parts[0].trim(), 10);
+            if (!Number.isNaN(seasonId)) {
+              videoList = await getSeasonVideosById(seasonId);
+            }
+          }
+        }
+        if (videoList.length === 0) {
+          return Response.json(
+            {
+              error:
+                "无效的合集，请粘贴合集页面URL（如 space.bilibili.com/xxx/lists/xxx）或输入 用户UID,合集ID 格式",
+            },
+            { status: 400 },
+          );
+        }
+        break;
+      }
+
+      case "series": {
+        // 系列 - 支持URL或 mid,sid 格式
+        const parsed = parseCollectionUrl(value);
+        if (parsed && parsed.type === "series") {
+          videoList = await getSeriesVideos(parsed.mid, parsed.id);
+        } else {
+          // 尝试解析为 mid,sid 格式
+          const parts = (value as string).split(/[,，]/);
+          if (parts.length === 2) {
+            const mid = parseInt(parts[0].trim(), 10);
+            const seriesId = parseInt(parts[1].trim(), 10);
+            if (!Number.isNaN(mid) && !Number.isNaN(seriesId)) {
+              videoList = await getSeriesVideos(mid, seriesId);
+            }
+          }
+        }
+        if (videoList.length === 0) {
+          return Response.json(
+            { error: "无效的系列，请输入格式: 用户UID,系列ID 或粘贴系列页面URL" },
+            { status: 400 },
+          );
+        }
+        break;
+      }
+
+      case "pages": {
+        // 视频分P - B站同逻辑，一个视频包含多个分P
+        // 返回视频列表，每个分P作为可选项，用户选择要导入的分P
+        const parsedVideo = await parseVideoId(value);
+        if (!parsedVideo) {
+          return Response.json({ error: "无效的视频链接" }, { status: 400 });
+        }
+        const pages = await getVideoPagesDetailed(parsedVideo.bvid);
+        if (pages.length === 0) {
+          return Response.json({ error: "获取分P列表失败" }, { status: 404 });
+        }
+
+        // 获取视频基本信息
+        const baseDetails = await getVideoDetails(parsedVideo.bvid);
+        if (!baseDetails) {
+          return Response.json({ error: "获取视频信息失败" }, { status: 404 });
+        }
+
+        const tags = await getVideoTags(baseDetails.aid);
+
+        // 返回分P列表供用户选择，但只会创建一个视频
+        // 视频URL使用用户选择的分P
+        const pageResults = pages.map((p) => ({
+          title: p.partTitle, // 分P标题
+          fullTitle: p.title,
+          description: baseDetails.description,
+          coverUrl: baseDetails.coverUrl,
+          duration: baseDetails.duration,
+          uploader: baseDetails.uploader,
+          bvid: parsedVideo.bvid,
+          aid: baseDetails.aid,
+          page: p.page,
+          cid: p.cid,
+          tags,
+          videoUrl: `/api/bili/${parsedVideo.bvid}?p=${p.page}`,
+        }));
+
+        return Response.json({
+          success: true,
+          total: pageResults.length,
+          data: pageResults,
+          isPages: true,
+          // 返回视频基本信息，用于单个视频导入
+          videoInfo: {
+            title: baseDetails.title,
+            description: baseDetails.description,
+            coverUrl: baseDetails.coverUrl,
+            duration: baseDetails.duration,
+            uploader: baseDetails.uploader,
+            bvid: parsedVideo.bvid,
+            aid: baseDetails.aid,
+            tags,
+            totalPages: pages.length,
+          },
+        });
+      }
+
+      default:
+        return Response.json({ error: "不支持的导入类型" }, { status: 400 });
+    }
+
+    if (videoList.length === 0) {
+      return Response.json({ error: "未找到任何视频，可能是权限不足或ID错误" }, { status: 404 });
+    }
+
+    // 轻量模式：直接返回列表基础信息，避免大批量详情请求导致网关超时
+    if (useLightweightResponse) {
+      const lightweightResults: BilibiliVideoInfo[] = videoList.map((v) => ({
+        title: v.title || `av${v.aid}`,
+        description: "",
+        coverUrl: "",
+        duration: 0,
+        tags: [],
+        uploader: "",
+        bvid: v.bvid,
+        aid: v.aid,
+        videoUrl: `/api/bili/${v.bvid}`,
+      }));
+
+      return Response.json({
+        success: true,
+        total: videoList.length,
+        data: lightweightResults,
+        lightweight: true,
+      });
+    }
+
+    // 获取详细信息（控制并发避免风控）
+    const batchSize = 5; // 降低并发数避免触发风控
+    const results: BilibiliVideoInfo[] = [];
+
+    for (let i = 0; i < videoList.length; i += batchSize) {
+      const batch = videoList.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map(async (v) => {
+          try {
+            const [details, tags] = await Promise.all([
+              getVideoDetails(v.bvid),
+              getVideoTags(v.aid),
+            ]);
+            if (!details) return null;
+
+            return {
+              ...details,
+              tags,
+              videoUrl: `/api/bili/${v.bvid}`,
+            } as BilibiliVideoInfo;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      results.push(...batchResults.filter((r): r is BilibiliVideoInfo => r !== null));
+
+      // 批次间添加延迟，避免触发风控
+      if (i + batchSize < videoList.length) {
+        await delay(200);
+      }
+    }
+
+    return Response.json({
+      success: true,
+      total: videoList.length,
+      data: results,
+    });
+  } catch (error) {
+    console.error("批量获取B站视频失败:", error);
+    return Response.json({ error: "获取失败，请稍后重试" }, { status: 500 });
+  }
+}

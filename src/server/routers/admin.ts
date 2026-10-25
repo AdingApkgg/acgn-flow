@@ -1,50 +1,29 @@
+import { ORPCError } from "@orpc/server";
+import { and, desc, eq, exists, gte, ilike, inArray, ne, or, sql, sum } from "drizzle-orm";
 import { z } from "zod";
-import { router, protectedProcedure, adminProcedure, ownerProcedure } from "../trpc";
-import { TRPCError } from "@trpc/server";
-import { ADMIN_SCOPES, type AdminScope } from "@/lib/constants";
-import { Prisma } from "@/generated/prisma/client";
+import * as schema from "@/db/schema";
+import { ADMIN_SCOPES } from "@/lib/constants";
+import { adminProcedure, ownerProcedure, protectedProcedure } from "../orpc";
+import { hasAdminScope as hasScope } from "../services/permissions";
+import { cursorCondition, escapeLike, requiredRow } from "../services/query";
 
-// 检查用户是否有特定权限
-async function hasScope(
-  prisma: typeof import("@/lib/prisma").prisma,
-  userId: string,
-  scope: AdminScope
-): Promise<boolean> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { role: true, adminScopes: true },
-  });
-
-  if (!user) return false;
-
-  // 站长拥有所有权限
-  if (user.role === "OWNER") return true;
-
-  // 普通用户无管理权限
-  if (user.role === "USER") return false;
-
-  // 管理员检查 adminScopes
-  const scopes = (user.adminScopes as string[]) || [];
-  return scopes.includes(scope);
-}
-
-export const adminRouter = router({
+export const adminRouter = {
   // 获取当前用户的管理权限信息
-  getMyPermissions: protectedProcedure.query(async ({ ctx }) => {
-    const user = await ctx.prisma.user.findUnique({
-      where: { id: ctx.session.user.id },
-      select: { role: true, adminScopes: true },
-    });
+  getMyPermissions: protectedProcedure.handler(async ({ context }) => {
+    const user = await context.db.query.user
+      .findFirst({
+        columns: { role: true, adminScopes: true },
+        where: and(eq(schema.user.id, context.session.user.id)),
+      })
+      .then((row) => row ?? null);
 
     if (!user) {
-      throw new TRPCError({ code: "NOT_FOUND" });
+      throw new ORPCError("NOT_FOUND");
     }
 
     const isOwner = user.role === "OWNER";
     const isAdmin = user.role === "ADMIN" || isOwner;
-    const scopes = isOwner
-      ? Object.keys(ADMIN_SCOPES)
-      : ((user.adminScopes as string[]) || []);
+    const scopes = isOwner ? Object.keys(ADMIN_SCOPES) : (user.adminScopes as string[]) || [];
 
     return {
       role: user.role,
@@ -56,27 +35,21 @@ export const adminRouter = router({
   }),
 
   // 公开统计数据（所有登录用户可见）
-  getPublicStats: protectedProcedure.query(async ({ ctx }) => {
-    const [
-      userCount,
-      videoCount,
-      tagCount,
-      commentCount,
-      totalViews,
-      likeCount,
-      favoriteCount,
-    ] = await Promise.all([
-      ctx.prisma.user.count(),
-      ctx.prisma.video.count({ where: { status: "PUBLISHED" } }),
-      ctx.prisma.tag.count(),
-      ctx.prisma.comment.count({ where: { isDeleted: false } }),
-      ctx.prisma.video.aggregate({
-        where: { status: "PUBLISHED" },
-        _sum: { views: true },
-      }),
-      ctx.prisma.like.count(),
-      ctx.prisma.favorite.count(),
-    ]);
+  getPublicStats: protectedProcedure.handler(async ({ context }) => {
+    const [userCount, videoCount, tagCount, commentCount, totalViews, likeCount, favoriteCount] =
+      await Promise.all([
+        context.db.$count(schema.user, undefined),
+        context.db.$count(schema.video, and(eq(schema.video.status, "PUBLISHED"))),
+        context.db.$count(schema.tag, undefined),
+        context.db.$count(schema.comment, and(eq(schema.comment.isDeleted, false))),
+        context.db
+          .select({ views: sum(schema.video.views).mapWith(Number) })
+          .from(schema.video)
+          .where(and(eq(schema.video.status, "PUBLISHED")))
+          .then((rows) => ({ _sum: rows[0] })),
+        context.db.$count(schema.like, undefined),
+        context.db.$count(schema.favorite, undefined),
+      ]);
 
     return {
       userCount,
@@ -92,24 +65,19 @@ export const adminRouter = router({
   // 增量统计数据（最近30天）
   getGrowthStats: protectedProcedure
     .input(z.object({ days: z.number().min(1).max(90).default(30) }))
-    .query(async ({ ctx, input }) => {
+    .handler(async ({ context, input }) => {
       const since = new Date();
       since.setDate(since.getDate() - input.days);
 
-      const [
-        newUsers,
-        newVideos,
-        newTags,
-        newLikes,
-        newFavorites,
-      ] = await Promise.all([
-        ctx.prisma.user.count({ where: { createdAt: { gte: since } } }),
-        ctx.prisma.video.count({
-          where: { createdAt: { gte: since }, status: "PUBLISHED" },
-        }),
-        ctx.prisma.tag.count({ where: { createdAt: { gte: since } } }),
-        ctx.prisma.like.count({ where: { createdAt: { gte: since } } }),
-        ctx.prisma.favorite.count({ where: { createdAt: { gte: since } } }),
+      const [newUsers, newVideos, newTags, newLikes, newFavorites] = await Promise.all([
+        context.db.$count(schema.user, and(gte(schema.user.createdAt, since))),
+        context.db.$count(
+          schema.video,
+          and(gte(schema.video.createdAt, since), eq(schema.video.status, "PUBLISHED")),
+        ),
+        context.db.$count(schema.tag, and(gte(schema.tag.createdAt, since))),
+        context.db.$count(schema.like, and(gte(schema.like.createdAt, since))),
+        context.db.$count(schema.favorite, and(gte(schema.favorite.createdAt, since))),
       ]);
 
       return {
@@ -125,7 +93,7 @@ export const adminRouter = router({
   // 增长趋势数据（每日统计）
   getGrowthTrend: protectedProcedure
     .input(z.object({ days: z.number().min(7).max(90).default(30) }))
-    .query(async ({ ctx, input }) => {
+    .handler(async ({ context, input }) => {
       // 使用本地日期避免时区问题
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -133,15 +101,15 @@ export const adminRouter = router({
       since.setDate(since.getDate() - input.days + 1); // +1 确保包含今天
 
       // 获取每日用户注册数
-      const users = await ctx.prisma.user.findMany({
-        where: { createdAt: { gte: since } },
-        select: { createdAt: true },
+      const users = await context.db.query.user.findMany({
+        columns: { createdAt: true },
+        where: and(gte(schema.user.createdAt, since)),
       });
 
       // 获取每日视频发布数
-      const videos = await ctx.prisma.video.findMany({
-        where: { createdAt: { gte: since }, status: "PUBLISHED" },
-        select: { createdAt: true },
+      const videos = await context.db.query.video.findMany({
+        columns: { createdAt: true },
+        where: and(gte(schema.video.createdAt, since), eq(schema.video.status, "PUBLISHED")),
       });
 
       // 按日期分组（使用本地日期格式）
@@ -178,18 +146,18 @@ export const adminRouter = router({
   // ========== 用户管理（站长专用）==========
 
   // 用户统计
-  getUserStats: adminProcedure.query(async ({ ctx }) => {
-    const canView = await hasScope(ctx.prisma, ctx.session.user.id, "user:view");
+  getUserStats: adminProcedure.handler(async ({ context }) => {
+    const canView = await hasScope(context.db, context.session.user.id, "user:view");
     if (!canView) {
-      throw new TRPCError({ code: "FORBIDDEN", message: "无用户查看权限" });
+      throw new ORPCError("FORBIDDEN", { message: "无用户查看权限" });
     }
 
     const [total, users, admins, owners, banned] = await Promise.all([
-      ctx.prisma.user.count(),
-      ctx.prisma.user.count({ where: { role: "USER" } }),
-      ctx.prisma.user.count({ where: { role: "ADMIN" } }),
-      ctx.prisma.user.count({ where: { role: "OWNER" } }),
-      ctx.prisma.user.count({ where: { isBanned: true } }),
+      context.db.$count(schema.user, undefined),
+      context.db.$count(schema.user, and(eq(schema.user.role, "USER"))),
+      context.db.$count(schema.user, and(eq(schema.user.role, "ADMIN"))),
+      context.db.$count(schema.user, and(eq(schema.user.role, "OWNER"))),
+      context.db.$count(schema.user, and(eq(schema.user.isBanned, true))),
     ]);
 
     return { total, users, admins, owners, banned };
@@ -204,32 +172,17 @@ export const adminRouter = router({
         search: z.string().optional(),
         role: z.enum(["ALL", "USER", "ADMIN", "OWNER"]).default("ALL"),
         banned: z.enum(["ALL", "BANNED", "ACTIVE"]).default("ALL"),
-      })
+      }),
     )
-    .query(async ({ ctx, input }) => {
+    .handler(async ({ context, input }) => {
       // 检查权限
-      const canView = await hasScope(ctx.prisma, ctx.session.user.id, "user:view");
+      const canView = await hasScope(context.db, context.session.user.id, "user:view");
       if (!canView) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无用户查看权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无用户查看权限" });
       }
 
-      const users = await ctx.prisma.user.findMany({
-        take: input.limit + 1,
-        cursor: input.cursor ? { id: input.cursor } : undefined,
-        where: {
-          ...(input.role !== "ALL" && { role: input.role }),
-          ...(input.banned === "BANNED" && { isBanned: true }),
-          ...(input.banned === "ACTIVE" && { isBanned: false }),
-          ...(input.search && {
-            OR: [
-              { username: { contains: input.search, mode: "insensitive" } },
-              { nickname: { contains: input.search, mode: "insensitive" } },
-              { email: { contains: input.search, mode: "insensitive" } },
-            ],
-          }),
-        },
-        orderBy: { createdAt: "desc" },
-        select: {
+      const users = await context.db.query.user.findMany({
+        columns: {
           id: true,
           email: true,
           username: true,
@@ -242,14 +195,43 @@ export const adminRouter = router({
           lastIpLocation: true,
           lastGpsLocation: true,
           createdAt: true,
-          _count: { select: { videos: true, comments: true, likes: true } },
         },
+        extras: (row) => ({
+          _count: sql<{
+            videos: number;
+            comments: number;
+            likes: number;
+          }>`json_build_object('videos', (select count(*)::int from "Video" as "count_videos" where "count_videos"."uploaderId" = ${sql`${row.id}`}), 'comments', (select count(*)::int from "Comment" as "count_comments" where "count_comments"."userId" = ${sql`${row.id}`}), 'likes', (select count(*)::int from "Like" as "count_likes" where "count_likes"."userId" = ${sql`${row.id}`}))`.as(
+            "_count",
+          ),
+        }),
+        where: and(
+          and(
+            input.role !== "ALL" ? and(eq(schema.user.role, input.role)) : undefined,
+            input.banned === "BANNED" ? and(eq(schema.user.isBanned, true)) : undefined,
+            input.banned === "ACTIVE" ? and(eq(schema.user.isBanned, false)) : undefined,
+            input.search
+              ? and(
+                  or(
+                    and(ilike(schema.user.username, `%${escapeLike(input.search)}%`)),
+                    and(ilike(schema.user.nickname, `%${escapeLike(input.search)}%`)),
+                    and(ilike(schema.user.email, `%${escapeLike(input.search)}%`)),
+                  ),
+                )
+              : undefined,
+          ),
+          cursorCondition(schema.user, (input.cursor ? { id: input.cursor } : undefined)?.id, [
+            { column: schema.user.createdAt, direction: "desc" },
+          ]),
+        ),
+        orderBy: [desc(schema.user.createdAt), desc(schema.user.id)],
+        limit: input.limit + 1,
       });
 
-      let nextCursor: string | undefined = undefined;
+      let nextCursor: string | undefined;
       if (users.length > input.limit) {
         const nextItem = users.pop();
-        nextCursor = nextItem!.id;
+        nextCursor = nextItem?.id;
       }
 
       return { users, nextCursor };
@@ -258,29 +240,30 @@ export const adminRouter = router({
   // 封禁用户
   banUser: adminProcedure
     .input(z.object({ userId: z.string(), reason: z.string().optional() }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "user:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "user:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无用户管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无用户管理权限" });
       }
 
-      const target = await ctx.prisma.user.findUnique({
-        where: { id: input.userId },
-        select: { role: true },
-      });
+      const target = await context.db.query.user
+        .findFirst({ columns: { role: true }, where: and(eq(schema.user.id, input.userId)) })
+        .then((row) => row ?? null);
 
       if (!target) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+        throw new ORPCError("NOT_FOUND", { message: "用户不存在" });
       }
 
       if (target.role === "OWNER") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "不能封禁站长" });
+        throw new ORPCError("FORBIDDEN", { message: "不能封禁站长" });
       }
 
-      await ctx.prisma.user.update({
-        where: { id: input.userId },
-        data: { isBanned: true, banReason: input.reason, bannedAt: new Date() },
-      });
+      await context.db
+        .update(schema.user)
+        .set({ isBanned: true, banReason: input.reason, bannedAt: new Date() })
+        .where(and(eq(schema.user.id, input.userId)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return { success: true };
     }),
@@ -288,16 +271,18 @@ export const adminRouter = router({
   // 解封用户
   unbanUser: adminProcedure
     .input(z.object({ userId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "user:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "user:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无用户管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无用户管理权限" });
       }
 
-      await ctx.prisma.user.update({
-        where: { id: input.userId },
-        data: { isBanned: false, banReason: null, bannedAt: null },
-      });
+      await context.db
+        .update(schema.user)
+        .set({ isBanned: false, banReason: null, bannedAt: null })
+        .where(and(eq(schema.user.id, input.userId)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return { success: true };
     }),
@@ -305,16 +290,18 @@ export const adminRouter = router({
   // 批量封禁用户
   batchBanUsers: adminProcedure
     .input(z.object({ userIds: z.array(z.string()).min(1).max(100) }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "user:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "user:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无用户管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无用户管理权限" });
       }
 
-      const result = await ctx.prisma.user.updateMany({
-        where: { id: { in: input.userIds }, role: { not: "OWNER" } },
-        data: { isBanned: true, bannedAt: new Date() },
-      });
+      const result = await context.db
+        .update(schema.user)
+        .set({ isBanned: true, bannedAt: new Date() })
+        .where(and(inArray(schema.user.id, input.userIds), ne(schema.user.role, "OWNER")))
+        .returning()
+        .then((rows) => ({ count: rows.length }));
 
       return { success: true, count: result.count };
     }),
@@ -322,16 +309,18 @@ export const adminRouter = router({
   // 批量解封用户
   batchUnbanUsers: adminProcedure
     .input(z.object({ userIds: z.array(z.string()).min(1).max(100) }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "user:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "user:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无用户管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无用户管理权限" });
       }
 
-      const result = await ctx.prisma.user.updateMany({
-        where: { id: { in: input.userIds } },
-        data: { isBanned: false, banReason: null, bannedAt: null },
-      });
+      const result = await context.db
+        .update(schema.user)
+        .set({ isBanned: false, banReason: null, bannedAt: null })
+        .where(and(inArray(schema.user.id, input.userIds)))
+        .returning()
+        .then((rows) => ({ count: rows.length }));
 
       return { success: true, count: result.count };
     }),
@@ -342,35 +331,36 @@ export const adminRouter = router({
       z.object({
         userId: z.string(),
         role: z.enum(["USER", "ADMIN"]),
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
-      if (input.userId === ctx.session.user.id) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "不能修改自己的角色" });
+    .handler(async ({ context, input }) => {
+      if (input.userId === context.session.user.id) {
+        throw new ORPCError("BAD_REQUEST", { message: "不能修改自己的角色" });
       }
 
-      const targetUser = await ctx.prisma.user.findUnique({
-        where: { id: input.userId },
-        select: { role: true },
-      });
+      const targetUser = await context.db.query.user
+        .findFirst({ columns: { role: true }, where: and(eq(schema.user.id, input.userId)) })
+        .then((row) => row ?? null);
 
       if (!targetUser) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+        throw new ORPCError("NOT_FOUND", { message: "用户不存在" });
       }
 
       if (targetUser.role === "OWNER") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "不能修改站长的角色" });
+        throw new ORPCError("FORBIDDEN", { message: "不能修改站长的角色" });
       }
 
-      const user = await ctx.prisma.user.update({
-        where: { id: input.userId },
-        data: {
-          role: input.role,
-          // 降级为普通用户时清空权限
-          ...(input.role === "USER" && { adminScopes: Prisma.DbNull }),
-        },
-        select: { id: true, username: true, role: true, adminScopes: true },
-      });
+      const user = await context.db
+        .update(schema.user)
+        .set({ role: input.role, ...(input.role === "USER" ? { adminScopes: null } : undefined) })
+        .where(and(eq(schema.user.id, input.userId)))
+        .returning({
+          id: schema.user.id,
+          username: schema.user.username,
+          role: schema.user.role,
+          adminScopes: schema.user.adminScopes,
+        })
+        .then((rows) => requiredRow(rows));
 
       return { success: true, user };
     }),
@@ -381,30 +371,35 @@ export const adminRouter = router({
       z.object({
         userId: z.string(),
         scopes: z.array(z.string()),
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const targetUser = await ctx.prisma.user.findUnique({
-        where: { id: input.userId },
-        select: { role: true },
-      });
+    .handler(async ({ context, input }) => {
+      const targetUser = await context.db.query.user
+        .findFirst({ columns: { role: true }, where: and(eq(schema.user.id, input.userId)) })
+        .then((row) => row ?? null);
 
       if (!targetUser) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+        throw new ORPCError("NOT_FOUND", { message: "用户不存在" });
       }
 
       if (targetUser.role !== "ADMIN") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "只能为管理员分配权限" });
+        throw new ORPCError("BAD_REQUEST", { message: "只能为管理员分配权限" });
       }
 
       // 验证权限范围有效性
       const validScopes = input.scopes.filter((s) => s in ADMIN_SCOPES);
 
-      const user = await ctx.prisma.user.update({
-        where: { id: input.userId },
-        data: { adminScopes: validScopes },
-        select: { id: true, username: true, role: true, adminScopes: true },
-      });
+      const user = await context.db
+        .update(schema.user)
+        .set({ adminScopes: validScopes })
+        .where(and(eq(schema.user.id, input.userId)))
+        .returning({
+          id: schema.user.id,
+          username: schema.user.username,
+          role: schema.user.role,
+          adminScopes: schema.user.adminScopes,
+        })
+        .then((rows) => requiredRow(rows));
 
       return { success: true, user };
     }),
@@ -412,17 +407,17 @@ export const adminRouter = router({
   // ========== 视频管理 ==========
 
   // 视频统计
-  getVideoStats: adminProcedure.query(async ({ ctx }) => {
-    const canModerate = await hasScope(ctx.prisma, ctx.session.user.id, "video:moderate");
+  getVideoStats: adminProcedure.handler(async ({ context }) => {
+    const canModerate = await hasScope(context.db, context.session.user.id, "video:moderate");
     if (!canModerate) {
-      throw new TRPCError({ code: "FORBIDDEN", message: "无视频管理权限" });
+      throw new ORPCError("FORBIDDEN", { message: "无视频管理权限" });
     }
 
     const [total, published, pending, rejected] = await Promise.all([
-      ctx.prisma.video.count(),
-      ctx.prisma.video.count({ where: { status: "PUBLISHED" } }),
-      ctx.prisma.video.count({ where: { status: "PENDING" } }),
-      ctx.prisma.video.count({ where: { status: "REJECTED" } }),
+      context.db.$count(schema.video, undefined),
+      context.db.$count(schema.video, and(eq(schema.video.status, "PUBLISHED"))),
+      context.db.$count(schema.video, and(eq(schema.video.status, "PENDING"))),
+      context.db.$count(schema.video, and(eq(schema.video.status, "REJECTED"))),
     ]);
 
     return { total, published, pending, rejected };
@@ -436,40 +431,52 @@ export const adminRouter = router({
         cursor: z.string().nullish(),
         status: z.enum(["ALL", "PENDING", "PUBLISHED", "REJECTED"]).default("ALL"),
         search: z.string().optional(),
-      })
+      }),
     )
-    .query(async ({ ctx, input }) => {
-      const canModerate = await hasScope(ctx.prisma, ctx.session.user.id, "video:moderate");
+    .handler(async ({ context, input }) => {
+      const canModerate = await hasScope(context.db, context.session.user.id, "video:moderate");
       if (!canModerate) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无视频管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无视频管理权限" });
       }
 
-      const videos = await ctx.prisma.video.findMany({
-        take: input.limit + 1,
-        cursor: input.cursor ? { id: input.cursor } : undefined,
-        where: {
-          ...(input.status !== "ALL" && { status: input.status }),
-          ...(input.search && {
-            OR: [
-              { title: { contains: input.search, mode: "insensitive" } },
-              { description: { contains: input.search, mode: "insensitive" } },
-            ],
-          }),
+      const videos = await context.db.query.video.findMany({
+        with: {
+          uploader: { columns: { id: true, username: true, nickname: true, avatar: true } },
+          tags: { with: { tag: true } },
         },
-        orderBy: { createdAt: "desc" },
-        include: {
-          uploader: {
-            select: { id: true, username: true, nickname: true, avatar: true },
-          },
-          tags: { include: { tag: true } },
-          _count: { select: { likes: true, favorites: true, comments: true } },
-        },
+        extras: (row) => ({
+          _count: sql<{
+            likes: number;
+            favorites: number;
+            comments: number;
+          }>`json_build_object('likes', (select count(*)::int from "Like" as "count_likes" where "count_likes"."videoId" = ${sql`${row.id}`}), 'favorites', (select count(*)::int from "Favorite" as "count_favorites" where "count_favorites"."videoId" = ${sql`${row.id}`}), 'comments', (select count(*)::int from "Comment" as "count_comments" where "count_comments"."videoId" = ${sql`${row.id}`}))`.as(
+            "_count",
+          ),
+        }),
+        where: and(
+          and(
+            input.status !== "ALL" ? and(eq(schema.video.status, input.status)) : undefined,
+            input.search
+              ? and(
+                  or(
+                    and(ilike(schema.video.title, `%${escapeLike(input.search)}%`)),
+                    and(ilike(schema.video.description, `%${escapeLike(input.search)}%`)),
+                  ),
+                )
+              : undefined,
+          ),
+          cursorCondition(schema.video, (input.cursor ? { id: input.cursor } : undefined)?.id, [
+            { column: schema.video.createdAt, direction: "desc" },
+          ]),
+        ),
+        orderBy: [desc(schema.video.createdAt), desc(schema.video.id)],
+        limit: input.limit + 1,
       });
 
-      let nextCursor: string | undefined = undefined;
+      let nextCursor: string | undefined;
       if (videos.length > input.limit) {
         const nextItem = videos.pop();
-        nextCursor = nextItem!.id;
+        nextCursor = nextItem?.id;
       }
 
       return { videos, nextCursor };
@@ -481,19 +488,20 @@ export const adminRouter = router({
       z.object({
         videoId: z.string(),
         status: z.enum(["PUBLISHED", "REJECTED"]),
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const canModerate = await hasScope(ctx.prisma, ctx.session.user.id, "video:moderate");
+    .handler(async ({ context, input }) => {
+      const canModerate = await hasScope(context.db, context.session.user.id, "video:moderate");
       if (!canModerate) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无视频审核权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无视频审核权限" });
       }
 
-      const video = await ctx.prisma.video.update({
-        where: { id: input.videoId },
-        data: { status: input.status },
-        select: { id: true, title: true, status: true },
-      });
+      const video = await context.db
+        .update(schema.video)
+        .set({ status: input.status })
+        .where(and(eq(schema.video.id, input.videoId)))
+        .returning({ id: schema.video.id, title: schema.video.title, status: schema.video.status })
+        .then((rows) => requiredRow(rows));
 
       return { success: true, video };
     }),
@@ -501,13 +509,17 @@ export const adminRouter = router({
   // 删除视频（管理员）
   deleteVideo: adminProcedure
     .input(z.object({ videoId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "video:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "video:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无视频管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无视频管理权限" });
       }
 
-      await ctx.prisma.video.delete({ where: { id: input.videoId } });
+      await context.db
+        .delete(schema.video)
+        .where(and(eq(schema.video.id, input.videoId)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return { success: true };
     }),
@@ -518,18 +530,20 @@ export const adminRouter = router({
       z.object({
         videoIds: z.array(z.string()).min(1).max(100),
         status: z.enum(["PUBLISHED", "REJECTED"]),
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const canModerate = await hasScope(ctx.prisma, ctx.session.user.id, "video:moderate");
+    .handler(async ({ context, input }) => {
+      const canModerate = await hasScope(context.db, context.session.user.id, "video:moderate");
       if (!canModerate) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无视频审核权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无视频审核权限" });
       }
 
-      const result = await ctx.prisma.video.updateMany({
-        where: { id: { in: input.videoIds } },
-        data: { status: input.status },
-      });
+      const result = await context.db
+        .update(schema.video)
+        .set({ status: input.status })
+        .where(and(inArray(schema.video.id, input.videoIds)))
+        .returning()
+        .then((rows) => ({ count: rows.length }));
 
       return { success: true, count: result.count };
     }),
@@ -537,15 +551,17 @@ export const adminRouter = router({
   // 批量删除视频
   batchDeleteVideos: adminProcedure
     .input(z.object({ videoIds: z.array(z.string()).min(1).max(100) }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "video:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "video:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无视频管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无视频管理权限" });
       }
 
-      const result = await ctx.prisma.video.deleteMany({
-        where: { id: { in: input.videoIds } },
-      });
+      const result = await context.db
+        .delete(schema.video)
+        .where(and(inArray(schema.video.id, input.videoIds)))
+        .returning()
+        .then((rows) => ({ count: rows.length }));
 
       return { success: true, count: result.count };
     }),
@@ -553,14 +569,21 @@ export const adminRouter = router({
   // ========== 标签管理 ==========
 
   // 标签统计
-  getTagStats: adminProcedure.query(async ({ ctx }) => {
-    const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "tag:manage");
+  getTagStats: adminProcedure.handler(async ({ context }) => {
+    const canManage = await hasScope(context.db, context.session.user.id, "tag:manage");
     if (!canManage) {
-      throw new TRPCError({ code: "FORBIDDEN", message: "无标签管理权限" });
+      throw new ORPCError("FORBIDDEN", { message: "无标签管理权限" });
     }
 
-    const tags = await ctx.prisma.tag.findMany({
-      select: { _count: { select: { videos: true } } },
+    const tags = await context.db.query.tag.findMany({
+      columns: {},
+      extras: (row) => ({
+        _count: sql<{
+          videos: number;
+        }>`json_build_object('videos', (select count(*)::int from "TagOnVideo" as "count_videos" where "count_videos"."tagId" = ${sql`${row.id}`}))`.as(
+          "_count",
+        ),
+      }),
     });
 
     const total = tags.length;
@@ -576,29 +599,38 @@ export const adminRouter = router({
       z.object({
         name: z.string().min(1).max(50),
         slug: z.string().min(1).max(50).optional(),
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "tag:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "tag:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无标签管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无标签管理权限" });
       }
 
       // 生成 slug
-      const slug = input.slug || input.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-\u4e00-\u9fa5]/g, "");
+      const slug =
+        input.slug ||
+        input.name
+          .toLowerCase()
+          .replace(/\s+/g, "-")
+          .replace(/[^a-z0-9-\u4e00-\u9fa5]/g, "");
 
       // 检查是否已存在
-      const existing = await ctx.prisma.tag.findFirst({
-        where: { OR: [{ name: input.name }, { slug }] },
-      });
+      const existing = await context.db.query.tag
+        .findFirst({
+          where: and(or(and(eq(schema.tag.name, input.name)), and(eq(schema.tag.slug, slug)))),
+        })
+        .then((row) => row ?? null);
 
       if (existing) {
-        throw new TRPCError({ code: "CONFLICT", message: "标签名称或 slug 已存在" });
+        throw new ORPCError("CONFLICT", { message: "标签名称或 slug 已存在" });
       }
 
-      const tag = await ctx.prisma.tag.create({
-        data: { name: input.name, slug },
-      });
+      const tag = await context.db
+        .insert(schema.tag)
+        .values({ name: input.name, slug: slug })
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return { success: true, tag };
     }),
@@ -610,35 +642,43 @@ export const adminRouter = router({
         limit: z.number().min(1).max(100).default(50),
         cursor: z.string().nullish(),
         search: z.string().optional(),
-      })
+      }),
     )
-    .query(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "tag:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "tag:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无标签管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无标签管理权限" });
       }
 
-      const tags = await ctx.prisma.tag.findMany({
-        take: input.limit + 1,
-        cursor: input.cursor ? { id: input.cursor } : undefined,
-        where: input.search
-          ? {
-              OR: [
-                { name: { contains: input.search, mode: "insensitive" } },
-                { slug: { contains: input.search, mode: "insensitive" } },
-              ],
-            }
-          : undefined,
-        orderBy: { createdAt: "desc" },
-        include: {
-          _count: { select: { videos: true } },
-        },
+      const tags = await context.db.query.tag.findMany({
+        extras: (row) => ({
+          _count: sql<{
+            videos: number;
+          }>`json_build_object('videos', (select count(*)::int from "TagOnVideo" as "count_videos" where "count_videos"."tagId" = ${sql`${row.id}`}))`.as(
+            "_count",
+          ),
+        }),
+        where: and(
+          input.search
+            ? and(
+                or(
+                  and(ilike(schema.tag.name, `%${escapeLike(input.search)}%`)),
+                  and(ilike(schema.tag.slug, `%${escapeLike(input.search)}%`)),
+                ),
+              )
+            : undefined,
+          cursorCondition(schema.tag, (input.cursor ? { id: input.cursor } : undefined)?.id, [
+            { column: schema.tag.createdAt, direction: "desc" },
+          ]),
+        ),
+        orderBy: [desc(schema.tag.createdAt), desc(schema.tag.id)],
+        limit: input.limit + 1,
       });
 
-      let nextCursor: string | undefined = undefined;
+      let nextCursor: string | undefined;
       if (tags.length > input.limit) {
         const nextItem = tags.pop();
-        nextCursor = nextItem!.id;
+        nextCursor = nextItem?.id;
       }
 
       return { tags, nextCursor };
@@ -651,20 +691,22 @@ export const adminRouter = router({
         tagId: z.string(),
         name: z.string().min(1).max(50).optional(),
         slug: z.string().min(1).max(50).optional(),
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "tag:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "tag:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无标签管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无标签管理权限" });
       }
 
       const { tagId, ...data } = input;
 
-      const tag = await ctx.prisma.tag.update({
-        where: { id: tagId },
-        data,
-      });
+      const tag = await context.db
+        .update(schema.tag)
+        .set(data)
+        .where(and(eq(schema.tag.id, tagId)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return { success: true, tag };
     }),
@@ -672,13 +714,17 @@ export const adminRouter = router({
   // 删除标签
   deleteTag: adminProcedure
     .input(z.object({ tagId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "tag:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "tag:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无标签管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无标签管理权限" });
       }
 
-      await ctx.prisma.tag.delete({ where: { id: input.tagId } });
+      await context.db
+        .delete(schema.tag)
+        .where(and(eq(schema.tag.id, input.tagId)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return { success: true };
     }),
@@ -686,15 +732,17 @@ export const adminRouter = router({
   // 批量删除标签
   batchDeleteTags: adminProcedure
     .input(z.object({ tagIds: z.array(z.string()).min(1).max(100) }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "tag:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "tag:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无标签管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无标签管理权限" });
       }
 
-      const result = await ctx.prisma.tag.deleteMany({
-        where: { id: { in: input.tagIds } },
-      });
+      const result = await context.db
+        .delete(schema.tag)
+        .where(and(inArray(schema.tag.id, input.tagIds)))
+        .returning()
+        .then((rows) => ({ count: rows.length }));
 
       return { success: true, count: result.count };
     }),
@@ -705,52 +753,71 @@ export const adminRouter = router({
       z.object({
         sourceTagIds: z.array(z.string()).min(1).max(100),
         targetTagId: z.string(),
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "tag:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "tag:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无标签管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无标签管理权限" });
       }
 
-      // 获取目标标签
-      const targetTag = await ctx.prisma.tag.findUnique({
-        where: { id: input.targetTagId },
-      });
+      if (input.sourceTagIds.includes(input.targetTagId))
+        throw new ORPCError("BAD_REQUEST", { message: "源标签不能包含目标标签" });
+      return context.db.transaction(async (tx) => {
+        // 获取目标标签
+        const targetTag = await tx.query.tag
+          .findFirst({ where: and(eq(schema.tag.id, input.targetTagId)) })
+          .then((row) => row ?? null);
 
-      if (!targetTag) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "目标标签不存在" });
-      }
+        if (!targetTag) {
+          throw new ORPCError("NOT_FOUND", { message: "目标标签不存在" });
+        }
 
-      // 获取所有源标签关联的视频
-      const sourceVideos = await ctx.prisma.video.findMany({
-        where: {
-          tags: { some: { tagId: { in: input.sourceTagIds } } },
-        },
-        select: { id: true },
-      });
-
-      // 将这些视频关联到目标标签
-      for (const video of sourceVideos) {
-        // 添加目标标签关联
-        await ctx.prisma.tagOnVideo.upsert({
-          where: { videoId_tagId: { videoId: video.id, tagId: input.targetTagId } },
-          create: { videoId: video.id, tagId: input.targetTagId },
-          update: {},
+        // 获取所有源标签关联的视频
+        const sourceVideos = await tx.query.video.findMany({
+          columns: { id: true },
+          where: and(
+            exists(
+              sql`(select 1 from "TagOnVideo" as "rel_1" where ${and(eq(sql`"rel_1"."videoId"`, schema.video.id), and(inArray(sql`"rel_1"."tagId"`, input.sourceTagIds)))})`,
+            ),
+          ),
         });
-        
-        // 删除源标签关联
-        await ctx.prisma.tagOnVideo.deleteMany({
-          where: { videoId: video.id, tagId: { in: input.sourceTagIds } },
-        });
-      }
 
-      // 删除源标签
-      await ctx.prisma.tag.deleteMany({
-        where: { id: { in: input.sourceTagIds } },
+        // 将这些视频关联到目标标签
+        for (const video of sourceVideos) {
+          // 添加目标标签关联
+          await tx
+            .insert(schema.tagOnVideo)
+            .values({ videoId: video.id, tagId: input.targetTagId })
+            .onConflictDoUpdate({
+              target: [schema.tagOnVideo.videoId, schema.tagOnVideo.tagId],
+              set: { videoId: schema.tagOnVideo.videoId },
+            })
+            .returning()
+            .then((rows) => requiredRow(rows));
+
+          // 删除源标签关联
+          await tx
+            .delete(schema.tagOnVideo)
+            .where(
+              and(
+                eq(schema.tagOnVideo.videoId, video.id),
+                inArray(schema.tagOnVideo.tagId, input.sourceTagIds),
+              ),
+            )
+            .returning()
+            .then((rows) => ({ count: rows.length }));
+        }
+
+        // 删除源标签
+        await tx
+          .delete(schema.tag)
+          .where(and(inArray(schema.tag.id, input.sourceTagIds)))
+          .returning()
+          .then((rows) => ({ count: rows.length }));
+
+        return { success: true, mergedCount: input.sourceTagIds.length };
       });
-
-      return { success: true, mergedCount: input.sourceTagIds.length };
     }),
 
   // ========== 评论管理 ==========
@@ -763,50 +830,54 @@ export const adminRouter = router({
         cursor: z.string().nullish(),
         search: z.string().optional(),
         status: z.enum(["ALL", "VISIBLE", "HIDDEN", "DELETED"]).default("ALL"),
-      })
+      }),
     )
-    .query(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "comment:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无评论管理权限" });
       }
 
-      const where = {
-        ...(input.search && {
-          OR: [
-            { content: { contains: input.search, mode: "insensitive" as const } },
-            { user: { username: { contains: input.search, mode: "insensitive" as const } } },
-            { user: { nickname: { contains: input.search, mode: "insensitive" as const } } },
-            { video: { title: { contains: input.search, mode: "insensitive" as const } } },
-          ],
-        }),
-        ...(input.status === "VISIBLE" && { isDeleted: false, isHidden: false }),
-        ...(input.status === "HIDDEN" && { isHidden: true, isDeleted: false }),
-        ...(input.status === "DELETED" && { isDeleted: true }),
-      };
+      const where = and(
+        input.search
+          ? or(
+              ilike(schema.comment.content, `%${escapeLike(input.search)}%`),
+              exists(
+                sql`(select 1 from "User" as "comment_author" where "comment_author"."id" = ${schema.comment.userId} and ("comment_author"."username" ilike ${`%${escapeLike(input.search)}%`} or "comment_author"."nickname" ilike ${`%${escapeLike(input.search)}%`}))`,
+              ),
+              exists(
+                sql`(select 1 from "Video" as "comment_video" where "comment_video"."id" = ${schema.comment.videoId} and "comment_video"."title" ilike ${`%${escapeLike(input.search)}%`})`,
+              ),
+            )
+          : undefined,
+        input.status === "VISIBLE"
+          ? and(eq(schema.comment.isDeleted, false), eq(schema.comment.isHidden, false))
+          : undefined,
+        input.status === "HIDDEN"
+          ? and(eq(schema.comment.isHidden, true), eq(schema.comment.isDeleted, false))
+          : undefined,
+        input.status === "DELETED" ? eq(schema.comment.isDeleted, true) : undefined,
+      );
 
-      type AdminComment = Prisma.CommentGetPayload<{
-        include: {
-          user: { select: { id: true; username: true; nickname: true; avatar: true } };
-          video: { select: { id: true; title: true } };
-        };
-      }>;
-
-      const comments = (await ctx.prisma.comment.findMany({
-        take: input.limit + 1,
-        cursor: input.cursor ? { id: input.cursor } : undefined,
-        where,
-        orderBy: { createdAt: "desc" },
-        include: {
-          user: { select: { id: true, username: true, nickname: true, avatar: true } },
-          video: { select: { id: true, title: true } },
+      const comments = await context.db.query.comment.findMany({
+        with: {
+          user: { columns: { id: true, username: true, nickname: true, avatar: true } },
+          video: { columns: { id: true, title: true } },
         },
-      })) as AdminComment[];
+        where: and(
+          where,
+          cursorCondition(schema.comment, (input.cursor ? { id: input.cursor } : undefined)?.id, [
+            { column: schema.comment.createdAt, direction: "desc" },
+          ]),
+        ),
+        orderBy: [desc(schema.comment.createdAt), desc(schema.comment.id)],
+        limit: input.limit + 1,
+      });
 
-      let nextCursor: string | undefined = undefined;
+      let nextCursor: string | undefined;
       if (comments.length > input.limit) {
         const nextItem = comments.pop();
-        nextCursor = nextItem!.id;
+        nextCursor = nextItem?.id;
       }
 
       return { comments, nextCursor };
@@ -815,16 +886,18 @@ export const adminRouter = router({
   // 隐藏/显示评论
   toggleCommentHidden: adminProcedure
     .input(z.object({ commentId: z.string(), isHidden: z.boolean() }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "comment:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无评论管理权限" });
       }
 
-      await ctx.prisma.comment.update({
-        where: { id: input.commentId },
-        data: { isHidden: input.isHidden },
-      });
+      await context.db
+        .update(schema.comment)
+        .set({ isHidden: input.isHidden })
+        .where(and(eq(schema.comment.id, input.commentId)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return { success: true };
     }),
@@ -832,16 +905,18 @@ export const adminRouter = router({
   // 删除评论（软删除）
   deleteComment: adminProcedure
     .input(z.object({ commentId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "comment:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无评论管理权限" });
       }
 
-      await ctx.prisma.comment.update({
-        where: { id: input.commentId },
-        data: { isDeleted: true },
-      });
+      await context.db
+        .update(schema.comment)
+        .set({ isDeleted: true })
+        .where(and(eq(schema.comment.id, input.commentId)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return { success: true };
     }),
@@ -849,32 +924,40 @@ export const adminRouter = router({
   // 恢复评论
   restoreComment: adminProcedure
     .input(z.object({ commentId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "comment:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无评论管理权限" });
       }
 
-      await ctx.prisma.comment.update({
-        where: { id: input.commentId },
-        data: { isDeleted: false },
-      });
+      await context.db
+        .update(schema.comment)
+        .set({ isDeleted: false })
+        .where(and(eq(schema.comment.id, input.commentId)))
+        .returning()
+        .then((rows) => requiredRow(rows));
 
       return { success: true };
     }),
 
   // 评论统计
-  getCommentStats: adminProcedure.query(async ({ ctx }) => {
-    const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+  getCommentStats: adminProcedure.handler(async ({ context }) => {
+    const canManage = await hasScope(context.db, context.session.user.id, "comment:manage");
     if (!canManage) {
-      throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+      throw new ORPCError("FORBIDDEN", { message: "无评论管理权限" });
     }
 
     const [total, visible, hidden, deleted] = await Promise.all([
-      ctx.prisma.comment.count(),
-      ctx.prisma.comment.count({ where: { isDeleted: false, isHidden: false } }),
-      ctx.prisma.comment.count({ where: { isHidden: true, isDeleted: false } }),
-      ctx.prisma.comment.count({ where: { isDeleted: true } }),
+      context.db.$count(schema.comment, undefined),
+      context.db.$count(
+        schema.comment,
+        and(eq(schema.comment.isDeleted, false), eq(schema.comment.isHidden, false)),
+      ),
+      context.db.$count(
+        schema.comment,
+        and(eq(schema.comment.isHidden, true), eq(schema.comment.isDeleted, false)),
+      ),
+      context.db.$count(schema.comment, and(eq(schema.comment.isDeleted, true))),
     ]);
 
     return { total, visible, hidden, deleted };
@@ -886,86 +969,106 @@ export const adminRouter = router({
       z.object({
         commentIds: z.array(z.string()).min(1).max(100),
         action: z.enum(["hide", "show", "delete", "restore"]),
-      })
+      }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "comment:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无评论管理权限" });
       }
 
-      const data = (() => {
-        switch (input.action) {
-          case "hide":
-            return { isHidden: true };
-          case "show":
-            return { isHidden: false };
-          case "delete":
-            return { isDeleted: true };
-          case "restore":
-            return { isDeleted: false };
-        }
-      })();
+      return context.db.transaction(async (tx) => {
+        const data = (() => {
+          switch (input.action) {
+            case "hide":
+              return { isHidden: true };
+            case "show":
+              return { isHidden: false };
+            case "delete":
+              return { isDeleted: true };
+            case "restore":
+              return { isDeleted: false };
+          }
+        })();
 
-      const result = await ctx.prisma.comment.updateMany({
-        where: { id: { in: input.commentIds } },
-        data,
+        const result = await tx
+          .update(schema.comment)
+          .set(data)
+          .where(and(inArray(schema.comment.id, input.commentIds)))
+          .returning()
+          .then((rows) => ({ count: rows.length }));
+
+        return { success: true, count: result.count };
       });
-
-      return { success: true, count: result.count };
     }),
 
   // 硬删除评论（彻底删除）
   hardDeleteComment: adminProcedure
     .input(z.object({ commentId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "comment:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无评论管理权限" });
       }
 
-      // 先删除所有子评论（回复）
-      await ctx.prisma.comment.deleteMany({
-        where: { parentId: input.commentId },
-      });
+      return context.db.transaction(async (tx) => {
+        // 先删除所有子评论（回复）
+        await tx
+          .delete(schema.comment)
+          .where(and(eq(schema.comment.parentId, input.commentId)))
+          .returning()
+          .then((rows) => ({ count: rows.length }));
 
-      // 删除评论的所有反应
-      await ctx.prisma.commentReaction.deleteMany({
-        where: { commentId: input.commentId },
-      });
+        // 删除评论的所有反应
+        await tx
+          .delete(schema.commentReaction)
+          .where(and(eq(schema.commentReaction.commentId, input.commentId)))
+          .returning()
+          .then((rows) => ({ count: rows.length }));
 
-      // 删除评论本身
-      await ctx.prisma.comment.delete({
-        where: { id: input.commentId },
-      });
+        // 删除评论本身
+        await tx
+          .delete(schema.comment)
+          .where(and(eq(schema.comment.id, input.commentId)))
+          .returning()
+          .then((rows) => requiredRow(rows));
 
-      return { success: true };
+        return { success: true };
+      });
     }),
 
   // 批量硬删除评论
   batchHardDeleteComments: adminProcedure
     .input(z.object({ commentIds: z.array(z.string()).min(1).max(100) }))
-    .mutation(async ({ ctx, input }) => {
-      const canManage = await hasScope(ctx.prisma, ctx.session.user.id, "comment:manage");
+    .handler(async ({ context, input }) => {
+      const canManage = await hasScope(context.db, context.session.user.id, "comment:manage");
       if (!canManage) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "无评论管理权限" });
+        throw new ORPCError("FORBIDDEN", { message: "无评论管理权限" });
       }
 
-      // 先删除所有子评论
-      await ctx.prisma.comment.deleteMany({
-        where: { parentId: { in: input.commentIds } },
-      });
+      return context.db.transaction(async (tx) => {
+        // 先删除所有子评论
+        await tx
+          .delete(schema.comment)
+          .where(and(inArray(schema.comment.parentId, input.commentIds)))
+          .returning()
+          .then((rows) => ({ count: rows.length }));
 
-      // 删除评论的所有反应
-      await ctx.prisma.commentReaction.deleteMany({
-        where: { commentId: { in: input.commentIds } },
-      });
+        // 删除评论的所有反应
+        await tx
+          .delete(schema.commentReaction)
+          .where(and(inArray(schema.commentReaction.commentId, input.commentIds)))
+          .returning()
+          .then((rows) => ({ count: rows.length }));
 
-      // 删除评论
-      const result = await ctx.prisma.comment.deleteMany({
-        where: { id: { in: input.commentIds } },
-      });
+        // 删除评论
+        const result = await tx
+          .delete(schema.comment)
+          .where(and(inArray(schema.comment.id, input.commentIds)))
+          .returning()
+          .then((rows) => ({ count: rows.length }));
 
-      return { success: true, count: result.count };
+        return { success: true, count: result.count };
+      });
     }),
-});
+};

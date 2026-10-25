@@ -1,35 +1,35 @@
-"use client";
+import { useLocation, useNavigate } from "react-router";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+("use client");
+
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useInView } from "react-intersection-observer";
-import { useSession } from "next-auth/react";
-import { useRouter, usePathname } from "next/navigation";
+import { useSession } from "@/lib/auth-client";
 
 // 从 usehooks-ts 导出常用 hooks
 export {
-  useIsMounted,
-  useEventListener,
-  useOnClickOutside,
+  useBoolean,
   useCopyToClipboard,
-  useWindowSize,
-  useScrollLock,
-  useIsClient,
+  useCounter,
   useDocumentTitle,
+  useEventListener,
+  useHover,
   useInterval,
+  useIsClient,
+  useIsMounted,
+  useOnClickOutside,
+  useScrollLock,
+  useStep,
   useTimeout,
   useToggle,
-  useCounter,
-  useBoolean,
-  useStep,
-  useHover,
+  useWindowSize,
 } from "usehooks-ts";
 
 // ==================== useStableSession ====================
 /**
  * 稳定的 Session Hook
  * 包装 useSession，提供统一的 API
- * Session 稳定性主要通过 Service Worker 排除 auth API 缓存和
- * SessionProvider 的 refetchInterval/refetchOnWindowFocus 配置来保证
+ * 会话状态、刷新与撤销由 Better Auth 客户端统一维护
  */
 export function useStableSession() {
   const { data: session, status } = useSession();
@@ -73,14 +73,9 @@ export function useInfiniteScroll(
   fetchNextPage: () => void,
   hasNextPage: boolean | undefined,
   isFetchingNextPage: boolean,
-  options: UseInfiniteScrollOptions = {}
+  options: UseInfiniteScrollOptions = {},
 ): UseInfiniteScrollReturn {
-  const {
-    enabled = true,
-    threshold = 0,
-    rootMargin = "100px",
-    debounceMs = 100,
-  } = options;
+  const { enabled = true, threshold = 0, rootMargin = "100px", debounceMs = 100 } = options;
 
   const lastFetchTime = useRef(0);
 
@@ -134,18 +129,12 @@ interface UseRequireAuthReturn {
  * 认证检查 hook
  * 自动处理未登录用户的重定向
  */
-export function useRequireAuth(
-  options: UseRequireAuthOptions = {}
-): UseRequireAuthReturn {
-  const {
-    redirectTo = "/login",
-    includeCallback = true,
-    callbackUrl,
-  } = options;
+export function useRequireAuth(options: UseRequireAuthOptions = {}): UseRequireAuthReturn {
+  const { redirectTo = "/login", includeCallback = true, callbackUrl } = options;
 
   const { data: session, status } = useSession();
-  const router = useRouter();
-  const pathname = usePathname();
+  const navigate = useNavigate();
+  const pathname = useLocation().pathname;
 
   const isLoading = status === "loading";
   const isAuthenticated = status === "authenticated";
@@ -157,9 +146,9 @@ export function useRequireAuth(
         const callback = callbackUrl || pathname;
         url = `${redirectTo}?callbackUrl=${encodeURIComponent(callback)}`;
       }
-      router.push(url);
+      navigate(url);
     }
-  }, [status, router, redirectTo, includeCallback, callbackUrl, pathname]);
+  }, [status, navigate, redirectTo, includeCallback, callbackUrl, pathname]);
 
   return {
     session,
@@ -268,7 +257,7 @@ export function useDeviceInfo(): UseDeviceInfoReturn {
           enableHighAccuracy: false,
           timeout: 5000,
           maximumAge: 300000, // 5 分钟缓存
-        }
+        },
       );
     });
   }, []);
@@ -306,7 +295,7 @@ export function useDebounce<T>(value: T, delay: number): T {
 
 export function useLocalStorage<T>(
   key: string,
-  initialValue: T
+  initialValue: T,
 ): [T, (value: T | ((prev: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
     if (typeof window === "undefined") return initialValue;
@@ -330,7 +319,7 @@ export function useLocalStorage<T>(
         console.error("Error saving to localStorage:", error);
       }
     },
-    [key, storedValue]
+    [key, storedValue],
   );
 
   return [storedValue, setValue];
@@ -359,7 +348,7 @@ export function useMediaQuery(query: string): boolean {
       mediaQuery.addEventListener("change", callback);
       return () => mediaQuery.removeEventListener("change", callback);
     },
-    [query]
+    [query],
   );
 
   const getSnapshot = useCallback(() => {

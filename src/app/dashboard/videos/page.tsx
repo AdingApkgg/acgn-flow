@@ -1,23 +1,28 @@
-"use client";
-
-import { useState, useCallback, useMemo } from "react";
-import Link from "next/link";
-import Image from "next/image";
-import { trpc } from "@/lib/trpc";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Checkbox } from "@/components/ui/checkbox";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Calendar,
+  CheckCircle,
+  CheckSquare,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Edit,
+  ExternalLink,
+  Eye,
+  Heart,
+  Loader2,
+  MessageSquare,
+  Search,
+  Square,
+  Star,
+  Tag,
+  Trash2,
+  Video,
+  XCircle,
+} from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Link } from "react-router";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,34 +33,25 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
 import {
-  Collapsible,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
-import { toast } from "sonner";
-import {
-  Video,
-  Search,
-  Eye,
-  Heart,
-  CheckCircle,
-  XCircle,
-  Trash2,
-  Loader2,
-  ExternalLink,
-  ChevronDown,
-  ChevronUp,
-  CheckSquare,
-  Square,
-  Calendar,
-  Clock,
-  Tag,
-  MessageSquare,
-  Star,
-  Edit,
-} from "lucide-react";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton, skeletonKeys } from "@/components/ui/skeleton";
+import { formatDuration, formatRelativeTime } from "@/lib/format";
+import { orpc } from "@/lib/orpc";
 import { cn } from "@/lib/utils";
-import { formatRelativeTime, formatDuration } from "@/lib/format";
+import { pageMeta } from "@/routes/metadata";
 
 type VideoStatus = "PENDING" | "PUBLISHED" | "REJECTED";
 
@@ -91,65 +87,85 @@ export default function AdminVideosPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [batchAction, setBatchAction] = useState<"delete" | null>(null);
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const { data: permissions } = trpc.admin.getMyPermissions.useQuery();
-  const { data: stats } = trpc.admin.getVideoStats.useQuery(undefined, {
-    enabled: permissions?.scopes.includes("video:moderate"),
-  });
+  const { data: permissions } = useQuery(
+    orpc.admin.getMyPermissions.queryOptions({ input: undefined, ...{} }),
+  );
+  const { data: stats } = useQuery(
+    orpc.admin.getVideoStats.queryOptions({
+      input: undefined,
+      ...{
+        enabled: permissions?.scopes.includes("video:moderate"),
+      },
+    }),
+  );
 
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    trpc.admin.listAllVideos.useInfiniteQuery(
-      { limit: 20, search: search || undefined, status: statusFilter },
-      {
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery(
+    orpc.admin.listAllVideos.infiniteOptions({
+      input: (cursor: string | undefined) => ({
+        ...{ limit: 20, search: search || undefined, status: statusFilter },
+        cursor,
+      }),
+      initialPageParam: undefined as string | undefined,
+      ...{
         getNextPageParam: (lastPage) => lastPage.nextCursor,
         enabled: permissions?.scopes.includes("video:moderate"),
-      }
-    );
+      },
+    }),
+  );
 
-  const moderateMutation = trpc.admin.moderateVideo.useMutation({
-    onSuccess: (_, variables) => {
-      toast.success(variables.status === "PUBLISHED" ? "视频已通过审核" : "视频已拒绝");
-      utils.admin.listAllVideos.invalidate();
-      utils.admin.getVideoStats.invalidate();
-    },
-    onError: (error) => toast.error(error.message || "操作失败"),
-  });
+  const moderateMutation = useMutation(
+    orpc.admin.moderateVideo.mutationOptions({
+      onSuccess: (_, variables) => {
+        toast.success(variables.status === "PUBLISHED" ? "视频已通过审核" : "视频已拒绝");
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listAllVideos.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getVideoStats.key() });
+      },
+      onError: (error) => toast.error(error.message || "操作失败"),
+    }),
+  );
 
-  const deleteMutation = trpc.admin.deleteVideo.useMutation({
-    onSuccess: () => {
-      toast.success("视频已删除");
-      utils.admin.listAllVideos.invalidate();
-      utils.admin.getVideoStats.invalidate();
-      setDeletingId(null);
-    },
-    onError: (error) => toast.error(error.message || "删除失败"),
-  });
+  const deleteMutation = useMutation(
+    orpc.admin.deleteVideo.mutationOptions({
+      onSuccess: () => {
+        toast.success("视频已删除");
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listAllVideos.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getVideoStats.key() });
+        setDeletingId(null);
+      },
+      onError: (error) => toast.error(error.message || "删除失败"),
+    }),
+  );
 
-  const batchModerateMutation = trpc.admin.batchModerateVideos.useMutation({
-    onSuccess: (result) => {
-      toast.success(`已处理 ${result.count} 个视频`);
-      utils.admin.listAllVideos.invalidate();
-      utils.admin.getVideoStats.invalidate();
-      setSelectedIds(new Set());
-    },
-    onError: (error) => toast.error(error.message || "批量操作失败"),
-  });
+  const batchModerateMutation = useMutation(
+    orpc.admin.batchModerateVideos.mutationOptions({
+      onSuccess: (result) => {
+        toast.success(`已处理 ${result.count} 个视频`);
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listAllVideos.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getVideoStats.key() });
+        setSelectedIds(new Set());
+      },
+      onError: (error) => toast.error(error.message || "批量操作失败"),
+    }),
+  );
 
-  const batchDeleteMutation = trpc.admin.batchDeleteVideos.useMutation({
-    onSuccess: (result) => {
-      toast.success(`已删除 ${result.count} 个视频`);
-      utils.admin.listAllVideos.invalidate();
-      utils.admin.getVideoStats.invalidate();
-      setSelectedIds(new Set());
-      setBatchAction(null);
-    },
-    onError: (error) => toast.error(error.message || "批量删除失败"),
-  });
+  const batchDeleteMutation = useMutation(
+    orpc.admin.batchDeleteVideos.mutationOptions({
+      onSuccess: (result) => {
+        toast.success(`已删除 ${result.count} 个视频`);
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listAllVideos.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getVideoStats.key() });
+        setSelectedIds(new Set());
+        setBatchAction(null);
+      },
+      onError: (error) => toast.error(error.message || "批量删除失败"),
+    }),
+  );
 
   const videos = useMemo(
     () => (data?.pages.flatMap((page) => page.videos) || []) as unknown as VideoItem[],
-    [data?.pages]
+    [data?.pages],
   );
 
   const toggleSelect = useCallback((id: string) => {
@@ -269,12 +285,7 @@ export default function AdminVideosPage() {
       {/* 批量操作栏 */}
       {videos.length > 0 && (
         <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleSelectAll}
-            className="gap-1"
-          >
+          <Button variant="ghost" size="sm" onClick={toggleSelectAll} className="gap-1">
             {selectedIds.size === videos.length && videos.length > 0 ? (
               <CheckSquare className="h-4 w-4" />
             ) : (
@@ -285,9 +296,7 @@ export default function AdminVideosPage() {
 
           {selectedIds.size > 0 && (
             <>
-              <span className="text-sm text-muted-foreground">
-                已选 {selectedIds.size} 个
-              </span>
+              <span className="text-sm text-muted-foreground">已选 {selectedIds.size} 个</span>
               <div className="flex items-center gap-2 ml-auto">
                 <Button
                   variant="outline"
@@ -339,8 +348,8 @@ export default function AdminVideosPage() {
       {/* 视频列表 */}
       {isLoading ? (
         <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 w-full" />
+          {skeletonKeys(5).map((skeletonKey) => (
+            <Skeleton key={skeletonKey} className="h-32 w-full" />
           ))}
         </div>
       ) : videos.length === 0 ? (
@@ -358,10 +367,7 @@ export default function AdminVideosPage() {
             return (
               <Card
                 key={video.id}
-                className={cn(
-                  "transition-colors",
-                  isSelected && "ring-2 ring-primary"
-                )}
+                className={cn("transition-colors", isSelected && "ring-2 ring-primary")}
               >
                 <CardContent className="p-4">
                   <div className="flex gap-4">
@@ -374,11 +380,10 @@ export default function AdminVideosPage() {
                     {/* 封面 */}
                     <div className="relative w-40 h-24 rounded-lg bg-muted overflow-hidden shrink-0">
                       {video.coverUrl ? (
-                        <Image
+                        <img
                           src={video.coverUrl}
                           alt={video.title}
-                          fill
-                          className="object-cover"
+                          className="absolute inset-0 w-full h-full object-cover"
                           sizes="160px"
                         />
                       ) : (
@@ -398,7 +403,7 @@ export default function AdminVideosPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <Link
-                            href={`/video/${video.id}`}
+                            to={`/video/${video.id}`}
                             className="font-medium hover:underline line-clamp-1"
                           >
                             {video.title}
@@ -407,10 +412,12 @@ export default function AdminVideosPage() {
                             <Avatar className="h-5 w-5">
                               <AvatarImage src={video.uploader.avatar || undefined} />
                               <AvatarFallback className="text-xs">
-                                {(video.uploader.nickname || video.uploader.username).charAt(0).toUpperCase()}
+                                {(video.uploader.nickname || video.uploader.username)
+                                  .charAt(0)
+                                  .toUpperCase()}
                               </AvatarFallback>
                             </Avatar>
-                            <Link href={`/user/${video.uploader.id}`} className="hover:underline">
+                            <Link to={`/user/${video.uploader.id}`} className="hover:underline">
                               {video.uploader.nickname || video.uploader.username}
                             </Link>
                             <span>·</span>
@@ -441,13 +448,13 @@ export default function AdminVideosPage() {
                       {/* 操作按钮 */}
                       <div className="flex items-center gap-1 mt-2">
                         <Button variant="ghost" size="sm" asChild>
-                          <Link href={`/video/${video.id}`} target="_blank">
+                          <Link to={`/video/${video.id}`} target="_blank">
                             <ExternalLink className="h-3 w-3 mr-1" />
                             查看
                           </Link>
                         </Button>
                         <Button variant="ghost" size="sm" asChild>
-                          <Link href={`/video/edit/${video.id}`}>
+                          <Link to={`/video/edit/${video.id}`}>
                             <Edit className="h-3 w-3 mr-1" />
                             编辑
                           </Link>
@@ -579,9 +586,7 @@ export default function AdminVideosPage() {
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
               >
-                {isFetchingNextPage ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
+                {isFetchingNextPage ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 加载更多
               </Button>
             </div>
@@ -634,3 +639,6 @@ export default function AdminVideosPage() {
     </div>
   );
 }
+
+export const meta = () =>
+  pageMeta("视频管理", "管理站点视频", "/dashboard/videos", { noindex: true });

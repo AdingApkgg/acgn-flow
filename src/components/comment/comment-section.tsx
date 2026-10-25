@@ -1,12 +1,12 @@
-"use client";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowUpDown, MessageSquare } from "lucide-react";
 
-import { useState, useCallback, useEffect } from "react";
-import { useSession } from "next-auth/react";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
+import { toast } from "sonner";
+import { useIsMounted } from "@/components/motion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -14,13 +14,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MessageSquare, ArrowUpDown } from "lucide-react";
-import { toast } from "sonner";
+import { Skeleton, skeletonKeys } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { useSession } from "@/lib/auth-client";
+import {
+  type DeviceInfo,
+  getHighEntropyDeviceInfo,
+  mergeDeviceInfo,
+  parseDeviceInfo,
+} from "@/lib/device-info";
+import { formatGpsLocation, getGpsLocation } from "@/lib/geolocation";
+import { orpc } from "@/lib/orpc";
 import { CommentItem } from "./comment-item";
-import Link from "next/link";
-import { parseDeviceInfo, getHighEntropyDeviceInfo, mergeDeviceInfo, type DeviceInfo } from "@/lib/device-info";
-import { getGpsLocation, formatGpsLocation } from "@/lib/geolocation";
-import { useIsMounted } from "@/components/motion";
 
 interface CommentSectionProps {
   videoId: string;
@@ -37,7 +42,7 @@ export function CommentSection({ videoId }: CommentSectionProps) {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [gpsLocation, setGpsLocation] = useState<string | null>(null);
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   // 初始化设备信息（包括高精度版本获取）
   useEffect(() => {
@@ -51,53 +56,56 @@ export function CommentSection({ videoId }: CommentSectionProps) {
         screen: `${window.screen.width}x${window.screen.height}`,
         pixelRatio: window.devicePixelRatio || null,
       });
-      
+
       // 尝试获取高精度信息（真实 OS 版本等）
       const highEntropyInfo = await getHighEntropyDeviceInfo();
       const mergedInfo = mergeDeviceInfo(baseInfo, highEntropyInfo);
-      
+
       setDeviceInfo(mergedInfo);
     };
     init();
   }, []);
 
   // 获取评论数量
-  const { data: commentCount } = trpc.comment.getCount.useQuery({ videoId });
+  const { data: commentCount } = useQuery(
+    orpc.comment.getCount.queryOptions({ input: { videoId }, ...{} }),
+  );
 
   // 获取评论列表
-  const {
-    data,
-    isLoading,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = trpc.comment.list.useInfiniteQuery(
-    { videoId, sort, limit: 20 },
-    {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-    }
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery(
+    orpc.comment.list.infiniteOptions({
+      input: (cursor: string | undefined) => ({ ...{ videoId, sort, limit: 20 }, cursor }),
+      initialPageParam: undefined as string | undefined,
+      ...{
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+      },
+    }),
   );
 
   // 发表评论
-  const createMutation = trpc.comment.create.useMutation({
-    onSuccess: () => {
-      setNewComment("");
-      utils.comment.list.invalidate({ videoId });
-      utils.comment.getCount.invalidate({ videoId });
-      toast.success("评论发表成功");
-    },
-    onError: (error) => {
-      toast.error(error.message || "发表失败");
-    },
-    onSettled: () => {
-      setIsSubmitting(false);
-    },
-  });
+  const createMutation = useMutation(
+    orpc.comment.create.mutationOptions({
+      onSuccess: () => {
+        setNewComment("");
+        queryClient.invalidateQueries({ queryKey: orpc.comment.list.key({ input: { videoId } }) });
+        queryClient.invalidateQueries({
+          queryKey: orpc.comment.getCount.key({ input: { videoId } }),
+        });
+        toast.success("评论发表成功");
+      },
+      onError: (error) => {
+        toast.error(error.message || "发表失败");
+      },
+      onSettled: () => {
+        setIsSubmitting(false);
+      },
+    }),
+  );
 
   const handleSubmit = useCallback(async () => {
     if (!newComment.trim() || isSubmitting) return;
     setIsSubmitting(true);
-    
+
     // 如果设备信息还没有获取到高精度版本，重新获取一次
     let currentDeviceInfo = deviceInfo;
     if (!currentDeviceInfo || currentDeviceInfo.osVersion === "10.15.7") {
@@ -113,9 +121,9 @@ export function CommentSection({ videoId }: CommentSectionProps) {
       currentDeviceInfo = mergeDeviceInfo(baseInfo, highEntropyInfo);
       setDeviceInfo(currentDeviceInfo);
     }
-    
+
     console.log("[Comment] Submitting with deviceInfo:", currentDeviceInfo);
-    
+
     let currentGps = gpsLocation;
     if (!currentGps) {
       // 使用逆地理编码获取可读地址
@@ -125,8 +133,8 @@ export function CommentSection({ videoId }: CommentSectionProps) {
         setGpsLocation(currentGps);
       }
     }
-    createMutation.mutate({ 
-      videoId, 
+    createMutation.mutate({
+      videoId,
       content: newComment.trim(),
       gpsLocation: currentGps || undefined,
       deviceInfo: currentDeviceInfo || undefined,
@@ -145,7 +153,7 @@ export function CommentSection({ videoId }: CommentSectionProps) {
             {commentCount !== undefined ? `${commentCount} 条评论` : "评论"}
           </h3>
         </div>
-{isMounted ? (
+        {isMounted ? (
           <Select value={sort} onValueChange={(v) => setSort(v as SortType)}>
             <SelectTrigger className="w-32">
               <ArrowUpDown className="h-4 w-4 mr-2" />
@@ -167,9 +175,7 @@ export function CommentSection({ videoId }: CommentSectionProps) {
         <div className="flex gap-3">
           <Avatar className="h-10 w-10 shrink-0">
             <AvatarImage src={session.user?.image || undefined} />
-            <AvatarFallback>
-              {session.user?.name?.charAt(0).toUpperCase() || "U"}
-            </AvatarFallback>
+            <AvatarFallback>{session.user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
           </Avatar>
           <div className="flex-1 space-y-2">
             <Textarea
@@ -180,16 +186,10 @@ export function CommentSection({ videoId }: CommentSectionProps) {
               maxLength={2000}
             />
             <div className="flex justify-between items-center">
-              <span className="text-xs text-muted-foreground">
-                {newComment.length}/2000
-              </span>
+              <span className="text-xs text-muted-foreground">{newComment.length}/2000</span>
               <div className="flex gap-2">
                 {newComment && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setNewComment("")}
-                  >
+                  <Button variant="ghost" size="sm" onClick={() => setNewComment("")}>
                     取消
                   </Button>
                 )}
@@ -208,7 +208,7 @@ export function CommentSection({ videoId }: CommentSectionProps) {
         <div className="bg-muted/50 rounded-lg p-4 text-center">
           <p className="text-muted-foreground mb-2">登录后即可发表评论</p>
           <Button asChild variant="outline" size="sm">
-            <Link href="/login">登录</Link>
+            <Link to="/login">登录</Link>
           </Button>
         </div>
       )}
@@ -217,8 +217,8 @@ export function CommentSection({ videoId }: CommentSectionProps) {
       <div className="space-y-4">
         {isLoading ? (
           // 加载骨架屏
-          Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="flex gap-3">
+          skeletonKeys(3).map((skeletonKey) => (
+            <div key={skeletonKey} className="flex gap-3">
               <Skeleton className="h-10 w-10 rounded-full shrink-0" />
               <div className="flex-1 space-y-2">
                 <Skeleton className="h-4 w-24" />
@@ -228,17 +228,11 @@ export function CommentSection({ videoId }: CommentSectionProps) {
             </div>
           ))
         ) : comments.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            暂无评论，来发表第一条评论吧
-          </div>
+          <div className="text-center py-8 text-muted-foreground">暂无评论，来发表第一条评论吧</div>
         ) : (
           <>
             {comments.map((comment) => (
-              <CommentItem
-                key={comment.id}
-                comment={comment}
-                videoId={videoId}
-              />
+              <CommentItem key={comment.id} comment={comment} videoId={videoId} />
             ))}
             {hasNextPage && (
               <div className="flex justify-center pt-4">

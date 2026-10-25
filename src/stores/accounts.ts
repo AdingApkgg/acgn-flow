@@ -8,8 +8,6 @@ export interface SavedAccount {
   nickname?: string | null;
   avatar?: string | null;
   lastLoginAt: number;
-  // 快速切换令牌（加密存储）
-  switchToken?: string;
 }
 
 interface AccountsState {
@@ -18,8 +16,6 @@ interface AccountsState {
   removeAccount: (id: string) => void;
   updateAccount: (id: string, data: Partial<SavedAccount>) => void;
   getAccount: (id: string) => SavedAccount | undefined;
-  setSwitchToken: (id: string, token: string) => void;
-  getSwitchToken: (id: string) => string | undefined;
 }
 
 export const useAccountsStore = create<AccountsState>()(
@@ -34,18 +30,13 @@ export const useAccountsStore = create<AccountsState>()(
             // 更新已存在的账号
             return {
               accounts: state.accounts.map((a) =>
-                a.id === account.id
-                  ? { ...a, ...account, lastLoginAt: Date.now() }
-                  : a
+                a.id === account.id ? { ...a, ...account, lastLoginAt: Date.now() } : a,
               ),
             };
           }
           // 添加新账号
           return {
-            accounts: [
-              ...state.accounts,
-              { ...account, lastLoginAt: Date.now() },
-            ],
+            accounts: [...state.accounts, { ...account, lastLoginAt: Date.now() }],
           };
         });
       },
@@ -58,30 +49,38 @@ export const useAccountsStore = create<AccountsState>()(
 
       updateAccount: (id, data) => {
         set((state) => ({
-          accounts: state.accounts.map((a) =>
-            a.id === id ? { ...a, ...data } : a
-          ),
+          accounts: state.accounts.map((a) => (a.id === id ? { ...a, ...data } : a)),
         }));
       },
 
       getAccount: (id) => {
         return get().accounts.find((a) => a.id === id);
       },
-
-      setSwitchToken: (id, token) => {
-        set((state) => ({
-          accounts: state.accounts.map((a) =>
-            a.id === id ? { ...a, switchToken: token } : a
-          ),
-        }));
-      },
-
-      getSwitchToken: (id) => {
-        return get().accounts.find((a) => a.id === id)?.switchToken;
-      },
     }),
     {
       name: "acgn-accounts",
-    }
-  )
+      version: 2,
+      // 只保存账号展示资料，清理旧版本存储中的切换令牌。
+      migrate: (persisted) => ({
+        accounts: ((persisted as { accounts?: SavedAccount[] })?.accounts || []).map((account) => ({
+          id: account.id,
+          email: account.email,
+          username: account.username,
+          nickname: account.nickname,
+          avatar: account.avatar,
+          lastLoginAt: account.lastLoginAt,
+        })),
+      }),
+      partialize: (state) => ({
+        accounts: state.accounts.map((account) => ({
+          id: account.id,
+          email: account.email,
+          username: account.username,
+          nickname: account.nickname,
+          avatar: account.avatar,
+          lastLoginAt: account.lastLoginAt,
+        })),
+      }),
+    },
+  ),
 );

@@ -9,9 +9,7 @@ import { sortDanmakuByTime } from "./perf-utils";
 // 获取 Bilibili cookie（从环境变量）
 const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";
 
-/**
- * 通用 B 站请求头（带可选 Cookie）
- */
+// 通用请求头
 export function getBilibiliHeaders(referer?: string) {
   const headers: Record<string, string> = {
     "User-Agent":
@@ -30,7 +28,7 @@ export function getBilibiliHeaders(referer?: string) {
  */
 export function getHtml5Headers() {
   const headers: Record<string, string> = {
-    "accept": "application/json, text/plain, */*",
+    accept: "application/json, text/plain, */*",
     "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
     "accept-encoding": "gzip",
     "cache-control": "no-cache",
@@ -46,10 +44,9 @@ export function getHtml5Headers() {
 
 // WBI 签名相关
 const MIXIN_KEY_ENC_TAB = [
-  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
-  33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61,
-  26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36,
-  20, 34, 44, 52,
+  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28,
+  14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54,
+  21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
 ];
 
 // 缓存 WBI 密钥
@@ -95,7 +92,9 @@ async function getWbiKeys(): Promise<{ imgKey: string; subKey: string }> {
  */
 function getMixinKey(imgKey: string, subKey: string): string {
   const rawKey = imgKey + subKey;
-  return MIXIN_KEY_ENC_TAB.map((n) => rawKey[n]).join("").slice(0, 32);
+  return MIXIN_KEY_ENC_TAB.map((n) => rawKey[n])
+    .join("")
+    .slice(0, 32);
 }
 
 /**
@@ -119,7 +118,9 @@ export async function encWbi(params: Record<string, string | number>): Promise<s
     .join("&");
 
   // 计算 w_rid
-  const wRid = createHash("md5").update(query + mixinKey).digest("hex");
+  const wRid = createHash("md5")
+    .update(query + mixinKey)
+    .digest("hex");
 
   return `${query}&w_rid=${wRid}`;
 }
@@ -178,9 +179,7 @@ function extractInitialStateJson(html: string): unknown | null {
     if (!match?.[1]) continue;
     try {
       return JSON.parse(match[1]);
-    } catch {
-      continue;
-    }
+    } catch {}
   }
 
   return null;
@@ -208,7 +207,7 @@ function extractUserVideosFromInitialState(state: unknown): BilibiliUserVideoIte
 
 export async function getUserVideosFromUploadPage(
   mid: number,
-  maxPages: number = 100
+  maxPages: number = 100,
 ): Promise<BilibiliUserVideoItem[]> {
   const allVideos: BilibiliUserVideoItem[] = [];
   const deduped = new Map<string, BilibiliUserVideoItem>();
@@ -251,7 +250,7 @@ export async function getUserVideosFromUploadPage(
 async function getUserVideosWithLegacyApi(
   mid: number,
   page: number,
-  pageSize: number
+  pageSize: number,
 ): Promise<BilibiliUserVideoItem[]> {
   try {
     const query = new URLSearchParams({
@@ -282,7 +281,7 @@ async function getUserVideosWithLegacyApi(
         aid: v.aid,
         title: v.title,
         pic: v.pic,
-      })
+      }),
     );
   } catch {
     return [];
@@ -292,7 +291,7 @@ async function getUserVideosWithLegacyApi(
 export async function getUserVideosWithWbi(
   mid: number,
   page: number = 1,
-  pageSize: number = 30
+  pageSize: number = 30,
 ): Promise<BilibiliUserVideoItem[]> {
   try {
     const params = {
@@ -379,13 +378,13 @@ export async function getVideoInfoByBvid(bvid: string): Promise<BilibiliVideoBas
     const response = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, {
       headers: getBilibiliHeaders(),
     });
-    
+
     const data = await response.json();
-    
+
     if (data.code !== 0 || !data.data) {
       return null;
     }
-    
+
     return {
       bvid: data.data.bvid,
       aid: data.data.aid,
@@ -409,13 +408,13 @@ export async function getVideoInfoByAid(aid: number): Promise<BilibiliVideoBasic
     const response = await fetch(`https://api.bilibili.com/x/web-interface/view?aid=${aid}`, {
       headers: getBilibiliHeaders(),
     });
-    
+
     const data = await response.json();
-    
+
     if (data.code !== 0 || !data.data) {
       return null;
     }
-    
+
     return {
       bvid: data.data.bvid,
       aid: data.data.aid,
@@ -444,7 +443,7 @@ export async function parseVideoId(input: string): Promise<{ bvid: string; aid: 
       return { bvid: info.bvid, aid: info.aid };
     }
   }
-  
+
   // 尝试提取 AV 号
   const aid = extractAid(input);
   if (aid) {
@@ -453,7 +452,7 @@ export async function parseVideoId(input: string): Promise<{ bvid: string; aid: 
       return { bvid: info.bvid, aid: info.aid };
     }
   }
-  
+
   return null;
 }
 
@@ -487,7 +486,7 @@ export async function getDanmakuByCid(cid: number, duration?: number): Promise<B
     console.log(`[弹幕] 分段接口获取成功，共 ${segmentDanmakus.length} 条`);
     return segmentDanmakus;
   }
-  
+
   // 回退到传统XML接口
   console.log(`[弹幕] 分段接口失败，回退到XML接口`);
   return getDanmakuByXml(cid);
@@ -499,48 +498,48 @@ export async function getDanmakuByCid(cid: number, duration?: number): Promise<B
  */
 async function getDanmakuBySegments(cid: number, duration?: number): Promise<BilibiliDanmaku[]> {
   const allDanmakus: BilibiliDanmaku[] = [];
-  
+
   // 每个分段6分钟 = 360秒
   const segmentDuration = 360;
   // 如果没有提供时长，默认获取前10个分段（60分钟）
   const maxSegments = duration ? Math.ceil(duration / segmentDuration) : 10;
-  
+
   for (let segmentIndex = 1; segmentIndex <= maxSegments; segmentIndex++) {
     try {
       const url = `https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=${cid}&segment_index=${segmentIndex}`;
-      
+
       const response = await fetch(url, {
         headers: getBilibiliHeaders(),
       });
-      
+
       if (!response.ok) {
         // 404 表示没有更多分段
         if (response.status === 404) break;
         continue;
       }
-      
+
       const arrayBuffer = await response.arrayBuffer();
       if (arrayBuffer.byteLength === 0) break;
-      
+
       // 解析 protobuf 格式的弹幕
       const danmakus = parseProtobufDanmaku(new Uint8Array(arrayBuffer));
       if (danmakus.length === 0) break;
-      
+
       allDanmakus.push(...danmakus);
-      
+
       // 如果当前分段弹幕为空，说明后面也没有了
       if (danmakus.length === 0) break;
-      
+
       // 短暂延迟避免请求过快
       if (segmentIndex < maxSegments) {
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 50));
       }
     } catch (error) {
       console.error(`获取分段 ${segmentIndex} 失败:`, error);
       break;
     }
   }
-  
+
   // 使用优化的桶排序
   return sortDanmakuByTime(allDanmakus);
 }
@@ -572,14 +571,14 @@ function parseProtobufDanmaku(data: Uint8Array): BilibiliDanmaku[] {
   let danmakuIndex = 0;
   let offset = 0;
   const dataLength = data.length;
-  
+
   while (offset < dataLength) {
     const tag = data[offset++];
     if (offset >= dataLength) break;
-    
+
     const fieldNumber = tag >> 3;
     const wireType = tag & 0x07;
-    
+
     // field 1 是弹幕列表（length-delimited）
     if (fieldNumber === 1 && wireType === 2) {
       // 内联 varint 读取
@@ -591,10 +590,10 @@ function parseProtobufDanmaku(data: Uint8Array): BilibiliDanmaku[] {
         if ((byte & 0x80) === 0) break;
         shift += 7;
       }
-      
+
       const danmakuEnd = offset + length;
       if (danmakuEnd > dataLength) break;
-      
+
       // 直接解析弹幕（不使用 slice，传入边界）
       const danmaku = parseSingleDanmakuFast(data, offset, danmakuEnd);
       if (danmaku) {
@@ -607,7 +606,7 @@ function parseProtobufDanmaku(data: Uint8Array): BilibiliDanmaku[] {
       if (offset < 0) break;
     }
   }
-  
+
   // 裁剪到实际大小
   danmakus.length = danmakuIndex;
   return danmakus;
@@ -622,20 +621,24 @@ function parseProtobufDanmaku(data: Uint8Array): BilibiliDanmaku[] {
  * - field 5 (varint): color 颜色
  * - field 7 (string): content 弹幕内容
  */
-function parseSingleDanmakuFast(data: Uint8Array, start: number, end: number): BilibiliDanmaku | null {
+function parseSingleDanmakuFast(
+  data: Uint8Array,
+  start: number,
+  end: number,
+): BilibiliDanmaku | null {
   let time = 0;
   let mode = 1;
   let size = 25;
   let color = "#FFFFFF";
   let text = "";
-  
+
   let offset = start;
-  
+
   while (offset < end) {
     const tag = data[offset++];
     const fieldNumber = tag >> 3;
     const wireType = tag & 0x07;
-    
+
     if (wireType === 0) {
       // varint - 内联解码
       let value = 0;
@@ -646,7 +649,7 @@ function parseSingleDanmakuFast(data: Uint8Array, start: number, end: number): B
         if ((byte & 0x80) === 0) break;
         shift += 7;
       }
-      
+
       // 使用 switch 常量折叠优化
       if (fieldNumber === 2) {
         time = value * 0.001; // 乘法比除法快
@@ -667,7 +670,7 @@ function parseSingleDanmakuFast(data: Uint8Array, start: number, end: number): B
         if ((byte & 0x80) === 0) break;
         shift += 7;
       }
-      
+
       if (fieldNumber === 7 && length > 0) {
         // 使用 subarray 而非 slice（不复制内存）
         text = textDecoder.decode(data.subarray(offset, offset + length));
@@ -681,7 +684,7 @@ function parseSingleDanmakuFast(data: Uint8Array, start: number, end: number): B
       break;
     }
   }
-  
+
   return text ? { text, time, mode, size, color } : null;
 }
 
@@ -695,7 +698,8 @@ function skipField(data: Uint8Array, offset: number, wireType: number): number {
       return offset;
     case 1: // 64-bit
       return offset + 8;
-    case 2: // length-delimited
+    case 2: {
+      // length-delimited
       let length = 0;
       let shift = 0;
       while (offset < data.length) {
@@ -705,6 +709,7 @@ function skipField(data: Uint8Array, offset: number, wireType: number): number {
         shift += 7;
       }
       return offset + length;
+    }
     case 5: // 32-bit
       return offset + 4;
     default:
@@ -717,7 +722,7 @@ function skipField(data: Uint8Array, offset: number, wireType: number): number {
  */
 async function getDanmakuByXml(cid: number): Promise<BilibiliDanmaku[]> {
   const url = `https://comment.bilibili.com/${cid}.xml`;
-  
+
   try {
     const response = await fetch(url, {
       headers: {
@@ -725,18 +730,18 @@ async function getDanmakuByXml(cid: number): Promise<BilibiliDanmaku[]> {
         "Accept-Encoding": "gzip, deflate",
       },
     });
-    
+
     if (!response.ok) {
       console.error(`获取弹幕失败: HTTP ${response.status}`);
       return [];
     }
-    
+
     const contentEncoding = response.headers.get("content-encoding");
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    
+
     let xml: string;
-    
+
     // B站弹幕服务器返回 deflate 压缩，需要手动解压
     if (contentEncoding === "deflate") {
       const { inflateRawSync } = await import("zlib");
@@ -757,13 +762,13 @@ async function getDanmakuByXml(cid: number): Promise<BilibiliDanmaku[]> {
     } else {
       xml = buffer.toString("utf-8");
     }
-    
+
     // 检查是否成功获取 XML
     if (!xml.includes("<d p=")) {
       console.error("弹幕响应不包含有效数据:", xml.substring(0, 200));
       return [];
     }
-    
+
     return parseDanmakuXml(xml);
   } catch (error) {
     console.error("获取弹幕失败:", error);
@@ -777,15 +782,13 @@ async function getDanmakuByXml(cid: number): Promise<BilibiliDanmaku[]> {
  */
 export function parseDanmakuXml(xml: string): BilibiliDanmaku[] {
   const danmakus: BilibiliDanmaku[] = [];
-  
+
   // 匹配所有 <d p="...">...</d> 标签
   const regex = /<d p="([^"]+)">([^<]*)<\/d>/g;
-  let match;
-  
-  while ((match = regex.exec(xml)) !== null) {
+  for (const match of xml.matchAll(regex)) {
     const params = match[1].split(",");
     const text = match[2];
-    
+
     if (params.length >= 4 && text) {
       // 解码 HTML 实体
       const decodedText = text
@@ -794,11 +797,11 @@ export function parseDanmakuXml(xml: string): BilibiliDanmaku[] {
         .replace(/&amp;/g, "&")
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, "'");
-      
+
       // 颜色转换为十六进制字符串
       const colorInt = parseInt(params[3], 10) || 16777215;
       const colorHex = `#${colorInt.toString(16).padStart(6, "0").toUpperCase()}`;
-      
+
       danmakus.push({
         text: decodedText,
         time: parseFloat(params[0]) || 0, // 保持秒为单位
@@ -808,7 +811,7 @@ export function parseDanmakuXml(xml: string): BilibiliDanmaku[] {
       });
     }
   }
-  
+
   // 使用优化的桶排序
   return sortDanmakuByTime(danmakus);
 }
@@ -827,17 +830,16 @@ export function danmakuToJson(danmakus: BilibiliDanmaku[]): string {
  */
 export async function getVideoCid(bvid: string): Promise<number | null> {
   try {
-    const response = await fetch(
-      `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`,
-      { headers: getBilibiliHeaders() }
-    );
-    
+    const response = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, {
+      headers: getBilibiliHeaders(),
+    });
+
     const data = await response.json();
-    
+
     if (data.code !== 0 || !data.data) {
       return null;
     }
-    
+
     // 返回第一个分P的cid
     return data.data.cid || null;
   } catch {
@@ -847,23 +849,23 @@ export async function getVideoCid(bvid: string): Promise<number | null> {
 
 /**
  * 获取视频所有分P的cid列表
- * 参考 BACNext: /x/player/pagelist
  * @param bvid BV号
- * @returns 分P信息数组，包含 cid、标题、分P序号、时长
+ * @returns cid数组
  */
-export async function getVideoPages(bvid: string): Promise<{ cid: number; title: string; page: number; duration: number }[]> {
+export async function getVideoPages(
+  bvid: string,
+): Promise<{ cid: number; title: string; page: number; duration: number }[]> {
   try {
-    const response = await fetch(
-      `https://api.bilibili.com/x/player/pagelist?bvid=${bvid}`,
-      { headers: getBilibiliHeaders() }
-    );
-    
+    const response = await fetch(`https://api.bilibili.com/x/player/pagelist?bvid=${bvid}`, {
+      headers: getBilibiliHeaders(),
+    });
+
     const data = await response.json();
-    
+
     if (data.code !== 0 || !data.data) {
       return [];
     }
-    
+
     return data.data.map((p: { cid: number; part: string; page: number; duration: number }) => ({
       cid: p.cid,
       title: p.part,
@@ -894,7 +896,7 @@ export const QN = {
   "1080P_PLUS": 112,
   "1080P60": 116,
   "4K": 120,
-  "HDR": 125,
+  HDR: 125,
 } as const;
 
 /** playurl 返回结果 */
@@ -935,10 +937,10 @@ export async function getPlayUrl(
   });
 
   try {
-    const resp = await fetch(
-      `https://api.bilibili.com/x/player/playurl?${params}`,
-      { headers: getHtml5Headers(), signal: AbortSignal.timeout(8000) },
-    );
+    const resp = await fetch(`https://api.bilibili.com/x/player/playurl?${params}`, {
+      headers: getHtml5Headers(),
+      signal: AbortSignal.timeout(8000),
+    });
 
     const json = await resp.json();
 
@@ -950,6 +952,10 @@ export async function getPlayUrl(
     const durl = d?.durl?.[0];
     if (!durl?.url) {
       return { error: "未获取到视频流地址" };
+    }
+    const streamUrl = new URL(durl.url);
+    if (!["http:", "https:"].includes(streamUrl.protocol)) {
+      return { error: "B站返回了无效的视频流地址" };
     }
 
     return {
@@ -970,19 +976,15 @@ export async function getPlayUrl(
  *
  * @returns Map<page, cid> 或错误字符串
  */
-export async function getPageCidMap(
-  vid: string,
-): Promise<Map<number, number> | { error: string }> {
+export async function getPageCidMap(vid: string): Promise<Map<number, number> | { error: string }> {
   const isAv = /^av/i.test(vid);
-  const params = new URLSearchParams(
-    isAv ? { aid: vid.slice(2) } : { bvid: vid },
-  );
+  const params = new URLSearchParams(isAv ? { aid: vid.slice(2) } : { bvid: vid });
 
   try {
-    const resp = await fetch(
-      `https://api.bilibili.com/x/player/pagelist?${params}`,
-      { headers: getBilibiliHeaders(), signal: AbortSignal.timeout(8000) },
-    );
+    const resp = await fetch(`https://api.bilibili.com/x/player/pagelist?${params}`, {
+      headers: getBilibiliHeaders(),
+      signal: AbortSignal.timeout(8000),
+    });
 
     const json = await resp.json();
 
@@ -1013,9 +1015,8 @@ export async function getVideoInfoWbi(
   idParam: { bvid: string } | { aid: number },
 ): Promise<BilibiliVideoBasicInfo | null> {
   try {
-    const params: Record<string, string | number> = "bvid" in idParam
-      ? { bvid: idParam.bvid }
-      : { aid: idParam.aid };
+    const params: Record<string, string | number> =
+      "bvid" in idParam ? { bvid: idParam.bvid } : { aid: idParam.aid };
 
     const signedQuery = await encWbi(params);
     const url = `https://api.bilibili.com/x/web-interface/wbi/view?${signedQuery}`;
@@ -1029,7 +1030,7 @@ export async function getVideoInfoWbi(
       // 风控返回 HTML，回退到非 WBI 版本
       const fallbackId = "bvid" in idParam ? idParam.bvid : null;
       if (fallbackId) return getVideoInfoByBvid(fallbackId);
-      return getVideoInfoByAid(("aid" in idParam ? idParam.aid : 0));
+      return getVideoInfoByAid("aid" in idParam ? idParam.aid : 0);
     }
 
     const data = await response.json();
@@ -1053,7 +1054,7 @@ export async function getVideoInfoWbi(
   } catch {
     // 回退
     if ("bvid" in idParam) return getVideoInfoByBvid(idParam.bvid);
-    return getVideoInfoByAid(("aid" in idParam ? idParam.aid : 0));
+    return getVideoInfoByAid("aid" in idParam ? idParam.aid : 0);
   }
 }
 
@@ -1063,10 +1064,9 @@ export async function getVideoInfoWbi(
  */
 export async function getVideoTags(aid: number): Promise<string[]> {
   try {
-    const response = await fetch(
-      `https://api.bilibili.com/x/tag/archive/tags?aid=${aid}`,
-      { headers: getBilibiliHeaders() },
-    );
+    const response = await fetch(`https://api.bilibili.com/x/tag/archive/tags?aid=${aid}`, {
+      headers: getBilibiliHeaders(),
+    });
 
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) return [];

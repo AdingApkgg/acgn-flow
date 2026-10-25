@@ -23,11 +23,7 @@ export async function getCache<T>(key: string): Promise<T | null> {
   return JSON.parse(data) as T;
 }
 
-export async function setCache<T>(
-  key: string,
-  value: T,
-  ttlSeconds: number = 3600
-): Promise<void> {
+export async function setCache<T>(key: string, value: T, ttlSeconds: number = 3600): Promise<void> {
   await redis.set(key, JSON.stringify(value), "EX", ttlSeconds);
 }
 
@@ -61,7 +57,7 @@ export async function deleteCachePattern(pattern: string): Promise<number> {
  * 批量设置缓存（使用 pipeline 提高性能）
  */
 export async function setCacheMultiple<T>(
-  items: Array<{ key: string; value: T; ttl?: number }>
+  items: Array<{ key: string; value: T; ttl?: number }>,
 ): Promise<void> {
   const pipeline = redis.pipeline();
   for (const { key, value, ttl = 3600 } of items) {

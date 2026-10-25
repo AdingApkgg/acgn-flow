@@ -1,6 +1,13 @@
-"use client";
-
-import Script from "next/script";
+function JsonLd({ id, data }: { id: string; data: unknown }) {
+  const serialized = JSON.stringify(data)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  return (
+    // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD 已统一转义小于号和行分隔符，需输出原始 JSON 供爬虫读取。
+    <script id={id} type="application/ld+json" dangerouslySetInnerHTML={{ __html: serialized }} />
+  );
+}
 
 interface VideoJsonLdProps {
   video: {
@@ -27,7 +34,7 @@ interface VideoJsonLdProps {
 }
 
 export function VideoJsonLd({ video }: VideoJsonLdProps) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://af.saop.cc";
+  const baseUrl = import.meta.env.VITE_APP_URL || "https://af.saop.cc";
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -54,13 +61,7 @@ export function VideoJsonLd({ video }: VideoJsonLdProps) {
     keywords: video.tags.map((t) => t.tag.name).join(", "),
   };
 
-  return (
-    <Script
-      id="video-jsonld"
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+  return <JsonLd id="video-jsonld" data={jsonLd} />;
 }
 
 interface WebsiteJsonLdProps {
@@ -90,13 +91,7 @@ export function WebsiteJsonLd({
     },
   };
 
-  return (
-    <Script
-      id="website-jsonld"
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+  return <JsonLd id="website-jsonld" data={jsonLd} />;
 }
 
 interface BreadcrumbJsonLdProps {
@@ -118,13 +113,7 @@ export function BreadcrumbJsonLd({ items }: BreadcrumbJsonLdProps) {
     })),
   };
 
-  return (
-    <Script
-      id="breadcrumb-jsonld"
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+  return <JsonLd id="breadcrumb-jsonld" data={jsonLd} />;
 }
 
 interface OrganizationJsonLdProps {
@@ -153,13 +142,7 @@ export function OrganizationJsonLd({
     },
   };
 
-  return (
-    <Script
-      id="organization-jsonld"
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+  return <JsonLd id="organization-jsonld" data={jsonLd} />;
 }
 
 interface VideoListJsonLdProps {
@@ -181,7 +164,7 @@ interface VideoListJsonLdProps {
  * 视频列表结构化数据 - 用于首页和列表页
  */
 export function VideoListJsonLd({ videos }: VideoListJsonLdProps) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://af.saop.cc";
+  const baseUrl = import.meta.env.VITE_APP_URL || "https://af.saop.cc";
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -209,13 +192,7 @@ export function VideoListJsonLd({ videos }: VideoListJsonLdProps) {
     })),
   };
 
-  return (
-    <Script
-      id="videolist-jsonld"
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+  return <JsonLd id="videolist-jsonld" data={jsonLd} />;
 }
 
 interface FAQJsonLdProps {
@@ -242,13 +219,7 @@ export function FAQJsonLd({ items }: FAQJsonLdProps) {
     })),
   };
 
-  return (
-    <Script
-      id="faq-jsonld"
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+  return <JsonLd id="faq-jsonld" data={jsonLd} />;
 }
 
 interface CollectionPageJsonLdProps {
@@ -276,13 +247,7 @@ export function CollectionPageJsonLd({
     ...(numberOfItems !== undefined && { numberOfItems }),
   };
 
-  return (
-    <Script
-      id="collection-jsonld"
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+  return <JsonLd id="collection-jsonld" data={jsonLd} />;
 }
 
 interface ProfilePageJsonLdProps {
@@ -295,12 +260,7 @@ interface ProfilePageJsonLdProps {
 /**
  * 用户主页结构化数据
  */
-export function ProfilePageJsonLd({
-  name,
-  url,
-  image,
-  description,
-}: ProfilePageJsonLdProps) {
+export function ProfilePageJsonLd({ name, url, image, description }: ProfilePageJsonLdProps) {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "ProfilePage",
@@ -313,11 +273,5 @@ export function ProfilePageJsonLd({
     },
   };
 
-  return (
-    <Script
-      id="profile-jsonld"
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+  return <JsonLd id="profile-jsonld" data={jsonLd} />;
 }

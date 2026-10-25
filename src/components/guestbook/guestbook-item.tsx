@@ -1,34 +1,39 @@
-"use client";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  ChevronDown,
+  ChevronUp,
+  Edit,
+  Globe,
+  MoreVertical,
+  Pin,
+  ThumbsDown,
+  ThumbsUp,
+  Trash2,
+} from "lucide-react";
 
-import { useState, useCallback } from "react";
-import { useSession } from "next-auth/react";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { useCallback, useState } from "react";
+import { Link } from "react-router";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
+import { useSession } from "@/lib/auth-client";
 import {
-  ThumbsUp,
-  ThumbsDown,
-  MoreVertical,
-  Edit,
-  Trash2,
-  Pin,
-  ChevronDown,
-  ChevronUp,
-  Globe,
-} from "lucide-react";
-import { toast } from "sonner";
+  type DeviceInfo,
+  getHighEntropyDeviceInfo,
+  mergeDeviceInfo,
+  parseDeviceInfo,
+} from "@/lib/device-info";
 import { formatRelativeTime } from "@/lib/format";
-import Link from "next/link";
+import { formatGpsLocation, getGpsLocation } from "@/lib/geolocation";
+import { orpc } from "@/lib/orpc";
 import { cn } from "@/lib/utils";
-import { parseDeviceInfo, getHighEntropyDeviceInfo, mergeDeviceInfo, type DeviceInfo } from "@/lib/device-info";
-import { getGpsLocation, formatGpsLocation } from "@/lib/geolocation";
 
 interface GuestbookMessage {
   id: string;
@@ -84,7 +89,7 @@ export function GuestbookItem({ message, isReply = false }: GuestbookItemProps) 
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [gpsLocation, setGpsLocation] = useState<string | null>(null);
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const isOwner = session?.user?.id === message.user.id;
   const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "OWNER";
 
@@ -94,77 +99,92 @@ export function GuestbookItem({ message, isReply = false }: GuestbookItemProps) 
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = trpc.guestbook.getReplies.useInfiniteQuery(
-    { messageId: message.id, limit: 10 },
-    {
-      enabled: showReplies && !isReply,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-    }
+  } = useInfiniteQuery(
+    orpc.guestbook.getReplies.infiniteOptions({
+      input: (cursor: string | undefined) => ({ ...{ messageId: message.id, limit: 10 }, cursor }),
+      initialPageParam: undefined as string | undefined,
+      ...{
+        enabled: showReplies && !isReply,
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+      },
+    }),
   );
 
   const replies = repliesData?.pages.flatMap((page) => page.replies) ?? [];
 
   // 编辑
-  const updateMutation = trpc.guestbook.update.useMutation({
-    onSuccess: () => {
-      setIsEditing(false);
-      utils.guestbook.list.invalidate();
-      toast.success("留言已更新");
-    },
-    onError: (error) => {
-      toast.error(error.message || "更新失败");
-    },
-  });
+  const updateMutation = useMutation(
+    orpc.guestbook.update.mutationOptions({
+      onSuccess: () => {
+        setIsEditing(false);
+        queryClient.invalidateQueries({ queryKey: orpc.guestbook.list.key() });
+        toast.success("留言已更新");
+      },
+      onError: (error) => {
+        toast.error(error.message || "更新失败");
+      },
+    }),
+  );
 
   // 删除
-  const deleteMutation = trpc.guestbook.delete.useMutation({
-    onSuccess: () => {
-      utils.guestbook.list.invalidate();
-      utils.guestbook.getCount.invalidate();
-      toast.success("留言已删除");
-    },
-    onError: (error) => {
-      toast.error(error.message || "删除失败");
-    },
-  });
+  const deleteMutation = useMutation(
+    orpc.guestbook.delete.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: orpc.guestbook.list.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.guestbook.getCount.key() });
+        toast.success("留言已删除");
+      },
+      onError: (error) => {
+        toast.error(error.message || "删除失败");
+      },
+    }),
+  );
 
   // 回复
-  const replyMutation = trpc.guestbook.create.useMutation({
-    onSuccess: () => {
-      setReplyContent("");
-      setIsReplying(false);
-      setShowReplies(true);
-      utils.guestbook.getReplies.invalidate({ messageId: message.id });
-      utils.guestbook.list.invalidate();
-      toast.success("回复成功");
-    },
-    onError: (error) => {
-      toast.error(error.message || "回复失败");
-    },
-  });
+  const replyMutation = useMutation(
+    orpc.guestbook.create.mutationOptions({
+      onSuccess: () => {
+        setReplyContent("");
+        setIsReplying(false);
+        setShowReplies(true);
+        queryClient.invalidateQueries({
+          queryKey: orpc.guestbook.getReplies.key({ input: { messageId: message.id } }),
+        });
+        queryClient.invalidateQueries({ queryKey: orpc.guestbook.list.key() });
+        toast.success("回复成功");
+      },
+      onError: (error) => {
+        toast.error(error.message || "回复失败");
+      },
+    }),
+  );
 
   // 点赞/踩
-  const reactMutation = trpc.guestbook.react.useMutation({
-    onSuccess: (data) => {
-      setLocalLikes(data.likes);
-      setLocalDislikes(data.dislikes);
-      setLocalReaction(data.userReaction);
-    },
-    onError: (error) => {
-      toast.error(error.message || "操作失败");
-    },
-  });
+  const reactMutation = useMutation(
+    orpc.guestbook.react.mutationOptions({
+      onSuccess: (data) => {
+        setLocalLikes(data.likes);
+        setLocalDislikes(data.dislikes);
+        setLocalReaction(data.userReaction);
+      },
+      onError: (error) => {
+        toast.error(error.message || "操作失败");
+      },
+    }),
+  );
 
   // 置顶
-  const pinMutation = trpc.guestbook.pin.useMutation({
-    onSuccess: () => {
-      utils.guestbook.list.invalidate();
-      toast.success(message.isPinned ? "已取消置顶" : "已置顶");
-    },
-    onError: (error) => {
-      toast.error(error.message || "操作失败");
-    },
-  });
+  const pinMutation = useMutation(
+    orpc.guestbook.pin.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: orpc.guestbook.list.key() });
+        toast.success(message.isPinned ? "已取消置顶" : "已置顶");
+      },
+      onError: (error) => {
+        toast.error(error.message || "操作失败");
+      },
+    }),
+  );
 
   const handleReact = useCallback(
     (isLike: boolean) => {
@@ -175,12 +195,12 @@ export function GuestbookItem({ message, isReply = false }: GuestbookItemProps) 
       const newReaction = localReaction === isLike ? null : isLike;
       reactMutation.mutate({ messageId: message.id, isLike: newReaction });
     },
-    [session, localReaction, reactMutation, message.id]
+    [session, localReaction, reactMutation, message.id],
   );
 
   const handleSubmitReply = useCallback(async () => {
     if (!replyContent.trim()) return;
-    
+
     let currentDeviceInfo = deviceInfo;
     if (!currentDeviceInfo) {
       const baseInfo = parseDeviceInfo(navigator.userAgent, {
@@ -231,7 +251,7 @@ export function GuestbookItem({ message, isReply = false }: GuestbookItemProps) 
 
   return (
     <div className={cn("flex gap-3", isReply && "ml-12 mt-3")}>
-      <Link href={`/user/${message.user.id}`}>
+      <Link to={`/user/${message.user.id}`}>
         <Avatar className={cn("shrink-0", isReply ? "h-8 w-8" : "h-10 w-10")}>
           <AvatarImage src={message.user.avatar || undefined} />
           <AvatarFallback>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
@@ -241,23 +261,16 @@ export function GuestbookItem({ message, isReply = false }: GuestbookItemProps) 
       <div className="flex-1 min-w-0">
         {/* 用户名和元信息 */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Link
-            href={`/user/${message.user.id}`}
-            className="font-medium text-sm hover:text-primary"
-          >
+          <Link to={`/user/${message.user.id}`} className="font-medium text-sm hover:text-primary">
             {displayName}
           </Link>
           {message.isPinned && (
-            <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">
-              置顶
-            </span>
+            <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">置顶</span>
           )}
           <span className="text-xs text-muted-foreground">
             {formatRelativeTime(message.createdAt)}
           </span>
-          {message.isEdited && (
-            <span className="text-xs text-muted-foreground">(已编辑)</span>
-          )}
+          {message.isEdited && <span className="text-xs text-muted-foreground">(已编辑)</span>}
         </div>
 
         {/* 位置信息 */}
@@ -294,7 +307,7 @@ export function GuestbookItem({ message, isReply = false }: GuestbookItemProps) 
           <p className="text-sm mt-1 whitespace-pre-wrap break-words">
             {message.replyToUser && (
               <Link
-                href={`/user/${message.replyToUser.id}`}
+                to={`/user/${message.replyToUser.id}`}
                 className="text-primary hover:underline mr-1"
               >
                 @{replyToDisplayName}
@@ -310,10 +323,7 @@ export function GuestbookItem({ message, isReply = false }: GuestbookItemProps) 
             <Button
               variant="ghost"
               size="sm"
-              className={cn(
-                "h-7 px-2 text-xs gap-1",
-                localReaction === true && "text-primary"
-              )}
+              className={cn("h-7 px-2 text-xs gap-1", localReaction === true && "text-primary")}
               onClick={() => handleReact(true)}
             >
               <ThumbsUp className="h-3.5 w-3.5" />
@@ -324,7 +334,7 @@ export function GuestbookItem({ message, isReply = false }: GuestbookItemProps) 
               size="sm"
               className={cn(
                 "h-7 px-2 text-xs gap-1",
-                localReaction === false && "text-destructive"
+                localReaction === false && "text-destructive",
               )}
               onClick={() => handleReact(false)}
             >

@@ -27,10 +27,8 @@ export function formatGpsLocationFull(location: GpsLocation): string {
   const lat = location.latitude.toFixed(6);
   const lon = location.longitude.toFixed(6);
   const coords = `坐标: ${lat}, ${lon}`;
-  const accuracy = location.accuracy 
-    ? `精度: ±${Math.round(location.accuracy)}m` 
-    : "";
-  
+  const accuracy = location.accuracy ? `精度: ±${Math.round(location.accuracy)}m` : "";
+
   const parts: string[] = [];
   if (location.address) {
     parts.push(`地址: ${location.address}`);
@@ -39,7 +37,7 @@ export function formatGpsLocationFull(location: GpsLocation): string {
   if (accuracy) {
     parts.push(accuracy);
   }
-  
+
   return parts.join("\n");
 }
 
@@ -56,13 +54,13 @@ export async function reverseGeocode(latitude: number, longitude: number): Promi
         headers: {
           "User-Agent": "ACGN-Flow/1.0", // Nominatim 要求提供 User-Agent
         },
-      }
+      },
     );
 
     if (!response.ok) return null;
 
     const data = await response.json();
-    
+
     if (!data.address) return null;
 
     // 构建详细地址字符串
@@ -95,17 +93,24 @@ export async function reverseGeocode(latitude: number, longitude: number): Promi
     }
     // 建筑物/POI 名称
     if (addr.building || addr.amenity || addr.shop || addr.office || addr.leisure || addr.tourism) {
-      parts.push(addr.building || addr.amenity || addr.shop || addr.office || addr.leisure || addr.tourism);
+      parts.push(
+        addr.building || addr.amenity || addr.shop || addr.office || addr.leisure || addr.tourism,
+      );
     }
 
     // 如果解析出的部分少于 3 个，尝试使用 display_name
     if (parts.length < 3 && data.display_name) {
       // display_name 格式: "建筑, 街道, 区, 市, 省, 国家"
       // 取前 6 个部分并反转顺序（从大到小）
-      const displayParts = data.display_name.split(",").map((s: string) => s.trim()).slice(0, 6).reverse();
+      const displayParts = data.display_name
+        .split(",")
+        .map((s: string) => s.trim())
+        .slice(0, 6)
+        .reverse();
       // 去重（避免重复显示相同层级）
-      const uniqueParts = displayParts.filter((part: string, index: number, arr: string[]) => 
-        arr.indexOf(part) === index && part.length > 0
+      const uniqueParts = displayParts.filter(
+        (part: string, index: number, arr: string[]) =>
+          arr.indexOf(part) === index && part.length > 0,
       );
       return uniqueParts.join(" ");
     }
@@ -121,7 +126,7 @@ export async function reverseGeocode(latitude: number, longitude: number): Promi
 /**
  * 获取 GPS 位置（带可选的逆地理编码）
  */
-export async function getGpsLocation(options?: { 
+export async function getGpsLocation(options?: {
   reverseGeocode?: boolean;
   timeout?: number;
 }): Promise<GpsLocation | null> {
@@ -153,7 +158,7 @@ export async function getGpsLocation(options?: {
         enableHighAccuracy: true,
         timeout,
         maximumAge: 60000,
-      }
+      },
     );
   });
 }

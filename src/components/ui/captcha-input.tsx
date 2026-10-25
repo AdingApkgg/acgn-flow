@@ -1,10 +1,8 @@
-"use client";
-
-import { useState, useCallback } from "react";
-import { Input } from "@/components/ui/input";
 import { RefreshCw } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useCallback, useState } from "react";
 import { useIsMounted } from "@/components/motion";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface CaptchaInputProps {
   value: string;
@@ -35,14 +33,14 @@ export function CaptchaInput({ value, onChange, error }: CaptchaInputProps) {
         />
         <div className="flex items-center gap-2">
           {mounted && captchaKey ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={`/api/captcha?t=${captchaKey}`}
-              alt="验证码"
-              className="h-10 rounded border cursor-pointer"
-              onClick={refreshCaptcha}
-              title="点击刷新验证码"
-            />
+            <button type="button" onClick={refreshCaptcha} aria-label="刷新验证码">
+              <img
+                src={`/api/captcha?t=${captchaKey}`}
+                alt="验证码"
+                className="h-10 rounded border cursor-pointer"
+                title="点击刷新验证码"
+              />
+            </button>
           ) : (
             <Skeleton className="h-10 w-[120px] rounded" />
           )}

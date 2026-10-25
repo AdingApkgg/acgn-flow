@@ -1,250 +1,298 @@
-import NextAuth from "next-auth";
-import { PrismaAdapter } from "@auth/prisma-adapter";
-import Credentials from "next-auth/providers/credentials";
-import GitHub from "next-auth/providers/github";
-import Google from "next-auth/providers/google";
-import Discord from "next-auth/providers/discord";
-import type { Provider } from "next-auth/providers";
-import { prisma } from "@/lib/prisma";
-import { z } from "zod";
+import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import bcrypt from "bcryptjs";
+import { betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
+import { multiSession, username } from "better-auth/plugins";
+import { eq, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { db } from "@/db";
+import { authAccount, authSession, authVerification, loginSession, user } from "@/db/schema";
+import { env } from "@/env";
+import { consumeCaptcha } from "@/server/http/captcha";
+import { sessionIsUsable } from "./auth-policy";
+import { parseDeviceInfo } from "./device-info";
 
-const loginSchema = z.object({
-  identifier: z.string().min(1), // 可以是邮箱或用户名
-  password: z.string().min(6),
-});
-
-// 静态 providers（不需要 Request 对象）
-const staticProviders: Provider[] = [
-  Credentials({
-    name: "credentials",
-    credentials: {
-      identifier: { label: "邮箱或用户名", type: "text" },
-      password: { label: "密码", type: "password" },
-    },
-    async authorize(credentials) {
-      const parsed = loginSchema.safeParse(credentials);
-      if (!parsed.success) return null;
-
-      const { identifier, password } = parsed.data;
-
-      // 支持邮箱或用户名登录
-      const user = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { email: identifier },
-            { username: identifier },
-          ],
+const socialProviders = {
+  ...(process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET
+    ? {
+        github: {
+          clientId: process.env.AUTH_GITHUB_ID,
+          clientSecret: process.env.AUTH_GITHUB_SECRET,
         },
-      });
+      }
+    : {}),
+  ...(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET
+    ? {
+        google: {
+          clientId: process.env.AUTH_GOOGLE_ID,
+          clientSecret: process.env.AUTH_GOOGLE_SECRET,
+        },
+      }
+    : {}),
+  ...(process.env.AUTH_DISCORD_ID && process.env.AUTH_DISCORD_SECRET
+    ? {
+        discord: {
+          clientId: process.env.AUTH_DISCORD_ID,
+          clientSecret: process.env.AUTH_DISCORD_SECRET,
+        },
+      }
+    : {}),
+};
 
-      if (!user || !user.password) return null;
+export const enabledAuthProviders = Object.keys(socialProviders);
 
-      const isValid = await bcrypt.compare(password, user.password);
-      if (!isValid) return null;
-
-      return {
-        id: user.id,
-        email: user.email,
-        name: user.nickname || user.username,
-        image: user.avatar,
-      };
-    },
+export const auth = betterAuth({
+  appName: env.APP_NAME,
+  baseURL: env.AUTH_URL,
+  basePath: "/api/auth",
+  secret: env.AUTH_SECRET,
+  trustedOrigins: [env.APP_URL, env.AUTH_URL],
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema: { user, account: authAccount, session: authSession, verification: authVerification },
   }),
-];
-
-// GitHub OAuth
-if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
-  staticProviders.push(
-    GitHub({
-      clientId: process.env.AUTH_GITHUB_ID,
-      clientSecret: process.env.AUTH_GITHUB_SECRET,
-    })
-  );
-}
-
-// Google OAuth
-if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
-  staticProviders.push(
-    Google({
-      clientId: process.env.AUTH_GOOGLE_ID,
-      clientSecret: process.env.AUTH_GOOGLE_SECRET,
-    })
-  );
-}
-
-// Discord OAuth
-if (process.env.AUTH_DISCORD_ID && process.env.AUTH_DISCORD_SECRET) {
-  staticProviders.push(
-    Discord({
-      clientId: process.env.AUTH_DISCORD_ID,
-      clientSecret: process.env.AUTH_DISCORD_SECRET,
-    })
-  );
-}
-
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+  advanced: { database: { generateId: () => nanoid() } },
+  user: {
+    fields: { image: "avatar", emailVerified: "authEmailVerified" },
+    additionalFields: {
+      nickname: { type: "string", required: false, input: false },
+      role: { type: ["USER", "ADMIN", "OWNER"], defaultValue: "USER", input: false },
+      isBanned: { type: "boolean", defaultValue: false, input: false },
+    },
+  },
+  emailAndPassword: {
+    enabled: true,
+    disableSignUp: true,
+    minPasswordLength: 6,
+    password: {
+      hash: (password) => bcrypt.hash(password, 12),
+      verify: ({ hash, password }) => bcrypt.compare(password, hash),
+    },
+  },
+  // 注册、重置、换邮箱走包含服务端验证码的业务动作，不开放平行入口。
+  disabledPaths: [
+    "/sign-up/email",
+    "/request-password-reset",
+    "/reset-password",
+    "/change-email",
+    "/delete-user",
+    "/update-user",
+    "/unlink-account",
+    "/change-password",
+  ],
+  socialProviders,
+  account: { accountLinking: { enabled: true, trustedProviders: [] } },
   session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 天
+    expiresIn: 30 * 24 * 60 * 60,
+    updateAge: 24 * 60 * 60,
+    cookieCache: { enabled: false },
   },
-  pages: {
-    signIn: "/login",
-    error: "/login",
+  plugins: [
+    username({
+      minUsernameLength: 1,
+      maxUsernameLength: 2048,
+      usernameValidator: () => true,
+      usernameNormalization: false,
+      displayUsername: false,
+    }),
+    multiSession({ maximumSessions: 10 }),
+  ],
+  hooks: {
+    before: createAuthMiddleware(async (context) => {
+      if (context.path !== "/sign-in/email" && context.path !== "/sign-in/username") return;
+      const headers = context.headers || new Headers();
+      if (!(await consumeCaptcha(headers, headers.get("x-captcha-answer") || ""))) {
+        throw new APIError("BAD_REQUEST", { message: "验证码错误或已过期，请刷新后重试" });
+      }
+    }),
   },
-  providers: staticProviders,
-  callbacks: {
-    async signIn({ user, account }) {
-      // 只处理 OAuth 登录
-      if (account?.provider === "credentials" || !user.email) {
-        return true;
-      }
-
-      // 检查是否已有相同 email 的用户
-      const existingUser = await prisma.user.findUnique({
-        where: { email: user.email },
-        include: { accounts: true },
-      });
-
-      if (existingUser) {
-        // 检查是否已经关联了这个 OAuth provider
-        const hasAccount = existingUser.accounts.some(
-          (acc) => acc.provider === account!.provider && acc.providerAccountId === account!.providerAccountId
-        );
-
-        if (!hasAccount) {
-          // 将 OAuth 账号关联到现有用户
-          await prisma.account.create({
-            data: {
-              userId: existingUser.id,
-              type: account!.type,
-              provider: account!.provider,
-              providerAccountId: account!.providerAccountId,
-              refresh_token: account!.refresh_token,
-              access_token: account!.access_token,
-              expires_at: account!.expires_at,
-              token_type: account!.token_type,
-              scope: account!.scope,
-              id_token: account!.id_token,
-              session_state: account!.session_state as string | undefined,
-            },
-          });
-        }
-
-        // 如果 adapter 创建了一个重复的用户（没有 username），删除它
-        if (user.id && user.id !== existingUser.id) {
-          try {
-            const duplicateUser = await prisma.user.findUnique({
-              where: { id: user.id },
-            });
-            // 只删除由 adapter 创建的临时用户（没有 username 或刚创建的）
-            if (duplicateUser && !duplicateUser.username) {
-              await prisma.user.delete({ where: { id: user.id } });
-            }
-          } catch {
-            // 忽略删除错误
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (data) => {
+          const requested =
+            "username" in data && typeof data.username === "string" ? data.username : null;
+          const base =
+            requested ||
+            data.name
+              ?.toLowerCase()
+              .replace(/[^a-z0-9_]/g, "")
+              .slice(0, 14) ||
+            "user";
+          let candidate = base;
+          while (
+            await db.query.user.findFirst({
+              where: eq(user.username, candidate),
+              columns: { id: true },
+            })
+          ) {
+            candidate = `${base.slice(0, 13)}_${nanoid(6).toLowerCase()}`;
           }
-        }
-
-        // 修改 user 对象以使用现有用户的 ID
-        user.id = existingUser.id;
-      } else {
-        // 新用户：生成唯一用户名
-        const baseUsername = user.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "user";
-        let username = baseUsername;
-        let counter = 1;
-        while (await prisma.user.findUnique({ where: { username } })) {
-          username = `${baseUsername}${counter}`;
-          counter++;
-        }
-
-        // 更新由 adapter 创建的用户，添加 username
-        if (user.id) {
-          await prisma.user.update({
-            where: { id: user.id },
-            data: { username },
-          });
-        }
-      }
-
-      return true;
+          return { data: { ...data, username: candidate, nickname: data.name || candidate } };
+        },
+      },
     },
-    async session({ session, token }) {
-      // 检查会话是否被撤销
-      if ((token as { isRevoked?: boolean }).isRevoked) {
-        // 会话已被撤销，清空用户信息
-        session.user = null as unknown as typeof session.user;
-        return session;
-      }
-      
-      if (token.sub && session.user) {
-        session.user.id = token.sub;
-        session.jti = token.jti as string;
-        
-        // 从数据库获取最新的用户信息
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.sub },
-          select: { nickname: true, avatar: true, username: true, role: true },
-        });
-        
-        if (dbUser) {
-          session.user.name = dbUser.nickname || dbUser.username;
-          session.user.image = dbUser.avatar;
-          session.user.role = dbUser.role;
-        }
-      }
-      return session;
-    },
-    async jwt({ token, user, account }) {
-      if (user) {
-        // 获取数据库中的用户 ID
-        if (account?.provider !== "credentials" && user.email) {
-          const dbUser = await prisma.user.findUnique({
-            where: { email: user.email },
+    session: {
+      create: {
+        before: async (data) => {
+          const current = await db.query.user.findFirst({
+            where: eq(user.id, data.userId),
+            columns: { id: true, isBanned: true },
           });
-          if (dbUser) {
-            token.sub = dbUser.id;
-          }
-        } else {
-          token.sub = user.id;
-        }
-        
-        // 首次登录时生成 jti（JWT ID）
-        if (!token.jti) {
-          token.jti = nanoid(16);
-        }
-      }
-      
-      // 检查会话是否被撤销
-      if (token.jti && token.sub) {
-        const loginSession = await prisma.loginSession.findUnique({
-          where: { jti: token.jti as string },
-          select: { isRevoked: true },
-        });
-        
-        if (loginSession?.isRevoked) {
-          // 会话已被撤销，返回空 token 使其失效
-          return { ...token, isRevoked: true };
-        }
-      }
-      
-      return token;
+          if (!current || current.isBanned)
+            throw new APIError("FORBIDDEN", { message: "账号不可用" });
+          return { data };
+        },
+        after: async (data) => {
+          const device = parseDeviceInfo(data.userAgent || null);
+          await db
+            .insert(loginSession)
+            .values({
+              userId: data.userId,
+              jti: data.id,
+              userAgent: data.userAgent,
+              deviceType: device.deviceType,
+              os: device.os,
+              osVersion: device.osVersion,
+              browser: device.browser,
+              browserVersion: device.browserVersion,
+              brand: device.brand,
+              model: device.model,
+              ipv4Address: data.ipAddress?.includes(":") ? null : data.ipAddress,
+              ipv6Address: data.ipAddress?.includes(":") ? data.ipAddress : null,
+              expiresAt: data.expiresAt,
+            })
+            .onConflictDoNothing({ target: loginSession.jti });
+        },
+      },
+      delete: {
+        after: async (data) => {
+          await db
+            .update(loginSession)
+            .set({ isRevoked: true, revokedAt: new Date() })
+            .where(eq(loginSession.jti, data.id));
+        },
+      },
     },
   },
 });
 
-// 扩展 NextAuth 类型
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string;
-      email?: string | null;
-      name?: string | null;
-      image?: string | null;
-      role?: "USER" | "ADMIN" | "OWNER";
-    };
-    jti?: string; // JWT ID，用于会话管理
+/** 先按旧邮箱/用户名解析，再交给 Better Auth 验证密码与签发会话。 */
+export async function handleAuthRequest(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  if (
+    request.method === "POST" &&
+    ["/api/auth/sign-in/email", "/api/auth/sign-in/username"].includes(url.pathname)
+  ) {
+    let body: Record<string, unknown>;
+    try {
+      body = await request.clone().json();
+    } catch {
+      return Response.json({ message: "请求格式错误" }, { status: 400 });
+    }
+    const identifier = body.username ?? body.email;
+    if (typeof identifier !== "string" || identifier.length === 0 || identifier.length > 2048) {
+      return Response.json({ message: "账号或密码错误" }, { status: 401 });
+    }
+    let matches = await db
+      .select({ username: user.username })
+      .from(user)
+      .where(or(eq(user.email, identifier), eq(user.username, identifier)))
+      .limit(2);
+    if (!matches.length && identifier.includes("@")) {
+      matches = await db
+        .select({ username: user.username })
+        .from(user)
+        .where(sql`lower(${user.email}) = lower(${identifier})`)
+        .limit(2);
+    }
+    if (matches.length > 1) return Response.json({ message: "账号或密码错误" }, { status: 401 });
+    url.pathname = "/api/auth/sign-in/username";
+    const headers = new Headers(request.headers);
+    headers.delete("content-length");
+    request = new Request(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...body, username: matches[0]?.username || identifier }),
+    });
   }
+  // 认证库的原生账号动作也必须遵守实时封禁和审计撤销，不能绕开业务上下文。
+  if (url.pathname !== "/api/auth/sign-out") {
+    const nativeSession = await auth.api.getSession({
+      headers: request.headers,
+      query: { disableCookieCache: true },
+    });
+    if (nativeSession && !(await getSession(request.headers))) {
+      return url.pathname === "/api/auth/get-session"
+        ? Response.json(null)
+        : Response.json({ message: "当前会话不可用" }, { status: 403 });
+    }
+    if (url.pathname === "/api/auth/multi-session/set-active" && request.method === "POST") {
+      const body = await request
+        .clone()
+        .json()
+        .catch(() => null);
+      const token = body && typeof body.sessionToken === "string" ? body.sessionToken : "";
+      const target = token
+        ? await db.query.authSession.findFirst({
+            where: eq(authSession.token, token),
+            with: { user: true },
+          })
+        : null;
+      const audit = target
+        ? await db.query.loginSession.findFirst({
+            where: eq(loginSession.jti, target.id),
+            columns: { isRevoked: true },
+          })
+        : null;
+      if (
+        !target ||
+        !sessionIsUsable({
+          expiresAt: target.expiresAt,
+          isBanned: target.user.isBanned,
+          isRevoked: audit?.isRevoked ?? false,
+        })
+      ) {
+        return Response.json({ message: "目标会话不可用" }, { status: 403 });
+      }
+    }
+  }
+  return auth.handler(request);
 }
+
+/** 会话始终从数据库读取，同时读取最新角色、封禁及审计撤销信息。 */
+export async function getSession(headers: Headers) {
+  const result = await auth.api.getSession({ headers, query: { disableCookieCache: true } });
+  if (!result) return null;
+  const [current, audit] = await Promise.all([
+    db.query.user.findFirst({ where: eq(user.id, result.user.id) }),
+    db.query.loginSession.findFirst({
+      where: eq(loginSession.jti, result.session.id),
+      columns: { isRevoked: true },
+    }),
+  ]);
+  if (
+    !current ||
+    !sessionIsUsable({
+      expiresAt: new Date(result.session.expiresAt),
+      isBanned: current.isBanned,
+      isRevoked: audit?.isRevoked ?? false,
+    })
+  )
+    return null;
+  return {
+    session: result.session,
+    jti: result.session.id,
+    user: {
+      ...result.user,
+      id: current.id,
+      email: current.email,
+      username: current.username,
+      name: current.nickname || current.name || current.username,
+      image: current.avatar,
+      role: current.role,
+    },
+  };
+}
+
+export type AppSession = NonNullable<Awaited<ReturnType<typeof getSession>>>;

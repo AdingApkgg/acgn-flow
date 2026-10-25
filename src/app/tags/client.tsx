@@ -1,14 +1,14 @@
-"use client";
+import { useQuery } from "@tanstack/react-query";
+import { Search, Tags, TrendingUp, X } from "lucide-react";
 
-import { useState, useMemo, useCallback } from "react";
-import Link from "next/link";
-import { trpc } from "@/lib/trpc";
+import { useCallback, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Search, X, Tags, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton, skeletonKeys } from "@/components/ui/skeleton";
 import { useDebounce } from "@/lib/hooks";
+import { orpc } from "@/lib/orpc";
 
 interface TagData {
   id: string;
@@ -22,21 +22,19 @@ interface TagsPageClientProps {
   initialAllTags: TagData[];
 }
 
-export function TagsPageClient({
-  initialPopularTags,
-  initialAllTags,
-}: TagsPageClientProps) {
+export function TagsPageClient({ initialPopularTags, initialAllTags }: TagsPageClientProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
 
   // 只在搜索时请求 API
-  const { data: searchResults, isLoading: searchLoading } =
-    trpc.tag.list.useQuery(
-      { search: debouncedSearch, limit: 100 },
-      {
+  const { data: searchResults, isLoading: searchLoading } = useQuery(
+    orpc.tag.list.queryOptions({
+      input: { search: debouncedSearch, limit: 100 },
+      ...{
         enabled: debouncedSearch.length > 0,
-      }
-    );
+      },
+    }),
+  );
 
   // 计算显示的标签
   const displayTags = useMemo(() => {
@@ -57,9 +55,7 @@ export function TagsPageClient({
     <div className="container py-6 animate-in fade-in duration-300">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">标签</h1>
-        <span className="text-sm text-muted-foreground">
-          共 {initialAllTags.length} 个标签
-        </span>
+        <span className="text-sm text-muted-foreground">共 {initialAllTags.length} 个标签</span>
       </div>
 
       {/* 搜索框 */}
@@ -95,7 +91,7 @@ export function TagsPageClient({
             {initialPopularTags.map((tag) => (
               <Link
                 key={tag.id}
-                href={`/tag/${tag.slug}`}
+                to={`/tag/${tag.slug}`}
                 className="transition-transform duration-200 hover:scale-105 active:scale-95"
               >
                 <Badge
@@ -116,16 +112,14 @@ export function TagsPageClient({
         <div className="flex items-center gap-2 mb-4">
           <Tags className="h-5 w-5 text-muted-foreground" />
           <h2 className="text-xl font-bold">
-            {isSearching
-              ? `搜索结果 (${displayTags.length})`
-              : "所有标签"}
+            {isSearching ? `搜索结果 (${displayTags.length})` : "所有标签"}
           </h2>
         </div>
 
         {showLoading ? (
           <div className="flex flex-wrap gap-2">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-20 rounded-full" />
+            {skeletonKeys(12).map((skeletonKey) => (
+              <Skeleton key={skeletonKey} className="h-8 w-20 rounded-full" />
             ))}
           </div>
         ) : displayTags.length > 0 ? (
@@ -133,7 +127,7 @@ export function TagsPageClient({
             {displayTags.map((tag) => (
               <Link
                 key={tag.id}
-                href={`/tag/${tag.slug}`}
+                to={`/tag/${tag.slug}`}
                 className="transition-all duration-200 hover:scale-105 hover:-translate-y-0.5 active:scale-95"
               >
                 <Badge
@@ -149,9 +143,7 @@ export function TagsPageClient({
         ) : (
           <div className="text-center py-8">
             <p className="text-muted-foreground">
-              {isSearching
-                ? `没有找到包含 "${searchQuery}" 的标签`
-                : "暂无标签"}
+              {isSearching ? `没有找到包含 "${searchQuery}" 的标签` : "暂无标签"}
             </p>
           </div>
         )}

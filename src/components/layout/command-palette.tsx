@@ -1,7 +1,25 @@
-"use client";
-
-import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import {
+  Heart,
+  History,
+  Home,
+  Keyboard,
+  LogIn,
+  LogOut,
+  MessageSquare,
+  Monitor,
+  Moon,
+  Search,
+  Settings,
+  Shield,
+  Sun,
+  Tag,
+  Upload,
+  User,
+  Video,
+} from "lucide-react";
+import { useTheme } from "next-themes";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router";
 import {
   CommandDialog,
   CommandEmpty,
@@ -12,28 +30,8 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
-import {
-  Home,
-  Search,
-  Upload,
-  User,
-  Settings,
-  Heart,
-  History,
-  Video,
-  Tag,
-  LogIn,
-  LogOut,
-  Moon,
-  Sun,
-  Monitor,
-  MessageSquare,
-  Shield,
-  Keyboard,
-} from "lucide-react";
+import { signOut } from "@/lib/auth-client";
 import { useStableSession } from "@/lib/hooks";
-import { useTheme } from "next-themes";
-import { signOut } from "next-auth/react";
 import { useSearchHistoryStore } from "@/stores/app";
 
 interface CommandPaletteProps {
@@ -46,7 +44,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const isOpen = open ?? internalOpen;
   const setIsOpen = onOpenChange ?? setInternalOpen;
 
-  const router = useRouter();
+  const navigate = useNavigate();
   const { session } = useStableSession();
   const { theme, setTheme } = useTheme();
   const { history: searchHistory, addSearch } = useSearchHistoryStore();
@@ -61,10 +59,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         setIsOpen(!isOpen);
       }
       // / 键打开搜索（非输入框时）
-      if (
-        e.key === "/" &&
-        !["INPUT", "TEXTAREA"].includes((e.target as HTMLElement).tagName)
-      ) {
+      if (e.key === "/" && !["INPUT", "TEXTAREA"].includes((e.target as HTMLElement).tagName)) {
         e.preventDefault();
         setIsOpen(true);
       }
@@ -79,13 +74,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       setIsOpen(false);
       command();
     },
-    [setIsOpen]
+    [setIsOpen],
   );
 
   const handleSearch = () => {
     if (searchValue.trim()) {
       addSearch(searchValue.trim());
-      runCommand(() => router.push(`/search?q=${encodeURIComponent(searchValue.trim())}`));
+      runCommand(() => navigate(`/search?q=${encodeURIComponent(searchValue.trim())}`));
     }
   };
 
@@ -128,7 +123,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 key={query}
                 onSelect={() => {
                   addSearch(query);
-                  runCommand(() => router.push(`/search?q=${encodeURIComponent(query)}`));
+                  runCommand(() => navigate(`/search?q=${encodeURIComponent(query)}`));
                 }}
               >
                 <History className="mr-2 h-4 w-4" />
@@ -140,15 +135,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
         {/* 导航 */}
         <CommandGroup heading="导航">
-          <CommandItem onSelect={() => runCommand(() => router.push("/"))}>
+          <CommandItem onSelect={() => runCommand(() => navigate("/"))}>
             <Home className="mr-2 h-4 w-4" />
             首页
           </CommandItem>
-          <CommandItem onSelect={() => runCommand(() => router.push("/tags"))}>
+          <CommandItem onSelect={() => runCommand(() => navigate("/tags"))}>
             <Tag className="mr-2 h-4 w-4" />
             标签
           </CommandItem>
-          <CommandItem onSelect={() => runCommand(() => router.push("/comments"))}>
+          <CommandItem onSelect={() => runCommand(() => navigate("/comments"))}>
             <MessageSquare className="mr-2 h-4 w-4" />
             留言板
           </CommandItem>
@@ -159,52 +154,50 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         {/* 用户相关 */}
         {session ? (
           <CommandGroup heading="用户">
-            <CommandItem onSelect={() => runCommand(() => router.push("/upload"))}>
+            <CommandItem onSelect={() => runCommand(() => navigate("/upload"))}>
               <Upload className="mr-2 h-4 w-4" />
               上传视频
               <CommandShortcut>⌘U</CommandShortcut>
             </CommandItem>
-            <CommandItem onSelect={() => runCommand(() => router.push("/my-videos"))}>
+            <CommandItem onSelect={() => runCommand(() => navigate("/my-videos"))}>
               <Video className="mr-2 h-4 w-4" />
               我的视频
             </CommandItem>
-            <CommandItem onSelect={() => runCommand(() => router.push("/favorites"))}>
+            <CommandItem onSelect={() => runCommand(() => navigate("/favorites"))}>
               <Heart className="mr-2 h-4 w-4" />
               我的收藏
             </CommandItem>
-            <CommandItem onSelect={() => runCommand(() => router.push("/history"))}>
+            <CommandItem onSelect={() => runCommand(() => navigate("/history"))}>
               <History className="mr-2 h-4 w-4" />
               观看历史
             </CommandItem>
-            <CommandItem onSelect={() => runCommand(() => router.push("/settings"))}>
+            <CommandItem onSelect={() => runCommand(() => navigate("/settings"))}>
               <User className="mr-2 h-4 w-4" />
               个人设置
             </CommandItem>
-            <CommandItem onSelect={() => runCommand(() => router.push("/settings"))}>
+            <CommandItem onSelect={() => runCommand(() => navigate("/settings"))}>
               <Settings className="mr-2 h-4 w-4" />
               设置
             </CommandItem>
             {(session.user.role === "ADMIN" || session.user.role === "OWNER") && (
-              <CommandItem onSelect={() => runCommand(() => router.push("/dashboard"))}>
+              <CommandItem onSelect={() => runCommand(() => navigate("/dashboard"))}>
                 <Shield className="mr-2 h-4 w-4" />
                 管理后台
               </CommandItem>
             )}
             <CommandSeparator />
-            <CommandItem
-              onSelect={() => runCommand(() => signOut({ callbackUrl: "/" }))}
-            >
+            <CommandItem onSelect={() => runCommand(() => signOut({ callbackUrl: "/" }))}>
               <LogOut className="mr-2 h-4 w-4" />
               退出登录
             </CommandItem>
           </CommandGroup>
         ) : (
           <CommandGroup heading="账户">
-            <CommandItem onSelect={() => runCommand(() => router.push("/login"))}>
+            <CommandItem onSelect={() => runCommand(() => navigate("/login"))}>
               <LogIn className="mr-2 h-4 w-4" />
               登录
             </CommandItem>
-            <CommandItem onSelect={() => runCommand(() => router.push("/register"))}>
+            <CommandItem onSelect={() => runCommand(() => navigate("/register"))}>
               <User className="mr-2 h-4 w-4" />
               注册
             </CommandItem>

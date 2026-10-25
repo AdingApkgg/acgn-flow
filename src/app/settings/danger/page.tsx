@@ -1,21 +1,8 @@
-"use client";
-
-import { useSession, signOut } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { AlertTriangle, Loader2, LogOut, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,38 +14,52 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { toast } from "sonner";
-import { Loader2, LogOut, Trash2, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { signOut, useSession } from "@/lib/auth-client";
+import { orpc } from "@/lib/orpc";
+import { pageMeta } from "@/routes/metadata";
 
 export default function DangerPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const navigate = useNavigate();
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
-  const { data: user, isLoading: userLoading } = trpc.user.me.useQuery(
-    undefined,
-    { enabled: !!session }
+  const { data: user, isLoading: userLoading } = useQuery(
+    orpc.user.me.queryOptions({ input: undefined, ...{ enabled: !!session } }),
   );
 
-  const deleteAccountMutation = trpc.user.deleteAccount.useMutation({
-    onSuccess: () => {
-      toast.success("账号已注销");
-      signOut({ callbackUrl: "/" });
-    },
-    onError: (error) => {
-      toast.error(error.message);
-      setIsDeleting(false);
-    },
-  });
+  const deleteAccountMutation = useMutation(
+    orpc.user.deleteAccount.mutationOptions({
+      onSuccess: () => {
+        toast.success("账号已注销");
+        signOut({ callbackUrl: "/" });
+      },
+      onError: (error) => {
+        toast.error(error.message);
+        setIsDeleting(false);
+      },
+    }),
+  );
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.push("/login?callbackUrl=/settings/danger");
+      navigate("/login?callbackUrl=/settings/danger");
     }
-  }, [status, router]);
+  }, [status, navigate]);
 
   const handleLogout = () => {
     signOut({ callbackUrl: "/" });
@@ -96,9 +97,7 @@ export default function DangerPage() {
       {/* 页面标题 */}
       <div>
         <h2 className="text-xl font-semibold text-destructive">危险操作</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          这些操作可能会影响你的账号，请谨慎操作
-        </p>
+        <p className="text-sm text-muted-foreground mt-1">这些操作可能会影响你的账号，请谨慎操作</p>
       </div>
 
       {/* 危险区域 */}
@@ -137,12 +136,10 @@ export default function DangerPage() {
         <div className="flex items-center justify-between p-4 bg-destructive/5">
           <div>
             <p className="font-medium text-destructive">注销账号</p>
-            <p className="text-sm text-muted-foreground">
-              永久删除你的账号，视频将转移给站长
-            </p>
+            <p className="text-sm text-muted-foreground">永久删除你的账号，视频将转移给站长</p>
           </div>
-          <Dialog 
-            open={deleteDialogOpen} 
+          <Dialog
+            open={deleteDialogOpen}
             onOpenChange={(open) => {
               setDeleteDialogOpen(open);
               if (!open) {
@@ -167,11 +164,14 @@ export default function DangerPage() {
                   此操作不可撤销。你的账号将被永久删除，上传的视频和播放列表将转移给站长。
                 </DialogDescription>
               </DialogHeader>
-              
+
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">请输入密码确认身份</label>
+                  <label className="text-sm font-medium" htmlFor="settings-danger-field-1">
+                    请输入密码确认身份
+                  </label>
                   <Input
+                    id="settings-danger-field-1"
                     type="password"
                     placeholder="输入密码"
                     value={deletePassword}
@@ -179,10 +179,15 @@ export default function DangerPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    请输入 <code className="px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-mono text-xs">DELETE</code> 确认注销
+                  <label className="text-sm font-medium" htmlFor="settings-danger-field-2">
+                    请输入{" "}
+                    <code className="px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-mono text-xs">
+                      DELETE
+                    </code>{" "}
+                    确认注销
                   </label>
                   <Input
+                    id="settings-danger-field-2"
                     type="text"
                     placeholder="DELETE"
                     value={deleteConfirmText}
@@ -192,7 +197,9 @@ export default function DangerPage() {
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>取消</Button>
+                <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                  取消
+                </Button>
                 <Button
                   variant="destructive"
                   onClick={handleDeleteAccount}
@@ -217,3 +224,6 @@ export default function DangerPage() {
     </div>
   );
 }
+
+export const meta = () =>
+  pageMeta("危险操作", "管理和删除账户", "/settings/danger", { noindex: true });

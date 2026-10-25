@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "react-router";
 
 export function Footer() {
   return (
@@ -7,18 +7,18 @@ export function Footer() {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
           <p>© {new Date().getFullYear()} ACGN Flow</p>
           <div className="flex items-center gap-4">
-            <Link href="/feed.xml" className="hover:text-foreground transition-colors">
+            <Link to="/feed.xml" className="hover:text-foreground transition-colors">
               RSS
             </Link>
-            <Link href="/llms.txt" className="hover:text-foreground transition-colors">
+            <Link to="/llms.txt" className="hover:text-foreground transition-colors">
               llms.txt
             </Link>
-            <Link href="/sitemap.xml" className="hover:text-foreground transition-colors">
+            <Link to="/sitemap.xml" className="hover:text-foreground transition-colors">
               Sitemap
             </Link>
-            <a 
-              href="https://github.com/AdingApkgg/acgn-flow" 
-              target="_blank" 
+            <a
+              href="https://github.com/AdingApkgg/acgn-flow"
+              target="_blank"
               rel="noopener noreferrer"
               className="hover:text-foreground transition-colors"
             >

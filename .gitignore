@@ -53,3 +53,10 @@ public/ruffle
 # Misc
 *.tsbuildinfo
 next-env.d.ts
+
+# React Router / migration workspace
+.react-router
+.superpowers
+.env.preview
+playwright-report
+test-results

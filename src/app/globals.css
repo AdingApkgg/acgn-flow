@@ -7,8 +7,11 @@
 @theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Noto Sans SC", "Noto Sans JP", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-sans:
+    "Noto Sans SC", "Noto Sans JP", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -45,7 +48,7 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
-  
+
   /* ACGN gradient colors */
   --gradient-acgn: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
   --gradient-anime: linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #f43f5e 100%);
@@ -153,28 +156,28 @@
   .gradient-acgn {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
   }
-  
+
   .gradient-anime {
     background: linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #f43f5e 100%);
   }
-  
+
   .gradient-cyber {
     background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 50%, #8b5cf6 100%);
   }
-  
+
   .gradient-text {
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
-  
+
   .text-gradient-acgn {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
-  
+
   .text-gradient-anime {
     background: linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #f43f5e 100%);
     background-clip: text;
@@ -190,18 +193,18 @@
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
   }
-  
+
   .dark .glass {
     background: oklch(0.18 0.025 285 / 70%);
   }
-  
+
   .glass-card {
     background: oklch(1 0 0 / 50%);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid oklch(1 0 0 / 20%);
   }
-  
+
   .dark .glass-card {
     background: oklch(0.18 0.025 285 / 50%);
     border: 1px solid oklch(1 0 0 / 10%);
@@ -213,11 +216,11 @@
   .animate-float {
     animation: float 3s ease-in-out infinite;
   }
-  
+
   .animate-pulse-slow {
     animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
-  
+
   .animate-shimmer {
     animation: shimmer 2s linear infinite;
     background-size: 200% 100%;
@@ -225,13 +228,22 @@
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 /* 滚动条美化 */
@@ -240,24 +252,24 @@
     width: 8px;
     height: 8px;
   }
-  
+
   ::-webkit-scrollbar-track {
     background: transparent;
   }
-  
+
   ::-webkit-scrollbar-thumb {
     background: oklch(0.7 0.1 285 / 40%);
     border-radius: 4px;
   }
-  
+
   ::-webkit-scrollbar-thumb:hover {
     background: oklch(0.6 0.15 285 / 60%);
   }
-  
+
   .dark ::-webkit-scrollbar-thumb {
     background: oklch(0.5 0.1 285 / 40%);
   }
-  
+
   .dark ::-webkit-scrollbar-thumb:hover {
     background: oklch(0.6 0.15 285 / 60%);
   }
@@ -278,6 +290,7 @@
 
 /* Header 玻璃态效果 */
 header.sticky {
+  /* biome-ignore lint/complexity/noImportantStyles: 顶部玻璃背景需覆盖主题工具类，保留视觉设置优先级。 */
   background-color: hsl(var(--background) / var(--visual-opacity)) !important;
   backdrop-filter: blur(var(--visual-blur));
   -webkit-backdrop-filter: blur(var(--visual-blur));
@@ -325,7 +338,8 @@ video::cue {
 }
 
 @keyframes danmaku-fade {
-  0%, 80% {
+  0%,
+  80% {
     opacity: 1;
   }
   100% {
@@ -358,14 +372,18 @@ video::cue {
   * {
     -webkit-tap-highlight-color: transparent;
   }
-  
+
   /* 优化移动端滚动 */
   html {
     -webkit-overflow-scrolling: touch;
   }
 
   /* 防止移动端双击缩放 */
-  button, a, input, select, textarea {
+  button,
+  a,
+  input,
+  select,
+  textarea {
     touch-action: manipulation;
   }
 }

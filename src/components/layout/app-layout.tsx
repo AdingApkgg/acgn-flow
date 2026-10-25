@@ -1,14 +1,12 @@
-"use client";
-
-import { useState, useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
-import { Header } from "./header";
-import { Sidebar } from "./sidebar";
-import { Footer } from "./footer";
+import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router";
+import { useIsMounted } from "@/components/motion";
+import { cn } from "@/lib/utils";
 import { BottomNav } from "./bottom-nav";
 import { CommandPalette } from "./command-palette";
-import { cn } from "@/lib/utils";
-import { useIsMounted } from "@/components/motion";
+import { Footer } from "./footer";
+import { Header } from "./header";
+import { Sidebar } from "./sidebar";
 
 const SIDEBAR_COLLAPSED_KEY = "acgn-flow-sidebar-collapsed";
 
@@ -19,21 +17,21 @@ const overlaySidebarPaths = ["/video/"];
 const noSidebarPaths = ["/login", "/register", "/forgot-password"];
 
 function isOverlaySidebarPage(pathname: string): boolean {
-  return overlaySidebarPaths.some(path => pathname.startsWith(path));
+  return overlaySidebarPaths.some((path) => pathname.startsWith(path));
 }
 
 function shouldHideSidebar(pathname: string): boolean {
-  return noSidebarPaths.some(path => pathname.startsWith(path));
+  return noSidebarPaths.some((path) => pathname.startsWith(path));
 }
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  const pathname = useLocation().pathname;
   const mounted = useIsMounted();
-  
+
   // 判断页面类型
   const isOverlayMode = isOverlaySidebarPage(pathname);
   const isNoSidebarPage = shouldHideSidebar(pathname);
-  
+
   // YouTube 风格：默认展开侧边栏
   // 使用惰性初始化避免 effect 中 setState
   const [sidebarExpanded, setSidebarExpanded] = useState(() => {
@@ -41,10 +39,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
     return saved === null ? true : saved !== "true";
   });
-  
+
   // 视频页面独立的展开状态（默认隐藏）
   const [videoPageSidebarOpen, setVideoPageSidebarOpen] = useState(false);
-  
+
   // 追踪上一次的 pathname 来重置视频页面侧边栏
   const prevPathnameRef = useRef(pathname);
 
@@ -58,7 +56,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
-  
+
   // 切换页面时重置视频页面的侧边栏状态
   useEffect(() => {
     if (prevPathnameRef.current !== pathname) {
@@ -71,7 +69,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const toggleSidebar = () => {
     if (isOverlayMode) {
       // 视频页面只切换临时覆盖状态
-      setVideoPageSidebarOpen(prev => !prev);
+      setVideoPageSidebarOpen((prev) => !prev);
     } else {
       // 其他页面切换全局状态并保存
       const newState = !sidebarExpanded;
@@ -81,28 +79,24 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   // 是否显示侧边栏组件（非覆盖模式始终显示，覆盖模式需等待挂载）
-  const showSidebar = isOverlayMode ? (mounted && !isNoSidebarPage) : !isNoSidebarPage;
-  
+  const showSidebar = isOverlayMode ? mounted && !isNoSidebarPage : !isNoSidebarPage;
+
   // 侧边栏是否展开
   const isExpanded = isOverlayMode ? videoPageSidebarOpen : sidebarExpanded;
-  
+
   // 是否使用覆盖模式
   const useOverlayMode = isOverlayMode;
 
   return (
     <div className="relative min-h-screen flex flex-col overflow-x-hidden">
       <Header onMenuClick={toggleSidebar} />
-      
+
       <div className="flex flex-1">
         {/* 桌面端侧边栏 */}
         {showSidebar && (
-          <Sidebar 
-            collapsed={!isExpanded} 
-            onToggle={toggleSidebar}
-            overlay={useOverlayMode}
-          />
+          <Sidebar collapsed={!isExpanded} onToggle={toggleSidebar} overlay={useOverlayMode} />
         )}
-        
+
         {/* 主内容区 */}
         <main
           className={cn(
@@ -113,7 +107,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             // 覆盖模式：固定小边距
             showSidebar && useOverlayMode && "md:ml-0",
             // 移动端为底部导航栏留出空间
-            !isOverlayMode && "pb-16 md:pb-0"
+            !isOverlayMode && "pb-16 md:pb-0",
           )}
         >
           <div className="flex-1">{children}</div>

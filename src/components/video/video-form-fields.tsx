@@ -1,10 +1,19 @@
-"use client";
-
-import { useState, useRef } from "react";
-import { UseFormReturn } from "react-hook-form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  ChevronDown,
+  Eye,
+  EyeOff,
+  FileText,
+  Image as ImageIcon,
+  Loader2,
+  MessageSquare,
+  Upload,
+  X,
+} from "lucide-react";
+import { useRef, useState } from "react";
+import type { UseFormReturn } from "react-hook-form";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   FormControl,
   FormDescription,
@@ -13,19 +22,21 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { VideoPlayer } from "@/components/video/video-player";
-import { Eye, EyeOff, ChevronDown, Image as ImageIcon, Upload, Loader2, FileText, MessageSquare, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 
+interface VideoFormValues {
+  title: string;
+  videoUrl: string;
+  description?: string;
+  coverUrl?: string;
+  subtitleUrl?: string;
+  danmakuUrl?: string;
+}
 interface VideoFormFieldsProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  form: UseFormReturn<any>;
+  form: UseFormReturn<VideoFormValues>;
   showAdvanced?: boolean;
   onShowAdvancedChange?: (show: boolean) => void;
 }
@@ -40,7 +51,7 @@ export function VideoFormFields({
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingSubtitle, setUploadingSubtitle] = useState(false);
   const [uploadingDanmaku, setUploadingDanmaku] = useState(false);
-  
+
   const coverInputRef = useRef<HTMLInputElement>(null);
   const subtitleInputRef = useRef<HTMLInputElement>(null);
   const danmakuInputRef = useRef<HTMLInputElement>(null);
@@ -50,30 +61,30 @@ export function VideoFormFields({
 
   const coverUrl = form.watch("coverUrl");
   const videoUrl = form.watch("videoUrl");
-  
+
   // 通用文件上传处理
   const handleFileUpload = async (
     file: File,
     type: "cover" | "subtitle" | "danmaku",
-    setLoading: (loading: boolean) => void
+    setLoading: (loading: boolean) => void,
   ) => {
     setLoading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("type", type);
-      
+
       const response = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || "上传失败");
       }
-      
+
       // 设置表单值
       if (type === "cover") {
         form.setValue("coverUrl", data.url);
@@ -185,13 +196,21 @@ export function VideoFormFields({
           <div
             className={cn(
               "relative aspect-video rounded-lg border-2 border-dashed overflow-hidden transition-colors cursor-pointer group",
-              coverUrl ? "border-transparent" : "border-muted-foreground/25 hover:border-primary/50"
+              coverUrl
+                ? "border-transparent"
+                : "border-muted-foreground/25 hover:border-primary/50",
             )}
-            onClick={() => !coverUrl && coverInputRef.current?.click()}
           >
+            {!coverUrl && (
+              <button
+                type="button"
+                aria-label="选择视频封面"
+                className="absolute inset-0 w-full h-full"
+                onClick={() => coverInputRef.current?.click()}
+              />
+            )}
             {coverUrl ? (
               <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={coverUrl}
                   alt="封面预览"
@@ -221,7 +240,9 @@ export function VideoFormFields({
                 ) : (
                   <ImageIcon className="h-12 w-12 mb-2 opacity-50" />
                 )}
-                <span className="text-sm">{uploadingCover ? "上传中..." : "点击上传或拖入封面"}</span>
+                <span className="text-sm">
+                  {uploadingCover ? "上传中..." : "点击上传或拖入封面"}
+                </span>
               </div>
             )}
           </div>
@@ -247,11 +268,7 @@ export function VideoFormFields({
                 disabled={!field.value}
                 title={showPreview ? "隐藏预览" : "显示预览"}
               >
-                {showPreview ? (
-                  <EyeOff className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
+                {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
             </div>
             <FormDescription>支持 MP4, WebM, HLS (m3u8) 格式</FormDescription>
@@ -273,7 +290,7 @@ export function VideoFormFields({
                 form.watch("subtitleUrl")
                   ? [
                       {
-                        url: form.watch("subtitleUrl")!,
+                        url: form.watch("subtitleUrl") || "",
                         name: "字幕",
                         default: true,
                       },
@@ -289,17 +306,10 @@ export function VideoFormFields({
       {/* 高级选项 */}
       <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
         <CollapsibleTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full justify-between"
-          >
+          <Button type="button" variant="ghost" className="w-full justify-between">
             <span>高级选项</span>
             <ChevronDown
-              className={cn(
-                "h-4 w-4 transition-transform",
-                showAdvanced && "rotate-180"
-              )}
+              className={cn("h-4 w-4 transition-transform", showAdvanced && "rotate-180")}
             />
           </Button>
         </CollapsibleTrigger>

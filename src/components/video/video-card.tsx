@@ -1,16 +1,11 @@
-"use client";
+import { Clock, Eye, Heart, Play, User, Zap } from "lucide-react";
 
 import { memo } from "react";
-import Link from "next/link";
-import { VideoCover } from "./video-cover";
+import { Link } from "react-router";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card";
-import { Play, Eye, Heart, User, Clock, Zap } from "lucide-react";
-import { formatDuration, formatViews, formatRelativeTime } from "@/lib/format";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { formatDuration, formatRelativeTime, formatViews } from "@/lib/format";
+import { VideoCover } from "./video-cover";
 
 interface VideoCardProps {
   video: {
@@ -19,7 +14,7 @@ interface VideoCardProps {
     coverUrl?: string | null;
     duration?: number | null;
     views: number;
-    contentType?: string;
+    contentType?: "VIDEO" | "FLASH";
     createdAt: Date;
     uploader: {
       id: string;
@@ -37,15 +32,15 @@ interface VideoCardProps {
 
 function VideoCardComponent({ video, index = 0 }: VideoCardProps) {
   const uploaderName = video.uploader.nickname || video.uploader.username;
-  
+
   return (
-    <div 
+    <div
       className="group transition-transform duration-300 hover:-translate-y-1"
-      style={{ 
+      style={{
         animationDelay: `${index * 50}ms`,
       }}
     >
-      <Link href={`/video/${video.id}`} className="block">
+      <Link to={`/video/${video.id}`} className="block">
         {/* 封面容器 */}
         <div className="relative aspect-video overflow-hidden rounded-xl bg-muted shadow-sm group-hover:shadow-xl transition-shadow duration-300">
           <VideoCover
@@ -53,10 +48,10 @@ function VideoCardComponent({ video, index = 0 }: VideoCardProps) {
             title={video.title}
             className="transition-transform duration-500 ease-out group-hover:scale-105"
           />
-          
+
           {/* 渐变遮罩 - 底部信息区域 */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/0 opacity-60 group-hover:opacity-80 transition-opacity duration-300" />
-          
+
           {/* 播放按钮 - 居中 */}
           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
             <div className="bg-white/95 dark:bg-black/80 backdrop-blur-md rounded-full p-3.5 shadow-2xl transition-transform duration-200 ease-out group-hover:scale-110 active:scale-95">
@@ -72,7 +67,6 @@ function VideoCardComponent({ video, index = 0 }: VideoCardProps) {
             </div>
           )}
 
-          {/* Flash 角标 */}
           {video.contentType === "FLASH" && (
             <div className="absolute top-2.5 left-2.5 flex items-center gap-1 bg-amber-500/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium z-10">
               <Zap className="h-3 w-3" />
@@ -98,20 +92,19 @@ function VideoCardComponent({ video, index = 0 }: VideoCardProps) {
           {/* 头像 */}
           <HoverCard openDelay={400} closeDelay={100}>
             <HoverCardTrigger asChild>
-              <div
+              <button
+                type="button"
+                aria-label={`查看 ${uploaderName} 的资料`}
                 onClick={(e) => e.preventDefault()}
                 className="cursor-pointer flex-shrink-0"
               >
                 <Avatar className="h-8 w-8 sm:h-9 sm:w-9 ring-2 ring-background shadow-sm transition-transform duration-200 hover:scale-110">
-                  <AvatarImage
-                    src={video.uploader.avatar || undefined}
-                    alt={uploaderName}
-                  />
+                  <AvatarImage src={video.uploader.avatar || undefined} alt={uploaderName} />
                   <AvatarFallback className="bg-primary/10 text-primary text-xs sm:text-sm font-medium">
                     {uploaderName.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
-              </div>
+              </button>
             </HoverCardTrigger>
             <HoverCardContent
               className="w-64 max-w-[calc(100vw-2rem)] sm:w-72"
@@ -120,23 +113,16 @@ function VideoCardComponent({ video, index = 0 }: VideoCardProps) {
             >
               <div className="flex gap-3">
                 <Avatar className="h-14 w-14 ring-2 ring-primary/20">
-                  <AvatarImage
-                    src={video.uploader.avatar || undefined}
-                    alt={uploaderName}
-                  />
+                  <AvatarImage src={video.uploader.avatar || undefined} alt={uploaderName} />
                   <AvatarFallback className="bg-primary/10 text-primary text-lg font-medium">
                     {uploaderName.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold truncate">
-                    {uploaderName}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    @{video.uploader.username}
-                  </p>
+                  <p className="font-semibold truncate">{uploaderName}</p>
+                  <p className="text-sm text-muted-foreground">@{video.uploader.username}</p>
                   <Link
-                    href={`/user/${video.uploader.id}`}
+                    to={`/user/${video.uploader.id}`}
                     className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline mt-2 font-medium"
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -173,6 +159,7 @@ export const VideoCard = memo(VideoCardComponent, (prevProps, nextProps) => {
   return (
     prevProps.video.id === nextProps.video.id &&
     prevProps.video.views === nextProps.video.views &&
+    prevProps.video.contentType === nextProps.video.contentType &&
     prevProps.video._count.likes === nextProps.video._count.likes &&
     prevProps.index === nextProps.index
   );
