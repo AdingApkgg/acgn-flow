@@ -6,20 +6,39 @@ import { legacyTables } from "./legacy";
 const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
 const baselineUrl = new URL("../../drizzle/baseline/0000_legacy.sql", import.meta.url);
 const authMigrationUrl = new URL("../../drizzle/migrations/0001_auth.sql", import.meta.url);
+const contentTypeMigrationUrl = new URL(
+  "../../drizzle/migrations/0002_content_type.sql",
+  import.meta.url,
+);
 
-export type TableSnapshot = { count: string; ids: string; values: string };
+export type TableSnapshot = { count: string; ids: string; values: string; contentType?: string };
 export type DatabaseSnapshot = Record<string, TableSnapshot>;
 
-/** 在同一事务内比较旧字段；新增认证列不影响原数据摘要。 */
-export async function snapshotLegacy(client: PoolClient): Promise<DatabaseSnapshot> {
+/** 冻结原字段摘要；main 后加的内容类型若已存在，则额外绑定业务 ID 核对。 */
+export async function snapshotLegacy(
+  client: PoolClient,
+  options: { includeContentType?: boolean } = {},
+): Promise<DatabaseSnapshot> {
   const snapshot: DatabaseSnapshot = {};
+  let hasContentType = false;
+  if (options.includeContentType !== false) {
+    const { rows } = await client.query<{ exists: boolean }>(`SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
+        AND table_name = 'Video' AND column_name = 'contentType') AS exists`);
+    hasContentType = rows[0].exists;
+  }
   for (const [name, definition] of Object.entries(legacyTables)) {
     const columns = definition.columns.map(quote).join(", ");
     const identity = definition.identity.map(quote).join(", ");
+    const contentType =
+      name === "Video" && hasContentType
+        ? ', COALESCE(sum(hashtextextended(jsonb_build_array("id", "contentType")::text, 0)::numeric), 0)::text AS "contentType"'
+        : "";
     const { rows } = await client.query<TableSnapshot>(`
       SELECT count(*)::text AS count,
         COALESCE(sum(hashtextextended(jsonb_build_array(${identity})::text, 0)::numeric), 0)::text AS ids,
         COALESCE(sum(hashtextextended(jsonb_build_array(${columns})::text, 0)::numeric), 0)::text AS values
+        ${contentType}
       FROM ${quote(name)}
     `);
     snapshot[name] = rows[0];
@@ -36,7 +55,8 @@ export function assertLegacyUnchanged(before: DatabaseSnapshot, after: DatabaseS
       !right ||
       left.count !== right.count ||
       left.ids !== right.ids ||
-      left.values !== right.values
+      left.values !== right.values ||
+      (left.contentType !== undefined && left.contentType !== right.contentType)
     ) {
       throw new Error(`Legacy data changed during migration: ${table}`);
     }
@@ -216,8 +236,12 @@ export async function upgradeLegacyDatabase(client: PoolClient) {
       `LOCK TABLE ${Object.keys(legacyTables).map(quote).join(", ")} IN SHARE MODE`,
     );
     const before = await snapshotLegacy(client);
+    await client.query(await readFile(contentTypeMigrationUrl, "utf8"));
     const accounts = await applyAuthMigration(client);
-    const after = await snapshotLegacy(client);
+    // 缺列旧库只核对本轮迁移前已有字段；已含 FLASH 的库必须核对类型摘要。
+    const after = await snapshotLegacy(client, {
+      includeContentType: before.Video.contentType !== undefined,
+    });
     assertLegacyUnchanged(before, after);
     return { ...accounts, before, after };
   });
@@ -230,6 +254,7 @@ export async function initializeDatabase(client: PoolClient) {
     if (rows[0].count !== "0")
       throw new Error("db:init requires an empty schema; existing databases must use db:upgrade");
     await client.query(await readFile(baselineUrl, "utf8"));
+    await client.query(await readFile(contentTypeMigrationUrl, "utf8"));
     await applyAuthMigration(client);
     return snapshotLegacy(client);
   });

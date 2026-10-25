@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RufflePlayer } from "@/components/video/ruffle-player";
 import {
   type DanmakuItem,
   VideoPlayer,
@@ -85,9 +86,14 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
 
   // 优先使用客户端数据（包含最新的点赞等），然后是服务端数据
   const displayVideo = video || initialVideo;
+  const isFlash = displayVideo.contentType === "FLASH";
 
   // 直接加载弹幕数据（独立于播放器）
   useEffect(() => {
+    if (isFlash) {
+      setDanmakuData([]);
+      return;
+    }
     const danmakuUrl = displayVideo?.danmakuUrl || `/uploads/danmaku/${id}.json`;
 
     const loadDanmaku = async () => {
@@ -112,7 +118,7 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
     };
 
     loadDanmaku();
-  }, [id, displayVideo?.danmakuUrl]);
+  }, [id, displayVideo?.danmakuUrl, isFlash]);
 
   // 分P状态管理
   const [searchParams, setSearchParams] = useSearchParams();
@@ -378,18 +384,25 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
       <div className="px-4 md:px-6 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
-            <VideoPlayer
-              ref={playerRef}
-              url={currentVideoUrl || displayVideo.videoUrl}
-              poster={displayVideo.coverUrl}
-              onProgress={handleProgress}
-              subtitles={
-                displayVideo.subtitleUrl
-                  ? [{ url: displayVideo.subtitleUrl, name: "字幕", default: true }]
-                  : []
-              }
-              danmakuUrl={displayVideo.danmakuUrl || `/uploads/danmaku/${displayVideo.id}.json`}
-            />
+            {isFlash ? (
+              <RufflePlayer
+                url={displayVideo.videoUrl}
+                poster={displayVideo.coverUrl || undefined}
+              />
+            ) : (
+              <VideoPlayer
+                ref={playerRef}
+                url={currentVideoUrl || displayVideo.videoUrl}
+                poster={displayVideo.coverUrl}
+                onProgress={handleProgress}
+                subtitles={
+                  displayVideo.subtitleUrl
+                    ? [{ url: displayVideo.subtitleUrl, name: "字幕", default: true }]
+                    : []
+                }
+                danmakuUrl={displayVideo.danmakuUrl || `/uploads/danmaku/${displayVideo.id}.json`}
+              />
+            )}
 
             <div>
               <div className="flex items-start justify-between gap-2">
@@ -628,7 +641,7 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
             )}
 
             {/* 分P列表 */}
-            {hasPages && displayVideo.pages && (
+            {!isFlash && hasPages && displayVideo.pages && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <List className="h-4 w-4" />
@@ -665,7 +678,7 @@ export function VideoPageClient({ id, initialVideo }: VideoPageClientProps) {
             )}
 
             {/* 弹幕列表 */}
-            {danmakuData.length > 0 && (
+            {!isFlash && danmakuData.length > 0 && (
               <div className="border rounded-lg overflow-hidden">
                 <button
                   type="button"

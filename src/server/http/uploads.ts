@@ -5,6 +5,7 @@ import { resolve, sep } from "path";
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "./uploads";
 
 const MIME_TYPES: Record<string, string> = {
+  swf: "application/x-shockwave-flash",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
@@ -58,6 +59,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pat
     return new Response(new Uint8Array(fileBuffer), {
       headers: {
         "Content-Type": contentType,
+        ...(ext === "swf" ? { "Access-Control-Allow-Origin": "*" } : {}),
         "Content-Length": fileStats.size.toString(),
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "public, max-age=31536000, immutable",

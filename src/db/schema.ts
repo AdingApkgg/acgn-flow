@@ -51,6 +51,9 @@ export const videoStatusEnum = pgEnum("VideoStatus", [
 ]);
 export type VideoStatus = (typeof videoStatusEnum.enumValues)[number];
 
+export const contentTypeEnum = pgEnum("ContentType", ["VIDEO", "FLASH"]);
+export type ContentType = (typeof contentTypeEnum.enumValues)[number];
+
 export const user = pgTable(
   "User",
   {
@@ -210,6 +213,7 @@ export const video = pgTable(
     duration: integer("duration"),
     views: integer("views").notNull().default(0),
     status: videoStatusEnum("status").notNull().default("PENDING"),
+    contentType: contentTypeEnum("contentType").notNull().default("VIDEO"),
     pages: jsonb("pages").$type<JsonValue>(),
     uploaderId: text("uploaderId").notNull(),
     createdAt: date("createdAt").notNull().defaultNow(),

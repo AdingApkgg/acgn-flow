@@ -7,6 +7,7 @@ interface Video {
   coverUrl?: string | null;
   duration?: number | null;
   views: number;
+  contentType?: "VIDEO" | "FLASH";
   createdAt: Date;
   uploader: {
     id: string;

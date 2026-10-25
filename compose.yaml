@@ -1,27 +1,23 @@
-# ACGN Flow - 完整的容器化部署
-# 使用: podman-compose up -d 或 docker compose up -d
-
+# Bun/Hono 应用、独立 PostgreSQL/Redis 与显式迁移入口。
+# 默认复用宿主机 Cloudflare Tunnel，回源 http://127.0.0.1:1270。
 services:
-  # PostgreSQL 数据库
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     container_name: acgn-flow-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-acgn}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acgn_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请配置独立数据库密码}
       POSTGRES_DB: ${POSTGRES_DB:-acgn_flow}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      # PostgreSQL 18 使用父目录；不得直接把旧版本的数据卷交给新大版本。
+      - postgres_data:${POSTGRES_DATA_PATH:-/var/lib/postgresql/data}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-acgn} -d ${POSTGRES_DB:-acgn_flow}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Redis 缓存
   redis:
     image: redis:7-alpine
     container_name: acgn-flow-redis
@@ -29,16 +25,14 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Bun/Hono 应用
   app:
+    image: ${APP_IMAGE:-acgn-flow-app:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -50,6 +44,7 @@ services:
         HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
         APP_URL: ${APP_URL:-http://localhost:1270}
         APP_NAME: ${APP_NAME:-ACGN Flow}
+        APP_REVISION: ${APP_REVISION:-development}
     container_name: acgn-flow-app
     restart: unless-stopped
     depends_on:
@@ -58,51 +53,86 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - NODE_ENV=production
-      - PORT=1270
-      - HOST=0.0.0.0
-      # 数据库连接（使用容器内网络）
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-acgn}:${POSTGRES_PASSWORD:-acgn_password}@postgres:5432/${POSTGRES_DB:-acgn_flow}?schema=public
-      # Redis 连接
-      - REDIS_URL=redis://redis:6379
-      # Better Auth
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-${AUTH_SECRET}}
-      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-${AUTH_URL:-http://localhost:1270}}
-      # OAuth（可选）
-      - AUTH_GITHUB_ID=${AUTH_GITHUB_ID:-}
-      - AUTH_GITHUB_SECRET=${AUTH_GITHUB_SECRET:-}
-      - AUTH_GOOGLE_ID=${AUTH_GOOGLE_ID:-}
-      - AUTH_GOOGLE_SECRET=${AUTH_GOOGLE_SECRET:-}
-      - AUTH_DISCORD_ID=${AUTH_DISCORD_ID:-}
-      - AUTH_DISCORD_SECRET=${AUTH_DISCORD_SECRET:-}
-      # 应用配置
-      - APP_URL=${APP_URL:-http://localhost:1270}
-      - APP_NAME=${APP_NAME:-ACGN Flow}
-      # 邮件（可选）
-      - SMTP_HOST=${SMTP_HOST:-}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER:-}
-      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
-      - SMTP_FROM=${SMTP_FROM:-}
-      # 上传目录
-      - UPLOAD_DIR=/app/uploads
-      # IndexNow（可选）
-      - INDEXNOW_KEY=${INDEXNOW_KEY:-}
-      # Google Search Console（可选）
-      - GOOGLE_SERVICE_ACCOUNT_EMAIL=${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}
-      - GOOGLE_PRIVATE_KEY=${GOOGLE_PRIVATE_KEY:-}
-      # Bilibili Cookie（可选）
-      - BILIBILI_COOKIE=${BILIBILI_COOKIE:-}
+      NODE_ENV: production
+      PORT: 1270
+      HOST: 0.0.0.0
+      APP_REVISION: ${APP_REVISION:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-acgn}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-acgn_flow}
+      REDIS_URL: redis://redis:6379
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-${AUTH_SECRET:-}}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-${AUTH_URL:-http://localhost:1270}}
+      AUTH_GITHUB_ID: ${AUTH_GITHUB_ID:-}
+      AUTH_GITHUB_SECRET: ${AUTH_GITHUB_SECRET:-}
+      AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
+      AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
+      AUTH_DISCORD_ID: ${AUTH_DISCORD_ID:-}
+      AUTH_DISCORD_SECRET: ${AUTH_DISCORD_SECRET:-}
+      APP_URL: ${APP_URL:-http://localhost:1270}
+      APP_NAME: ${APP_NAME:-ACGN Flow}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      UPLOAD_DIR: /app/uploads
+      INDEXNOW_KEY: ${INDEXNOW_KEY:-}
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: ${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}
+      GOOGLE_PRIVATE_KEY: ${GOOGLE_PRIVATE_KEY:-}
+      BILIBILI_COOKIE: ${BILIBILI_COOKIE:-}
     volumes:
       - uploads:/app/uploads
-      - ./data:/app/data:ro # IP 地理位置数据库（只读）
+      - ./data:/app/data:ro
     ports:
-      - "1270:1270"
+      - "127.0.0.1:${APP_PORT:-1270}:1270"
+
+  # 只在已备份、演练并授权后显式执行；普通 up 不会自动改库。
+  migrate:
+    profiles: ["maintenance"]
+    image: ${APP_IMAGE:-acgn-flow-app:local}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-acgn}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-acgn_flow}
+    command: ["bun", "scripts/db-upgrade.ts", "--confirm-database=${POSTGRES_DB:-acgn_flow}"]
+
+  # 共享宿主机隧道可继续使用，不应重复启动同一 tunnel。
+  cloudflared:
+    profiles: ["cloudflared"]
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.6.1}
+    container_name: acgn-flow-cloudflared
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    command: tunnel --no-autoupdate run
+
+  rathole:
+    profiles: ["rathole"]
+    build:
+      context: .
+      dockerfile: Dockerfile.rathole
+      network: host
+      args:
+        http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+        https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+        RATHOLE_VERSION: ${RATHOLE_VERSION:-v0.5.0}
+    image: acgn-flow-rathole
+    container_name: acgn-flow-rathole
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - ./deploy/rathole-client.toml:/config/client.toml:ro
+    command: ["-c", "/config/client.toml"]
 
 volumes:
   postgres_data:
-    name: acgn-flow-postgres-data
+    name: ${POSTGRES_VOLUME:-acgn-flow-postgres-data}
   redis_data:
-    name: acgn-flow-redis-data
+    name: ${REDIS_VOLUME:-acgn-flow-redis-data}
   uploads:
-    name: acgn-flow-uploads
+    name: ${UPLOADS_VOLUME:-acgn-flow-uploads}

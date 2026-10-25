@@ -47,6 +47,9 @@ deploy/rathole-client.toml
 deploy/rathole-server.toml
 !deploy/*.example.toml
 
+# Ruffle (copied from node_modules by postinstall)
+public/ruffle
+
 # Misc
 *.tsbuildinfo
 next-env.d.ts

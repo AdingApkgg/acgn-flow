@@ -1,6 +1,6 @@
 # ACGN Flow
 
-ACGN Fans 流式媒体内容分享平台。用户提交视频直链，平台提供播放、字幕弹幕、合集、搜索、收藏、历史、评论和管理功能。
+ACGN Fans 流式媒体内容分享平台。用户提交视频直链，平台提供视频和 Flash 播放、字幕弹幕、合集、搜索、收藏、历史、评论和管理功能。
 
 技术栈：React Router 8 Framework Mode、Vite 8、React 19、Hono、oRPC、Drizzle、Bun、Better Auth、Biome、Video.js 10（`@videojs/react`）、PostgreSQL、Redis、Tailwind v4、shadcn/ui。
 
@@ -34,7 +34,7 @@ bun run start
 
 Better Auth 管理密码、GitHub/Google/Discord OAuth 和数据库会话。旧 bcrypt 密码、用户 ID、OAuth 外部 ID 和业务关联通过增量迁移保留；旧登录态切换后需要重新登录。多账号使用 Better Auth 的设备会话，撤销后不能靠旧切换令牌恢复。OAuth 回调为 `/api/auth/callback/<provider>`，只有配置完整凭据的 provider 才显示。
 
-Video.js 10 替换原媒体引擎，保留自定义控制、字幕和弹幕层。当前 MP4 使用 Video.js 原生媒体组件，HLS 使用其适配器。原 Serwist 缓存和新 worker 注册已移除；`/sw.js` 仅供旧客户端退役，不提供离线缓存。
+Video.js 10 替换原媒体引擎，保留自定义控制、字幕和弹幕层。MP4 使用 Video.js 媒体组件，HLS 使用 HlsJsVideo 适配器；Flash 使用本地锁定的 Ruffle 资产。原 Serwist 缓存和新 worker 注册已移除；`/sw.js` 仅供旧客户端退役，不提供离线缓存。
 
 ## 路由与结构
 
@@ -51,6 +51,6 @@ Video.js 10 替换原媒体引擎，保留自定义控制、字幕和弹幕层�
 
 ## 部署
 
-默认生产端口 1270。Docker/Podman、PM2、Nginx/Rathole 配置见 [部署指南](deploy/README.md)。`/healthz` 检查数据库与 Redis 连通。开发验证通过不代表生产已切换；生产数据升级、OAuth 应用配置和生产发布都单独确认。
+默认生产端口 1270。Docker/Podman、Cloudflare Tunnel 与备用 Rathole 配置见 [部署指南](deploy/README.md)。`/healthz` 检查数据库与 Redis 连通。开发验证通过不代表生产已切换；生产数据升级、OAuth 应用配置和生产发布都单独确认。
 
 [GNU AGPLv3](LICENSE)

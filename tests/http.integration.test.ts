@@ -156,6 +156,64 @@ describe.skipIf(process.env.RUN_HTTP_INTEGRATION !== "1")("Hono 资源与上传�
     }
   });
 
+  test("Flash上传保留原内容、相对地址和SWF读取MIME", async () => {
+    const content = new Uint8Array([70, 87, 83, 9, 8, 0, 0, 0]);
+    const form = new FormData();
+    form.set("file", new File([content], "fixture.swf", { type: "application/octet-stream" }));
+    form.set("type", "flash");
+    const response = await app.request("/api/upload", {
+      method: "POST",
+      headers: { cookie: cookies.get(actorIds[0] || "") || "" },
+      body: form,
+    });
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result.url).toMatch(/^\/uploads\/flash\/.+\.swf$/);
+    expect(result.format).toBe("swf");
+    expect(result.compressionMode).toBe("none");
+    const downloaded = await app.request(result.url);
+    expect(downloaded.status).toBe(200);
+    expect(downloaded.headers.get("content-type")).toBe("application/x-shockwave-flash");
+    expect(downloaded.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(content);
+  });
+
+  test("Flash拒绝错误目录、任意二进制扩展名和超过100MB的文件", async () => {
+    const beforeFiles = (await readdir(uploadRoot, { recursive: true })).sort();
+    for (const [filename, type] of [
+      ["fixture.swf", "../escape"],
+      ["fixture.swf", "cover"],
+      ["fixture.exe", "flash"],
+    ]) {
+      const form = new FormData();
+      form.set("file", new File(["FWS"], filename, { type: "application/octet-stream" }));
+      form.set("type", type || "");
+      const response = await app.request("/api/upload", {
+        method: "POST",
+        headers: { cookie: cookies.get(actorIds[0] || "") || "" },
+        body: form,
+      });
+      expect(response.status).toBe(400);
+    }
+    // 直接给处理器传入已解析的超限元数据，避免为大小边界分配100MB测试缓冲。
+    const oversized = new File(["FWS"], "oversized.swf", { type: "application/x-shockwave-flash" });
+    Object.defineProperty(oversized, "size", { value: 100 * 1024 * 1024 + 1 });
+    const request = new Request("https://example.test/api/upload", {
+      method: "POST",
+      headers: { cookie: cookies.get(actorIds[0] || "") || "" },
+    });
+    Object.defineProperty(request, "formData", {
+      value: async () => ({
+        get: (name: string) => (name === "file" ? oversized : name === "type" ? "flash" : null),
+      }),
+    });
+    const { POST } = await import("../src/server/http/upload");
+    const rejected = await POST(request);
+    expect(rejected.status).toBe(400);
+    expect((await rejected.json()).error).toContain("100MB");
+    expect((await readdir(uploadRoot, { recursive: true })).sort()).toEqual(beforeFiles);
+  });
+
   test("字幕保留内容和 MIME，文件缺失返回真实404", async () => {
     const response = await app.request("/uploads/subtitle/fixture.vtt");
     expect(response.status).toBe(200);

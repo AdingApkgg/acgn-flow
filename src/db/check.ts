@@ -15,6 +15,9 @@ export async function checkDatabase(client: PoolClient, options: { legacyOnly?: 
   if (options.legacyOnly) {
     return { businessTables, authentication: "legacy schema; authentication not checked" };
   }
+  if (businessTables.Video.contentType === undefined) {
+    throw new Error("Content type migration is incomplete; use db:upgrade explicitly");
+  }
   const { rows: auth } = await client.query<AuthenticationAudit>(`SELECT
     (SELECT count(*)::int FROM "AuthAccount") AS accounts,
     (SELECT count(*)::int FROM "AuthSession") AS sessions,

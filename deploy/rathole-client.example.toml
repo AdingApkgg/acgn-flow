@@ -13,4 +13,5 @@ keepalive_interval = 5
 
 # Bun/Hono 应用
 [client.services.acgn-flow]
-local_addr = "127.0.0.1:1270"
+# 该模板用于 Compose 的 rathole profile；宿主机客户端应改为 127.0.0.1:1270。
+local_addr = "app:1270"

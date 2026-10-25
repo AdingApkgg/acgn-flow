@@ -17,7 +17,9 @@ RUN rm -rf node_modules && bun install --frozen-lockfile --production
 
 FROM oven/bun:1.4.2 AS runner
 WORKDIR /app
-ENV NODE_ENV=production PORT=1270 HOST=0.0.0.0
+ARG APP_REVISION=development
+ENV NODE_ENV=production PORT=1270 HOST=0.0.0.0 APP_REVISION=$APP_REVISION
+LABEL org.opencontainers.image.revision=$APP_REVISION
 COPY --from=production-dependencies /app/node_modules ./node_modules
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/src/db ./src/db

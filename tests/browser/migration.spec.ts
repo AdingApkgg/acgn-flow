@@ -1,5 +1,5 @@
 import { unlink, writeFile } from "node:fs/promises";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -49,6 +49,26 @@ test.beforeAll(async () => {
     status: "PUBLISHED",
     videoUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
   });
+  await db.insert(video).values([
+    {
+      id: `${id}-flash`,
+      title: "Flash 隔离夹具",
+      uploaderId: id,
+      status: "PUBLISHED",
+      contentType: "FLASH",
+      videoUrl: "/uploads/browser-smoke/security.swf",
+    },
+    {
+      id: `${id}-relative`,
+      title: "相对媒体地址夹具",
+      uploaderId: id,
+      status: "PUBLISHED",
+      videoUrl: "/api/bili/BV1xx411c7mD",
+      coverUrl: "/uploads/browser-smoke/cover.avif",
+      subtitleUrl: "/uploads/browser-smoke/fixture.vtt",
+      danmakuUrl: "/uploads/browser-smoke/fixture.json",
+    },
+  ]);
 });
 
 test.afterAll(async () => {
@@ -124,7 +144,7 @@ for (const viewport of [
   });
 }
 
-test("真实登录表单消费验证码、进入受保护页面并上传字幕", async ({ page }) => {
+async function login(page: Page) {
   const challengeResponse = page.waitForResponse((response) =>
     response.url().includes("/api/captcha"),
   );
@@ -142,6 +162,10 @@ test("真实登录表单消费验证码、进入受保护页面并上传字幕",
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/account$/);
   await expect(page.getByRole("heading", { name: "账号安全", exact: true })).toBeVisible();
+}
+
+test("真实登录表单消费验证码、进入受保护页面并上传字幕", async ({ page }) => {
+  await login(page);
   const content = "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n上传卷写入夹具\n";
   const response = await page.request.post("/api/upload", {
     multipart: {
@@ -279,4 +303,111 @@ test("旧 Service Worker 退役后注销，仅清理识别的应用缓存", asyn
   } finally {
     await unlink(path).catch(() => {});
   }
+});
+
+test("已有 B站与上传相对媒体地址可以只改标题", async ({ page }) => {
+  await login(page);
+  await page.goto(`/video/edit/${id}-relative`);
+  await page.getByPlaceholder("输入视频标题").fill("相对地址只修改标题");
+  await page.getByRole("button", { name: "保存更改", exact: true }).click();
+  await expect(page).toHaveURL(/\/my-videos$/);
+  const { video } = await import("../../src/db/schema");
+  const [row] = await db
+    .select()
+    .from(video)
+    .where(eq(video.id, `${id}-relative`));
+  expect(row.title).toBe("相对地址只修改标题");
+  expect(row.videoUrl).toBe("/api/bili/BV1xx411c7mD");
+  expect(row.coverUrl).toBe("/uploads/browser-smoke/cover.avif");
+  expect(row.subtitleUrl).toBe("/uploads/browser-smoke/fixture.vtt");
+  expect(row.danmakuUrl).toBe("/uploads/browser-smoke/fixture.json");
+});
+
+test("Flash SDK 沙箱阻止携带登录 Cookie 写 RPC、读取父页和跳转", async ({ page, context }) => {
+  await login(page);
+  // 先由真实编辑表单生成一个已认证且成功的写请求，作为攻击的有效载荷。
+  await page.goto(`/video/edit/${id}-flash`);
+  await page.getByPlaceholder("输入视频标题").fill("Flash 安全基线");
+  const writeRequest = page.waitForRequest(
+    (request) => request.method() === "POST" && request.url().includes("/api/rpc/video/update"),
+  );
+  await page.getByRole("button", { name: "保存更改", exact: true }).click();
+  const authorized = await writeRequest;
+  await expect(page).toHaveURL(/\/my-videos$/);
+  expect((await authorized.allHeaders()).cookie).toBeTruthy();
+  const rpcUrl = authorized.url();
+  const payload = (authorized.postData() || "").replace("Flash 安全基线", "Flash 非法写入");
+  expect(payload).toContain("Flash 非法写入");
+  const rpcAttempts: string[] = [];
+  const swfCookies: string[] = [];
+  await page.route("**/uploads/browser-smoke/security.swf", async (route) => {
+    swfCookies.push((await route.request().allHeaders()).cookie || "");
+    await route.fulfill({
+      contentType: "application/x-shockwave-flash",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: "controlled-swf",
+    });
+  });
+  await page.route("**/api/rpc/video/update", async (route) => {
+    rpcAttempts.push((await route.request().allHeaders()).cookie || "anonymous");
+    await route.continue();
+  });
+  // 用受控恶意 SDK 执行真实浏览器请求，故意绕过运行时 fetch 包装以验证 CSP。
+  await page.route("**/ruffle/ruffle.js", (route) =>
+    route.fulfill({
+      contentType: "application/javascript",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: `window.RufflePlayer = { newest: () => ({ createPlayer: () => {
+      const player = document.createElement('div');
+      player.load = async (options) => {
+        const swfRead = await (await fetch(options.url)).text() === "controlled-swf";
+        const results = { swfRead, attempted: true, cookieBlocked: false, parentBlocked: false, navigationBlocked: false, fetchBlocked: false, xhrBlocked: false };
+        try { document.cookie; } catch { results.cookieBlocked = true; }
+        try { parent.document.body; } catch { results.parentBlocked = true; }
+        try { top.location.href = ${JSON.stringify(rpcUrl)}; } catch { results.navigationBlocked = true; }
+        const xhr = new XMLHttpRequest();
+        results.xhrBlocked = await new Promise(resolve => {
+          xhr.open('POST', ${JSON.stringify(rpcUrl)});
+          xhr.withCredentials = true;
+          xhr.onerror = () => resolve(true);
+          xhr.onload = () => resolve(false);
+          xhr.send(${JSON.stringify(payload)});
+        });
+        // fetch 包装额外阻止带凭据写入，XHR 则直接验证浏览器 CSP。
+        try { await fetch(${JSON.stringify(rpcUrl)}, { method: 'POST', credentials: 'include', body: ${JSON.stringify(payload)} }); }
+        catch { results.fetchBlocked = true; }
+        player.textContent = JSON.stringify(results);
+      };
+      return player;
+    } }) };`,
+    }),
+  );
+  await page.goto(`/video/${id}-flash`);
+  const frame = page.frameLocator('iframe[title="Flash 内容沙箱"]');
+  await expect(frame.locator("body > div")).toContainText('"attempted":true');
+  const results = JSON.parse((await frame.locator("body > div").textContent()) || "{}");
+  expect(results).toEqual({
+    swfRead: true,
+    attempted: true,
+    cookieBlocked: true,
+    parentBlocked: true,
+    navigationBlocked: true,
+    fetchBlocked: true,
+    xhrBlocked: true,
+  });
+  expect(rpcAttempts).toEqual([]);
+  expect(swfCookies).toEqual([""]);
+  expect(context.pages()).toHaveLength(1);
+  await expect(page).toHaveURL(new RegExp(`/video/${id}-flash$`));
+  const { video } = await import("../../src/db/schema");
+  const [row] = await db
+    .select()
+    .from(video)
+    .where(eq(video.id, `${id}-flash`));
+  expect(row.title).toBe("Flash 安全基线");
+  // 重试替换整个沙箱；旧实例不能在重试后保留执行权限。
+  await page.getByTitle("重新加载 (R)").click();
+  await expect.poll(() => swfCookies.length).toBe(2);
+  await expect(frame.locator("body > div")).toContainText('"attempted":true');
+  expect(rpcAttempts).toEqual([]);
 });

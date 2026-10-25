@@ -2,6 +2,15 @@
 
 日期：2026-10-26。此记录只覆盖合成夹具，不代表生产快照、生产切换或真实 OAuth 已验收。
 
+## main 内容类型集成回归
+
+本轮保留上述认证迁移基线，并适配 main 新增的 `ContentType` / `Video.contentType`。`baseline/0000_legacy.sql` 与 `src/db/legacy.ts` 的 209 列清单未修改；新增结构通过独立 `migrations/0002_content_type.sql` 执行。
+
+- 主代理远程执行新增测试的 RED：7 tests，3 pass、4 fail。失败证据为新库与旧库读取 `contentType` 得到 `undefined`、已有 `FLASH` 读取不到，以及 `auth-v1` 已完成但缺内容列时核对没有拒绝。
+- 新增覆盖：空库默认 `VIDEO` 与显式 `FLASH` 写入、含类型字段的 210 列旧库保留 `FLASH`、类型数量不变的双视频互换也能被快照发现、早期完成认证迁移后补列且不恢复已解绑 OAuth、首次认证失败回滚内容类型及认证 DDL。
+- 本机只做四个改动 TS 文件的 Bun 语法扫描、已有 Biome 2.5.14 定向检查及 `git diff --check`，均通过；未运行数据库、安装、构建或 SSH。
+- 最终远程 GREEN：7 pass、0 fail、82 个断言。另在 PostgreSQL18.6 上恢复真实生产备份并升级，20 个用户、1679 条内容（FLASH1 / VIDEO1678）保持，旧密码哈希与 OAuth 映射差异均为0。下面的四项绿色记录属于本轮集成前的认证迁移验证。
+
 ## 环境与边界
 
 - 远程构建机 SSH 目标：`localhost-1.tailac9c6f.ts.net`，由主代理统一执行远程命令。

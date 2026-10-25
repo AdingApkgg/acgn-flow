@@ -14,16 +14,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TagSelector } from "@/components/video/tag-selector";
 import { VideoFormFields } from "@/components/video/video-form-fields";
 import { useSession } from "@/lib/auth-client";
+import { mediaUrlSchema } from "@/lib/media-url";
 import { orpc } from "@/lib/orpc";
 import { pageMeta } from "@/routes/metadata";
 
 const editSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(100, "标题最多100个字符"),
   description: z.string().max(5000, "简介最多5000个字符").optional().or(z.literal("")),
-  coverUrl: z.string().url("请输入有效的封面URL").optional().or(z.literal("")),
-  videoUrl: z.string().url("请输入有效的视频URL"),
-  subtitleUrl: z.string().url("请输入有效的字幕URL").optional().or(z.literal("")),
-  danmakuUrl: z.string().url("请输入有效的弹幕URL").optional().or(z.literal("")),
+  coverUrl: mediaUrlSchema.optional().or(z.literal("")),
+  videoUrl: mediaUrlSchema,
+  subtitleUrl: mediaUrlSchema.optional().or(z.literal("")),
+  danmakuUrl: mediaUrlSchema.optional().or(z.literal("")),
 });
 
 type EditForm = z.infer<typeof editSchema>;

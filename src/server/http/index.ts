@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import * as aiPlugin from "./ai-plugin-json";
 import appleIcon from "./apple-icon";
+import * as bili from "./bili";
 import * as bilibiliBatch from "./bilibili-batch";
 import * as bilibiliDanmaku from "./bilibili-danmaku";
 import * as bilibiliImage from "./bilibili-image";
@@ -10,6 +11,7 @@ import { captchaGet, captchaPost } from "./captcha";
 import * as emailSendCode from "./email-send-code";
 import * as emailVerifyCode from "./email-verify-code";
 import * as feed from "./feed";
+import * as flashFrame from "./flash-frame";
 import icon from "./icon";
 import * as indexnow from "./indexnow";
 import * as llms from "./llms";
@@ -29,6 +31,7 @@ import * as uploads from "./uploads";
 import videoOpengraphImage from "./video-opengraph-image";
 
 export const httpApp = new Hono();
+httpApp.get("/flash-frame", (c) => flashFrame.GET(c.req.raw));
 httpApp.post("/api/upload", (c) => upload.POST(c.req.raw));
 httpApp.get("/uploads/*", (c) =>
   uploads.GET(c.req.raw, {
@@ -36,6 +39,9 @@ httpApp.get("/uploads/*", (c) =>
       path: c.req.path.slice("/uploads/".length).split("/").map(decodeURIComponent),
     }),
   }),
+);
+httpApp.get("/api/bili/:vid", (c) =>
+  bili.GET(c.req.raw, { params: Promise.resolve({ vid: c.req.param("vid") }) }),
 );
 httpApp.post("/api/bilibili/batch", (c) => bilibiliBatch.POST(c.req.raw));
 httpApp.get("/api/bilibili/danmaku", (c) => bilibiliDanmaku.GET(c.req.raw));

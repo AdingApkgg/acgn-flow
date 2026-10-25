@@ -14,3 +14,14 @@ playwright-report
 test-results
 
 .preview*
+.release*
+.dev-preview*
+public/ruffle
+.next
+.claude
+.codex
+.agents
+data
+deploy
+backups
+*.dump

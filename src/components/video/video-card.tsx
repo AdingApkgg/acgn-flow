@@ -1,4 +1,4 @@
-import { Clock, Eye, Heart, Play, User } from "lucide-react";
+import { Clock, Eye, Heart, Play, User, Zap } from "lucide-react";
 
 import { memo } from "react";
 import { Link } from "react-router";
@@ -14,6 +14,7 @@ interface VideoCardProps {
     coverUrl?: string | null;
     duration?: number | null;
     views: number;
+    contentType?: "VIDEO" | "FLASH";
     createdAt: Date;
     uploader: {
       id: string;
@@ -63,6 +64,13 @@ function VideoCardComponent({ video, index = 0 }: VideoCardProps) {
             <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 bg-black/75 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium">
               <Clock className="h-3 w-3" />
               {formatDuration(video.duration)}
+            </div>
+          )}
+
+          {video.contentType === "FLASH" && (
+            <div className="absolute top-2.5 left-2.5 flex items-center gap-1 bg-amber-500/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-md font-medium z-10">
+              <Zap className="h-3 w-3" />
+              Flash
             </div>
           )}
 
@@ -151,6 +159,7 @@ export const VideoCard = memo(VideoCardComponent, (prevProps, nextProps) => {
   return (
     prevProps.video.id === nextProps.video.id &&
     prevProps.video.views === nextProps.video.views &&
+    prevProps.video.contentType === nextProps.video.contentType &&
     prevProps.video._count.likes === nextProps.video._count.likes &&
     prevProps.index === nextProps.index
   );

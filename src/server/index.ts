@@ -2,7 +2,7 @@ import * as build from "virtual:react-router/server-build";
 import { serveStatic } from "@hono/bun";
 import { RPCHandler } from "@orpc/server/fetch";
 import { sql } from "drizzle-orm";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { createRequestHandler } from "react-router";
 import { db } from "@/db";
 import { handleAuthRequest } from "@/lib/auth";
@@ -15,7 +15,7 @@ import { appRouter } from "./routers/_app";
 export const app = new Hono();
 const rpcHandler = new RPCHandler(appRouter);
 
-app.get("/healthz", async (c) => {
+const health = async (c: Context) => {
   try {
     await Promise.all([db.execute(sql`SELECT 1`), redis.ping()]);
     return c.json({
@@ -26,7 +26,10 @@ app.get("/healthz", async (c) => {
   } catch {
     return c.json({ status: "unavailable" }, 503);
   }
-});
+};
+app.get("/healthz", health);
+// 保留旧容器部署 PR 的探针路径。
+app.get("/api/health", health);
 
 app.get("/sw.js", (c) =>
   c.body(retireWorker, 200, {
@@ -35,6 +38,15 @@ app.get("/sw.js", (c) =>
     "Service-Worker-Allowed": "/",
   }),
 );
+
+// 只为公开的 Ruffle 代码/WASM 开放匿名读取，绝不对 API 放开 CORS。
+app.use("/ruffle/*", async (c, next) => {
+  if (c.req.method === "GET" && /^\/ruffle\/[a-zA-Z0-9._-]+\.(?:js|wasm)$/.test(c.req.path)) {
+    c.header("Access-Control-Allow-Origin", "*");
+    c.header("Cross-Origin-Resource-Policy", "cross-origin");
+  }
+  await next();
+});
 
 // 原资源路径优先于认证 catch-all；未知路径继续交给后续路由。
 app.route("/", httpApp);

@@ -57,12 +57,18 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { mediaPlaybackUrl, mediaSourceKind } from "@/lib/media-source";
+import { playbackErrorStopsIntent } from "@/lib/playback-intent";
 import { parseSubtitle, subtitlePlainText } from "@/lib/subtitles";
 import { cn } from "@/lib/utils";
 
 // mediaRef 提供原生媒体或嵌入适配器的播放接口，iframe 本身没有这些能力。
 type PlaybackMedia = Pick<HTMLMediaElement, "play" | "pause" | "currentTime" | "duration"> &
-  Partial<Pick<HTMLMediaElement, "volume" | "muted" | "playbackRate">> & {
+  Partial<
+    Pick<
+      HTMLMediaElement,
+      "volume" | "muted" | "playbackRate" | "readyState" | "seeking" | "paused"
+    >
+  > & {
     audioTracks?: AudioTrackList;
     requestPictureInPicture?: () => Promise<unknown>;
     exitPictureInPicture?: () => Promise<unknown>;
@@ -848,13 +854,13 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   ref,
 ) {
   const playerRef = useRef<PlaybackMedia | null>(null);
-  const attachMedia = useCallback((media: PlaybackMedia | null) => {
-    playerRef.current = media;
-  }, []);
+  const mediaSessionRef = useRef<object | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const pendingSeekRef = useRef<number | null>(null);
-  const sourceOptionsRef = useRef({ qualities, subtitles });
-  sourceOptionsRef.current = { qualities, subtitles };
+  const pendingSeekRef = useRef<number | null>(initialProgress > 0 ? initialProgress : null);
+  const initialProgressAppliedRef = useRef(false);
+  const savedProgressRef = useRef(0);
+  const sourceOptionsRef = useRef({ qualities, subtitles, initialProgress });
+  sourceOptionsRef.current = { qualities, subtitles, initialProgress };
   const danmakuContainerRef = useRef<HTMLDivElement>(null);
   const danmakuRendererRef = useRef<DanmakuRenderer | null>(null);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -863,6 +869,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const touchMoveRef = useRef<{ x: number; y: number } | null>(null);
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
+  const lastTouchTimeRef = useRef(0);
   const gestureActiveRef = useRef<"none" | "progress" | "volume" | "brightness">("none");
   const gestureStartValueRef = useRef<number>(0);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -886,6 +893,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   // 播放器状态
   const [isReady, setIsReady] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+  const autoRetryCountRef = useRef(0);
+  const [brightness, setBrightness] = useState(1);
   const [showPlayer, setShowPlayer] = useState(autoStart || !poster);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -899,6 +909,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isLocked, setIsLocked] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const playingIntentRef = useRef(isPlaying);
+  playingIntentRef.current = isPlaying;
 
   // 多媒体轨道状态
   const [currentQuality, setCurrentQuality] = useState<QualityLevel | null>(
@@ -943,35 +955,136 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
     }
   }, [subtitleSettings]);
 
+  // URL 已变化但重置 effect 尚未提交时，不能沿用上一视频的画质 URL。
+  const [qualityOwner, setQualityOwner] = useState(url);
   // 当前播放 URL
   const currentUrl = useMemo(() => {
-    if (currentQuality) {
+    if (currentQuality && qualityOwner === url) {
       return currentQuality.url;
     }
     return url;
-  }, [currentQuality, url]);
+  }, [currentQuality, qualityOwner, url]);
 
   const currentSourceKind = mediaSourceKind(currentUrl);
   const MediaComponent = mediaComponents[currentSourceKind];
+  const sourceSession = useMemo(() => ({ url, currentUrl, retryKey }), [url, currentUrl, retryKey]);
+  const activeSessionRef = useRef<typeof sourceSession | null>(sourceSession);
+  activeSessionRef.current = sourceSession;
+  const failedSessionRef = useRef<typeof sourceSession | null>(null);
+  const playAttemptRef = useRef(0);
+
+  const attachMedia = useCallback(
+    (media: PlaybackMedia | null) => {
+      // 旧媒体卸载和异步回调不能清空新媒体的 ref。
+      if (activeSessionRef.current === sourceSession) {
+        playerRef.current = media;
+        mediaSessionRef.current = media ? sourceSession : null;
+      }
+    },
+    [sourceSession],
+  );
+
+  const currentMedia = useCallback(() => {
+    return activeSessionRef.current === sourceSession && mediaSessionRef.current === sourceSession
+      ? playerRef.current
+      : null;
+  }, [sourceSession]);
+
+  const restoreProgress = useCallback((video: PlaybackMedia) => {
+    const progress = pendingSeekRef.current;
+    if (progress === null) return;
+    if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+    const target = Math.max(0, Math.min(progress, video.duration));
+    try {
+      video.currentTime = target;
+      // 某些适配器在 metadata 时尚不能 seek，保留目标到 canplay/seeked 重试。
+      if (Math.abs(video.currentTime - target) < 1) {
+        pendingSeekRef.current = null;
+        if (target > 0) initialProgressAppliedRef.current = true;
+        savedProgressRef.current = target;
+        setPlayedSeconds(target);
+        setPlayed(target / video.duration);
+      }
+    } catch {
+      // 媒体数据尚未就绪时继续等待下一次就绪事件。
+    }
+  }, []);
+
+  const syncPlayback = useCallback(
+    (video: PlaybackMedia) => {
+      if (currentMedia() !== video) return;
+      if ("volume" in video) video.volume = volume;
+      if ("muted" in video) video.muted = isMuted;
+      if ("playbackRate" in video) video.playbackRate = playbackRate;
+      const attempt = ++playAttemptRef.current;
+      if (playingIntentRef.current) {
+        void video.play().catch((error: unknown) => {
+          if (currentMedia() !== video || playAttemptRef.current !== attempt) return;
+          if (playbackErrorStopsIntent(error)) setIsPlaying(false);
+        });
+      } else {
+        video.pause();
+      }
+    },
+    [currentMedia, volume, isMuted, playbackRate],
+  );
+
+  const retryPlayback = useCallback(
+    (automatic: boolean) => {
+      if (activeSessionRef.current !== sourceSession) return;
+      if (automatic && failedSessionRef.current === sourceSession) return;
+      failedSessionRef.current = sourceSession;
+      const video = currentMedia();
+      const time = video?.currentTime;
+      pendingSeekRef.current ??=
+        typeof time === "number" && Number.isFinite(time) && time > 0
+          ? time
+          : savedProgressRef.current;
+      setIsReady(false);
+      setIsBuffering(false);
+      if (automatic && autoRetryCountRef.current >= 2) {
+        setHasError(true);
+        return;
+      }
+      if (automatic) autoRetryCountRef.current += 1;
+      else autoRetryCountRef.current = 0;
+      // 立即废弃旧媒体，避免同一轮 render 前的 play 拒绝或错误再次改变状态。
+      activeSessionRef.current = null;
+      setHasError(false);
+      setRetryKey((key) => key + 1);
+    },
+    [sourceSession, currentMedia],
+  );
 
   // 外部控制直接作用于当前媒体；切源和重挂载由 Video.js 的媒体组件清理。
   useEffect(() => {
-    const video = playerRef.current;
+    const video = currentMedia();
     if (!video || !showPlayer || !isMounted || !currentUrl) return;
-    if ("volume" in video) video.volume = volume;
-    if ("muted" in video) video.muted = isMuted;
-    if ("playbackRate" in video) video.playbackRate = playbackRate;
-    if (isPlaying) {
-      void video.play().catch(() => setIsPlaying(false));
-    } else {
-      video.pause();
-    }
-  }, [isPlaying, volume, isMuted, playbackRate, showPlayer, isMounted, currentUrl]);
+    // 就绪事件后重同步播放意图；暂停也必须在 metadata 之前生效。
+    if (!isReady && isPlaying) return;
+    syncPlayback(video);
+  }, [isPlaying, isReady, showPlayer, isMounted, currentUrl, currentMedia, syncPlayback]);
+
+  // 首次加载或重试不能永久停在骨架屏；已有可播放数据时允许继续操作。
+  useEffect(() => {
+    if (!showPlayer || !isMounted || isReady || hasError) return;
+    const timer = setTimeout(() => {
+      const video = currentMedia();
+      if (video?.readyState !== undefined && video.readyState >= 2) {
+        restoreProgress(video);
+        setIsReady(true);
+        setIsBuffering(false);
+      } else {
+        retryPlayback(true);
+      }
+    }, 20_000);
+    return () => clearTimeout(timer);
+  }, [showPlayer, isMounted, isReady, hasError, currentMedia, restoreProgress, retryPlayback]);
 
   // URL 变化时重置状态；轨道数组重建不能触发无限重置。
   useEffect(() => {
     if (!url) return;
-    const { qualities, subtitles } = sourceOptionsRef.current;
+    const { qualities, subtitles, initialProgress } = sourceOptionsRef.current;
     setIsReady(false);
     setHasError(false);
     setPlayed(0);
@@ -979,10 +1092,28 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
     setDuration(0);
     setAudioTracks([]);
     setCurrentAudioTrack(null);
-    pendingSeekRef.current = null;
+    autoRetryCountRef.current = 0;
+    savedProgressRef.current = 0;
+    initialProgressAppliedRef.current = false;
+    pendingSeekRef.current = initialProgress > 0 ? initialProgress : null;
+    setQualityOwner(url);
     setCurrentQuality(qualities.find((quality) => quality.default) || qualities[0] || null);
     setCurrentSubtitle(subtitles.find((subtitle) => subtitle.default) || subtitles[0] || null);
   }, [url]);
+
+  // 观看记录可能晚于视频 metadata 返回，只在尚未续播时接收初始进度。
+  useEffect(() => {
+    if (
+      !url ||
+      initialProgressAppliedRef.current ||
+      initialProgress <= 0 ||
+      savedProgressRef.current >= 1
+    )
+      return;
+    pendingSeekRef.current = initialProgress;
+    const video = currentMedia();
+    if (video) restoreProgress(video);
+  }, [initialProgress, url, currentMedia, restoreProgress]);
 
   // 获取内部视频元素
   const getVideoElement = useCallback(() => {
@@ -995,15 +1126,14 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
     () => ({
       seekTo: (seconds: number) => {
         const video = getVideoElement();
-        if (video) {
-          video.currentTime = seconds;
-        }
+        pendingSeekRef.current = Math.max(0, seconds);
+        if (video) restoreProgress(video);
       },
       getCurrentTime: () => playedSeconds,
       getDuration: () => duration,
       getDanmakuData: () => danmakuData,
     }),
-    [playedSeconds, duration, danmakuData, getVideoElement],
+    [playedSeconds, duration, danmakuData, getVideoElement, restoreProgress],
   );
 
   // 加载弹幕数据
@@ -1134,7 +1264,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
 
   // 初始化弹幕渲染器
   useEffect(() => {
-    if (!showPlayer || !danmakuContainerRef.current || danmakuData.length === 0) {
+    if (!showPlayer || hasError || !danmakuContainerRef.current || danmakuData.length === 0) {
       return;
     }
 
@@ -1164,32 +1294,32 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
         danmakuRendererRef.current = null;
       }
     };
-  }, [showPlayer, danmakuData]);
+  }, [showPlayer, danmakuData, hasError]);
 
   // 同步弹幕时间
   useEffect(() => {
-    if (danmakuRendererRef.current && danmakuEnabled) {
+    if (!hasError && danmakuRendererRef.current && danmakuEnabled) {
       danmakuRendererRef.current.time(playedSeconds * 1000);
     }
-  }, [playedSeconds, danmakuEnabled]);
+  }, [playedSeconds, danmakuEnabled, hasError]);
 
   // 弹幕播放控制
   useEffect(() => {
-    if (!danmakuRendererRef.current) return;
+    if (hasError || !danmakuRendererRef.current) return;
 
     if (isPlaying && danmakuEnabled) {
       danmakuRendererRef.current.start();
     } else {
       danmakuRendererRef.current.stop();
     }
-  }, [isPlaying, danmakuEnabled]);
+  }, [isPlaying, danmakuEnabled, hasError]);
 
   // 更新弹幕设置
   useEffect(() => {
-    if (danmakuRendererRef.current) {
+    if (!hasError && danmakuRendererRef.current) {
       danmakuRendererRef.current.setSettings(danmakuSettings);
     }
-  }, [danmakuSettings]);
+  }, [danmakuSettings, hasError]);
 
   // 控制栏自动隐藏
   const resetControlsTimeout = useCallback(() => {
@@ -1264,11 +1394,14 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   // 切换画质
   const handleQualityChange = useCallback(
     (quality: QualityLevel) => {
+      if (quality.url === currentUrl) return;
       pendingSeekRef.current = playedSeconds;
+      autoRetryCountRef.current = 0;
       setIsReady(false);
+      setHasError(false);
       setCurrentQuality(quality);
     },
-    [playedSeconds],
+    [playedSeconds, currentUrl],
   );
 
   // 全屏切换
@@ -1328,7 +1461,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
     (seconds: number, showHint = false) => {
       const video = playerRef.current;
       if (video) {
-        const newTime = Math.max(0, Math.min(video.currentTime + seconds, video.duration));
+        const end = Number.isFinite(video.duration) ? video.duration : Infinity;
+        const newTime = Math.max(0, Math.min(video.currentTime + seconds, end));
         video.currentTime = newTime;
         if (showHint) {
           const sign = seconds > 0 ? "+" : "";
@@ -1471,34 +1605,52 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
 
   const handlePlay = useCallback(() => setShowPlayer(true), []);
 
-  // 鼠标双击处理（桌面端）
-  const lastClickRef = useRef<number>(0);
+  // 单击延迟到双击判定结束，避免双击全屏时误切播放状态。
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleVideoClick = useCallback(
     (e: React.MouseEvent) => {
-      if (isMobile || isLocked) return;
+      if (isMobile || isLocked || Date.now() - lastTouchTimeRef.current < 750) return;
+      if (!e.currentTarget.contains(e.target as Node)) return;
       if ((e.target as HTMLElement).closest("[data-controls]")) return;
-
-      const now = Date.now();
-      const timeSinceLastClick = now - lastClickRef.current;
-
-      if (timeSinceLastClick < 300) {
-        toggleFullscreen();
-        lastClickRef.current = 0;
-      } else {
-        lastClickRef.current = now;
-        setTimeout(() => {
-          if (Date.now() - lastClickRef.current >= 300) {
-            setIsPlaying((prev) => !prev);
-          }
-        }, 300);
-      }
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+      if (e.detail > 1) return;
+      clickTimerRef.current = setTimeout(() => {
+        clickTimerRef.current = null;
+        setIsPlaying((prev) => !prev);
+      }, 300);
     },
-    [toggleFullscreen, isMobile, isLocked],
+    [isMobile, isLocked],
+  );
+  const handleVideoDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (isMobile || isLocked || Date.now() - lastTouchTimeRef.current < 750) return;
+      if (
+        !e.currentTarget.contains(e.target as Node) ||
+        (e.target as HTMLElement).closest("[data-controls]")
+      )
+        return;
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+      toggleFullscreen();
+    },
+    [isMobile, isLocked, toggleFullscreen],
+  );
+
+  useEffect(
+    () => () => {
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      if (gestureHintTimeoutRef.current) clearTimeout(gestureHintTimeoutRef.current);
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    },
+    [],
   );
 
   // 触摸开始
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
+      lastTouchTimeRef.current = Date.now();
+      if (!e.currentTarget.contains(e.target as Node)) return;
       if ((e.target as HTMLElement).closest("[data-controls]")) return;
       if (isLocked) {
         // 锁定时只允许单击解锁按钮区域
@@ -1528,6 +1680,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
   // 触摸移动
   const handleTouchMove = useCallback(
     (e: React.TouchEvent) => {
+      if (!e.currentTarget.contains(e.target as Node)) return;
       if (isLocked) return;
       if (!touchStartRef.current || e.touches.length !== 1) return;
 
@@ -1556,10 +1709,15 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
         if (Math.abs(deltaX) > threshold && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
           gestureActiveRef.current = "progress";
           gestureStartValueRef.current = playedSeconds;
-        } else if (Math.abs(deltaY) > threshold && Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
+        } else if (
+          isFullscreen &&
+          Math.abs(deltaY) > threshold &&
+          Math.abs(deltaY) > Math.abs(deltaX) * 1.5
+        ) {
           const isLeftSide = startX < rect.left + rect.width / 2;
           if (isLeftSide) {
             gestureActiveRef.current = "brightness";
+            gestureStartValueRef.current = brightness;
           } else {
             gestureActiveRef.current = "volume";
             gestureStartValueRef.current = volume;
@@ -1592,18 +1750,33 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
         showGestureHint("volume", `${Math.round(newVol * 100)}%`);
         e.preventDefault();
       } else if (gestureActiveRef.current === "brightness") {
-        const brightnessDelta = -(deltaY / (rect.height / 2)) * 50;
-        const newBrightness = Math.max(0, Math.min(100, 50 + brightnessDelta));
-        showGestureHint("brightness", `${Math.round(newBrightness)}%`);
+        const brightnessDelta = -(deltaY / (rect.height / 2));
+        const newBrightness = Math.max(
+          0.2,
+          Math.min(2, gestureStartValueRef.current + brightnessDelta),
+        );
+        setBrightness(newBrightness);
+        showGestureHint("brightness", `${Math.round(newBrightness * 100)}%`);
         e.preventDefault();
       }
     },
-    [duration, playedSeconds, volume, getVideoElement, showGestureHint, isLocked],
+    [
+      duration,
+      playedSeconds,
+      volume,
+      brightness,
+      isFullscreen,
+      getVideoElement,
+      showGestureHint,
+      isLocked,
+    ],
   );
 
   // 触摸结束
   const handleTouchEnd = useCallback(
     (event: React.TouchEvent) => {
+      lastTouchTimeRef.current = Date.now();
+      if (!event.currentTarget.contains(event.target as Node)) return;
       if ((event.target as HTMLElement).closest("[data-controls]")) return;
       if (isLocked) {
         touchStartRef.current = null;
@@ -1635,11 +1808,14 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
       const now = Date.now();
       const touchDuration = now - touchStart.time;
 
-      // 如果没有移动且是快速点击，检测双击
-      if (!touchMove && touchDuration < 300 && gestureActiveRef.current === "none") {
+      const movedDistance = touchMove
+        ? Math.hypot(touchMove.x - touchStart.x, touchMove.y - touchStart.y)
+        : 0;
+      // 轻微抖动仍视为点击，页面滚动或播放器手势均不能触发双击。
+      if (movedDistance < 10 && touchDuration < 300 && gestureActiveRef.current === "none") {
         const lastTap = lastTapRef.current;
 
-        if (lastTap && now - lastTap.time < 300) {
+        if (lastTap && now - lastTap.time < 300 && Math.abs(lastTap.x - touchStart.x) < 80) {
           // 双击检测
           const container = containerRef.current;
           if (container) {
@@ -1660,18 +1836,13 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
           }
           lastTapRef.current = null;
         } else {
-          // 单击：显示/隐藏控制栏
+          // 单击立即更新控制栏，双击只由触摸分支处理。
           lastTapRef.current = { time: now, x: touchStart.x };
-          setTimeout(() => {
-            if (lastTapRef.current && Date.now() - lastTapRef.current.time >= 300) {
-              setShowControls((prev) => !prev);
-              if (!showControls) {
-                resetControlsTimeout();
-              }
-              lastTapRef.current = null;
-            }
-          }, 300);
+          if (showControls) setShowControls(false);
+          else resetControlsTimeout();
         }
+      } else {
+        lastTapRef.current = null;
       }
 
       touchStartRef.current = null;
@@ -1704,6 +1875,10 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
       <div className="aspect-video bg-muted flex flex-col items-center justify-center rounded-lg gap-2">
         <AlertCircle className="h-10 w-10 text-muted-foreground" />
         <p className="text-muted-foreground">视频加载失败</p>
+        <Button size="sm" variant="secondary" onClick={() => retryPlayback(false)}>
+          <RotateCcw className="h-4 w-4 mr-1.5" />
+          重试
+        </Button>
         <a
           href={currentUrl}
           target="_blank"
@@ -1747,7 +1922,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
       }}
       ref={containerRef}
       className={cn(
-        "relative aspect-video bg-black rounded-lg overflow-hidden group select-none touch-none",
+        "relative aspect-video bg-black rounded-lg overflow-hidden group select-none",
+        isFullscreen ? "touch-none" : "touch-pan-y",
         isFullscreen && "rounded-none",
       )}
       // biome-ignore lint/a11y/noNoninteractiveTabindex: 播放器应用区域接收键盘快捷键，内部按钮与滑块保持独立语义。
@@ -1755,53 +1931,77 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
       onMouseMove={!isMobile ? resetControlsTimeout : undefined}
       onMouseLeave={!isMobile ? () => isPlaying && setShowControls(false) : undefined}
       onClick={handleVideoClick}
+      onDoubleClick={handleVideoDoubleClick}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onTouchCancel={() => {
+        if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+        if (isLongPressingRef.current) setPlaybackRate(previousPlaybackRateRef.current);
+        isLongPressingRef.current = false;
+        touchStartRef.current = null;
+        touchMoveRef.current = null;
+        lastTapRef.current = null;
+        gestureActiveRef.current = "none";
+        setGestureHint(null);
+      }}
     >
       {/* 加载骨架屏 */}
       <div
         className={cn(
-          "absolute inset-0 z-10 transition-opacity duration-300",
-          isReady ? "opacity-0 pointer-events-none" : "opacity-100",
+          "absolute inset-0 z-10 pointer-events-none transition-opacity duration-300",
+          isReady ? "opacity-0" : "opacity-100",
         )}
       >
         <Skeleton className="w-full h-full" />
       </div>
 
       {/* Video.js 10 的媒体组件管理 HLS 引擎和卸载生命周期，原控制层继续工作。 */}
-      <VideoJsProvider>
+      <VideoJsProvider key={`${url}:${currentUrl}:${retryKey}`}>
         <MediaComponent
-          key={currentUrl}
           mediaRef={attachMedia}
           src={mediaPlaybackUrl(currentUrl)}
           className="h-full w-full object-contain"
+          style={brightness === 1 ? undefined : { filter: `brightness(${brightness})` }}
           playsInline
           preload="metadata"
           muted={isMuted}
           autoPlay={isPlaying}
-          onPlay={() => setIsPlaying(true)}
+          onPlay={() => {
+            if (currentMedia()) setIsPlaying(true);
+          }}
           onPlaying={() => {
+            if (!currentMedia()) return;
             setIsReady(true);
             setIsBuffering(false);
           }}
-          onPause={() => setIsPlaying(false)}
-          onEnded={onEnded}
-          onError={() => setHasError(true)}
-          onWaiting={() => setIsBuffering(true)}
+          onPause={() => {
+            const video = currentMedia();
+            // load/seek 引发的瞬时 pause 不改变播放意图；嵌入适配器按实际提供的能力判断。
+            if (
+              video &&
+              video.paused !== false &&
+              !video.seeking &&
+              (video.readyState === undefined || video.readyState >= 3)
+            ) {
+              setIsPlaying(false);
+            }
+          }}
+          onEnded={() => {
+            if (!currentMedia()) return;
+            setIsPlaying(false);
+            onEnded?.();
+          }}
+          onError={() => retryPlayback(true)}
+          onWaiting={() => {
+            if (currentMedia()) setIsBuffering(true);
+          }}
           onLoadedMetadata={() => {
-            const video = playerRef.current;
+            const video = currentMedia();
             if (!video) return;
-            if ("volume" in video) video.volume = volume;
-            if ("playbackRate" in video) video.playbackRate = playbackRate;
-            const progress = pendingSeekRef.current ?? initialProgress;
-            if (progress > 0)
-              video.currentTime = Math.min(
-                progress,
-                Number.isFinite(video.duration) ? video.duration : progress,
-              );
-            pendingSeekRef.current = null;
-            setDuration(video.duration || 0);
+            restoreProgress(video);
+            syncPlayback(video);
+            setDuration(Number.isFinite(video.duration) ? video.duration : 0);
             // 嵌入适配器以 loadedmetadata 表示可控制，不一定触发原生 canplay。
             if (!["video", "hls", "dash", "mux"].includes(currentSourceKind)) {
               setIsReady(true);
@@ -1809,15 +2009,36 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
             }
           }}
           onCanPlay={() => {
+            const video = currentMedia();
+            if (!video) return;
+            restoreProgress(video);
+            syncPlayback(video);
             setIsBuffering(false);
             setIsReady(true);
           }}
-          onLoadedData={() => setIsReady(true)}
-          onDurationChange={() => setDuration(playerRef.current?.duration || 0)}
-          onTimeUpdate={() => {
-            const video = playerRef.current;
+          onLoadedData={() => {
+            const video = currentMedia();
             if (!video) return;
-            if (video.duration) {
+            restoreProgress(video);
+            setIsReady(true);
+          }}
+          onSeeked={() => {
+            const video = currentMedia();
+            if (!video) return;
+            restoreProgress(video);
+            if (playingIntentRef.current) syncPlayback(video);
+          }}
+          onDurationChange={() => {
+            const video = currentMedia();
+            if (!video) return;
+            setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+            restoreProgress(video);
+          }}
+          onTimeUpdate={() => {
+            const video = currentMedia();
+            if (!video) return;
+            if (Number.isFinite(video.duration) && video.duration > 0) {
+              savedProgressRef.current = video.currentTime;
               const state = {
                 played: video.currentTime / video.duration,
                 playedSeconds: video.currentTime,
@@ -2001,16 +2222,27 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
       {/* 中央播放按钮 */}
       {!isPlaying && isReady && !isLocked && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-16 h-16 md:w-20 md:h-20 bg-white/90 rounded-full flex items-center justify-center shadow-lg">
+          <button
+            type="button"
+            data-controls
+            aria-label="播放"
+            className="pointer-events-auto w-16 h-16 md:w-20 md:h-20 bg-white/90 rounded-full flex items-center justify-center shadow-lg"
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsPlaying(true);
+            }}
+          >
             <Play className="w-8 h-8 md:w-10 md:h-10 text-black ml-1" />
-          </div>
+          </button>
         </div>
       )}
 
       {/* 锁定按钮（移动端全屏时显示） */}
-      {isMobile && isFullscreen && (
+      {isMobile && (isFullscreen || isLocked) && (
         <button
           type="button"
+          data-controls
+          aria-label={isLocked ? "解锁" : "锁定"}
           className={cn(
             "absolute left-4 top-1/2 -translate-y-1/2 z-40 p-3 rounded-full bg-black/50 text-white transition-opacity",
             showControls || isLocked ? "opacity-100" : "opacity-0",
@@ -2044,6 +2276,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
               ? "opacity-100 translate-y-0"
               : "opacity-0 translate-y-full pointer-events-none",
           )}
+          role="toolbar"
+          aria-label="播放控制"
         >
           {/* 渐变背景 */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent" />
@@ -2459,6 +2693,8 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(function
             "absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity duration-300",
             showControls || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none",
           )}
+          role="toolbar"
+          aria-label="播放控制"
         >
           {/* 进度条 */}
           <div className="mb-3">

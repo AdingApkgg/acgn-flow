@@ -7,6 +7,7 @@ import { getSession } from "@/lib/auth";
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "./uploads";
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB (图片)
 const MAX_TEXT_FILE_SIZE = 50 * 1024 * 1024; // 50MB (字幕/弹幕)
+const MAX_FLASH_FILE_SIZE = 100 * 1024 * 1024; // 100MB (Flash)
 
 // 允许的文件类型
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"];
@@ -59,7 +60,17 @@ const IMAGE_CONFIG: Record<string, ImageConfig> = {
 };
 
 // 判断文件类型分类
-function getFileCategory(type: string, fileName: string): "image" | "subtitle" | "danmaku" | null {
+function getFileCategory(
+  type: string,
+  fileName: string,
+): "image" | "subtitle" | "danmaku" | "flash" | null {
+  // SWF 必须有明确扩展名，不能将任意二进制文件当作 Flash。
+  const extension = fileName.toLowerCase().split(".").pop();
+  if (extension === "swf") {
+    return ["application/x-shockwave-flash", "application/octet-stream", ""].includes(type)
+      ? "flash"
+      : null;
+  }
   if (ALLOWED_IMAGE_TYPES.includes(type)) return "image";
 
   // 通过扩展名判断字幕文件
@@ -86,7 +97,7 @@ export async function POST(request: Request) {
     const type = formData.get("type") as string | null; // avatar, cover, subtitle, danmaku, etc.
     const noCompress = formData.get("noCompress") === "true"; // 是否跳过压缩
 
-    if (!file) {
+    if (!(file instanceof File)) {
       return Response.json({ error: "请选择文件" }, { status: 400 });
     }
 
@@ -98,7 +109,12 @@ export async function POST(request: Request) {
     }
 
     // 根据文件类型检查大小限制
-    const maxSize = fileCategory === "image" ? MAX_FILE_SIZE : MAX_TEXT_FILE_SIZE;
+    const maxSize =
+      fileCategory === "flash"
+        ? MAX_FLASH_FILE_SIZE
+        : fileCategory === "image"
+          ? MAX_FILE_SIZE
+          : MAX_TEXT_FILE_SIZE;
     if (file.size > maxSize) {
       return Response.json(
         { error: `文件大小不能超过 ${maxSize / 1024 / 1024}MB` },
@@ -107,13 +123,16 @@ export async function POST(request: Request) {
     }
 
     // 确定上传目录
-    const allowedDirectories = ["avatar", "cover", "misc", "subtitle", "danmaku"];
+    const allowedDirectories = ["avatar", "cover", "misc", "subtitle", "danmaku", "flash"];
     if (type && !allowedDirectories.includes(type))
       return Response.json({ error: "无效的上传类型" }, { status: 400 });
     let uploadType = type || "misc";
     // 根据文件类型自动设置目录
     if (fileCategory === "subtitle" && !type) uploadType = "subtitle";
     if (fileCategory === "danmaku" && !type) uploadType = "danmaku";
+    if (fileCategory === "flash" && !type) uploadType = "flash";
+    if ((fileCategory === "flash" || uploadType === "flash") && fileCategory !== uploadType)
+      return Response.json({ error: "Flash 文件必须上传到 flash 目录" }, { status: 400 });
 
     const uploadPath = join(UPLOAD_DIR, uploadType);
     if (!existsSync(uploadPath)) {
@@ -130,8 +149,13 @@ export async function POST(request: Request) {
     let metadata: { width?: number; height?: number } = {};
     let compressionMode = "none";
 
+    // Flash 文件保留原始内容，供 Ruffle 读取。
+    if (fileCategory === "flash") {
+      outputBuffer = inputBuffer;
+      outputExt = "swf";
+    }
     // 字幕文件处理
-    if (fileCategory === "subtitle") {
+    else if (fileCategory === "subtitle") {
       const ext = file.name.toLowerCase().split(".").pop() || "vtt";
       outputBuffer = inputBuffer;
       outputExt = ext;
@@ -248,6 +272,7 @@ export async function POST(request: Request) {
       "ssa",
       "xml",
       "json",
+      "swf",
     ];
     if (!safeExtensions.includes(outputExt.toLowerCase()))
       return Response.json({ error: "不支持的文件扩展名" }, { status: 400 });

@@ -80,13 +80,24 @@ test("空库初始化支持关系查询、nanoid、默认值、更新时间及�
       .values({ title: "新视频", videoUrl: "https://example.invalid/v.mp4", uploaderId: owner.id })
       .returning();
     expect(video.status).toBe("PENDING");
+    expect(video.contentType).toBe("VIDEO");
     expect(video.views).toBe(0);
     expect(video.updatedAt).toBeInstanceOf(Date);
+    const [flash] = await db
+      .insert(schema.video)
+      .values({
+        title: "Flash 作品",
+        videoUrl: "/uploads/fixture.swf",
+        uploaderId: owner.id,
+        contentType: "FLASH",
+      })
+      .returning();
+    expect(flash.contentType).toBe("FLASH");
     const related = await db.query.user.findFirst({
       where: eq(schema.user.id, owner.id),
       with: { videos: true, authAccounts: true },
     });
-    expect(related?.videos[0]?.id).toBe(video.id);
+    expect(related?.videos.map((item) => item.id).sort()).toEqual([video.id, flash.id].sort());
     expect(related?.authAccounts).toEqual([]);
     await new Promise((resolve) => setTimeout(resolve, 5));
     const [updated] = await db
@@ -127,6 +138,7 @@ test("旧库升级完整保留 24 表、bcrypt、OAuth、历史会话且可重�
     expect(owner?.emailVerified).toBeInstanceOf(Date);
     expect(owner?.role).toBe("OWNER");
     expect(owner?.videos[0]?.id).toBe("fixture_video");
+    expect(owner?.videos[0]?.contentType).toBe("VIDEO");
     const credential = owner?.authAccounts.find((item) => item.providerId === "credential");
     expect(credential?.accountId).toBe("fixture_owner");
     expect(credential?.password).toBe(fixture.password);
@@ -208,6 +220,81 @@ test("旧库升级完整保留 24 表、bcrypt、OAuth、历史会话且可重�
         ?.parentId,
     ).toBeNull();
     expect(await db.query.commentReaction.findMany()).toHaveLength(0);
+  });
+});
+
+test("含 contentType 的当前旧库保留 FLASH，快照可识别原有内容类型被改写", async () => {
+  await withIsolatedSchema(async (client) => {
+    await createLegacyFixture(client);
+    // 独立复现 main 的 Prisma 结构，不借用待测增量 SQL 生成预期。
+    await client.query(`CREATE TYPE "ContentType" AS ENUM ('VIDEO', 'FLASH');
+      ALTER TABLE "Video" ADD COLUMN "contentType" "ContentType" NOT NULL DEFAULT 'VIDEO';
+      UPDATE "Video" SET "contentType" = 'FLASH' WHERE "id" = 'fixture_video';
+      INSERT INTO "Video" ("id", "title", "videoUrl", "uploaderId", "updatedAt")
+      VALUES ('fixture_standard_video', '原有视频', 'https://example.invalid/standard.mp4',
+        'fixture_owner', CURRENT_TIMESTAMP)`);
+    const before = await snapshotLegacy(client);
+    const first = await upgradeLegacyDatabase(client);
+    expect(first.before).toEqual(first.after);
+    assertLegacyUnchanged(before, first.after);
+    const db = drizzle(client, { schema });
+    expect(
+      (await db.query.video.findFirst({ where: eq(schema.video.id, "fixture_video") }))
+        ?.contentType,
+    ).toBe("FLASH");
+    await upgradeLegacyDatabase(client);
+    assertLegacyUnchanged(before, await snapshotLegacy(client));
+    // 数量不变的类型互换也必须被发现，摘要需要绑定业务 ID。
+    await client.query(`UPDATE "Video" SET "contentType" = CASE
+      WHEN "id" = 'fixture_video' THEN 'VIDEO'::"ContentType" ELSE 'FLASH'::"ContentType" END`);
+    expect(() => assertLegacyUnchanged(before, first.after)).not.toThrow();
+    const changed = await snapshotLegacy(client);
+    expect(() => assertLegacyUnchanged(before, changed)).toThrow("Legacy data changed");
+  });
+});
+
+test("auth-v1 已完成的旧库仍补内容类型，且不恢复已解绑 OAuth", async () => {
+  await withIsolatedSchema(async (client) => {
+    await createLegacyFixture(client);
+    await upgradeLegacyDatabase(client);
+    // 模拟上一版认证迁移已完成、尚未新增 Flash 列的部署状态。
+    await client.query('ALTER TABLE "Video" DROP COLUMN IF EXISTS "contentType"');
+    await client.query('DROP TYPE IF EXISTS "ContentType"');
+    await client.query('DELETE FROM "AuthAccount" WHERE "providerId" = $1', ["github"]);
+    await expect(checkDatabase(client)).rejects.toThrow("Content type migration is incomplete");
+    const result = await upgradeLegacyDatabase(client);
+    expect(result.alreadyApplied).toBe(true);
+    expect(result.oauthAdded).toBe(0);
+    const db = drizzle(client, { schema });
+    expect(
+      (await db.query.video.findFirst({ where: eq(schema.video.id, "fixture_video") }))
+        ?.contentType,
+    ).toBe("VIDEO");
+    expect(
+      await db.query.authAccount.findFirst({ where: eq(schema.authAccount.providerId, "github") }),
+    ).toBeUndefined();
+    await checkDatabase(client);
+  });
+});
+
+test("首次认证失败会回滚内容类型增量及认证结构，原 209 列数据不变", async () => {
+  await withIsolatedSchema(async (client) => {
+    await createLegacyFixture(client);
+    await client.query('UPDATE "Account" SET "provider" = $1 WHERE "id" = $2', [
+      "credential",
+      "fixture_github",
+    ]);
+    const before = await snapshotLegacy(client);
+    await expect(upgradeLegacyDatabase(client)).rejects.toThrow("reserved credential");
+    assertLegacyUnchanged(before, await snapshotLegacy(client));
+    const { rows } = await client.query(`SELECT
+      to_regclass('"AuthAccount"')::text AS "authTable",
+      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
+        AND table_name = 'Video' AND column_name = 'contentType') AS "hasContentType",
+      EXISTS (SELECT 1 FROM pg_type WHERE typnamespace =
+        (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+        AND typname = 'ContentType') AS "hasContentTypeEnum"`);
+    expect(rows[0]).toEqual({ authTable: null, hasContentType: false, hasContentTypeEnum: false });
   });
 });
 

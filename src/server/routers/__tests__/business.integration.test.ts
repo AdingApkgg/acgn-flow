@@ -721,6 +721,52 @@ describe.skipIf(process.env.RUN_BUSINESS_INTEGRATION !== "1")("业务数据库�
     ).toBe(true);
   });
 
+  test("Flash和视频类型可创建、编辑及筛选，站内媒体地址可提交", async () => {
+    const created = await member.video.create({
+      title: `${prefix}-flash`,
+      contentType: "FLASH",
+      videoUrl: "/uploads/flash/fixture.swf",
+      coverUrl: "/api/bilibili/image?url=https%3A%2F%2Fi0.hdslb.com%2Ffixture.jpg",
+      subtitleUrl: "/uploads/subtitle/fixture.vtt",
+      danmakuUrl: "/uploads/danmaku/fixture.json",
+      skipIndexNow: true,
+    });
+    expect(created.contentType).toBe("FLASH");
+    expect(created.videoUrl).toBe("/uploads/flash/fixture.swf");
+    const flash = await anonymous.video.list({ contentType: "FLASH", search: prefix });
+    expect(flash.videos.map((video) => video.id)).toContain(created.id);
+    expect(flash.videos.every((video) => video.contentType === "FLASH")).toBe(true);
+    const videos = await anonymous.video.list({ contentType: "VIDEO", search: prefix });
+    expect(videos.videos.map((video) => video.id)).not.toContain(created.id);
+    const updated = await member.video.update({
+      id: created.id,
+      contentType: "VIDEO",
+      videoUrl: "/api/bili/BV1xx411c7mD?p=2",
+      subtitleUrl: "/uploads/subtitle/updated.vtt",
+      danmakuUrl: "/uploads/danmaku/updated.json",
+    });
+    expect(updated.contentType).toBe("VIDEO");
+    expect(updated.videoUrl).toBe("/api/bili/BV1xx411c7mD?p=2");
+    const ordinary = await member.video.create({
+      title: `${prefix}-default-video`,
+      videoUrl: "https://example.test/fixture.mp4",
+      skipIndexNow: true,
+    });
+    expect(ordinary.contentType).toBe("VIDEO");
+    for (const videoUrl of [
+      "//evil.example.test/file.swf",
+      "javascript:alert(1)",
+      "/%2fevil.example.test/file.swf",
+    ]) {
+      await expect(
+        member.video.create({ title: "无效地址", videoUrl, skipIndexNow: true }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(member.video.update({ id: created.id, videoUrl })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
+    }
+  });
+
   test("普通用户上传和编辑自己视频时仍可创建及调整标签", async () => {
     const names = [`${prefix}-user-created`, `${prefix}-user-edited`];
     const created = await member.video.create({

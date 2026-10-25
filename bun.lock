@@ -38,6 +38,7 @@
         "@tanstack/react-query": "^5.90.20",
         "@vercel/og": "^0.8.5",
         "@videojs/dash-video": "10.2.0",
+        "@videojs/hlsjs-video": "10.2.0",
         "@videojs/mux-video": "10.2.0",
         "@videojs/react": "10.2.0",
         "@videojs/spotify-audio": "10.2.0",
@@ -88,6 +89,7 @@
         "@hono/vite-dev-server": "0.26.1",
         "@playwright/test": "^1.56.1",
         "@react-router/dev": "8.5.0",
+        "@ruffle-rs/ruffle": "0.2.0-nightly.2026.3.11",
         "@tailwindcss/vite": "4.3.3",
         "@types/bun": "1.4.4",
         "@types/node": "^25",
@@ -493,6 +495,8 @@
     "@rolldown/binding-win32-x64-msvc": ["@rolldown/binding-win32-x64-msvc@1.2.15", "", { "os": "win32", "cpu": "x64" }, "sha512-HFZd2QNQYn1JbIi+Hpd7H+r/lkWxcfIu28nirZ6eCn2LafuvmExMlb/P96Sfx5tf7pPArw39IdhmCF8vmV+NhQ=="],
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
+
+    "@ruffle-rs/ruffle": ["@ruffle-rs/ruffle@0.2.0-nightly.2026.3.11", "", {}, "sha512-Q5cdM/r6tBj0A2uzS9qIw67bC/L2gKTq2vHrZ7/vPyPuTIOkGGbxsahVVjhMXVrfBGlsuHuIO9l7VKtFjcYi+Q=="],
 
     "@shuding/opentype.js": ["@shuding/opentype.js@1.4.0-beta.0", "", { "dependencies": { "fflate": "^0.7.3", "string.prototype.codepointat": "^0.2.1" }, "bin": { "ot": "bin/ot" } }, "sha512-3NgmNyH3l/Hv6EvsWJbsvpcpUba6R8IREQ83nH83cyakCw7uM1arZKNfHwv1Wz6jgqrF/j4x5ELvR6PnK9nTcA=="],
 

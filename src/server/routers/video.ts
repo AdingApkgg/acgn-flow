@@ -19,6 +19,7 @@ import {
 import { z } from "zod";
 import * as schema from "@/db/schema";
 import { submitVideosToIndexNow, submitVideoToIndexNow } from "@/lib/indexnow";
+import { mediaUrlSchema } from "@/lib/media-url";
 import { deleteCachePattern, getCache, setCache } from "@/lib/redis";
 import { protectedProcedure, publicProcedure, scopedAdminProcedure } from "../orpc";
 import { cursorCondition, escapeLike, requiredRow } from "../services/query";
@@ -249,12 +250,13 @@ export const videoRouter = {
         cursor: z.string().optional(),
         tagId: z.string().optional(),
         search: z.string().optional(),
+        contentType: z.enum(["VIDEO", "FLASH"]).optional(),
         sortBy: z.enum(["latest", "views", "likes", "recommend"]).default("latest"),
         timeRange: z.enum(["all", "today", "week", "month"]).default("all"),
       }),
     )
     .handler(async ({ context, input }) => {
-      const { limit, cursor, tagId, search, sortBy, timeRange } = input;
+      const { limit, cursor, tagId, search, sortBy, timeRange, contentType } = input;
 
       // 计算时间范围
       const getTimeFilter = () => {
@@ -274,6 +276,7 @@ export const videoRouter = {
 
       const baseWhere = and(
         eq(schema.video.status, "PUBLISHED"),
+        contentType ? eq(schema.video.contentType, contentType) : undefined,
         tagId
           ? exists(
               sql`(select 1 from "TagOnVideo" as "filter_tag" where "filter_tag"."videoId" = ${schema.video.id} and "filter_tag"."tagId" = ${tagId})`,
@@ -672,11 +675,12 @@ export const videoRouter = {
           .optional(), // B站AV号作为ID
         title: z.string().min(1).max(100),
         description: z.string().max(5000).optional(),
-        coverUrl: z.string().url().optional().or(z.literal("")),
-        videoUrl: z.string().url(),
-        subtitleUrl: z.string().url().optional().or(z.literal("")),
-        danmakuUrl: z.string().url().optional().or(z.literal("")),
+        coverUrl: mediaUrlSchema.optional().or(z.literal("")),
+        videoUrl: mediaUrlSchema,
+        subtitleUrl: mediaUrlSchema.optional().or(z.literal("")),
+        danmakuUrl: mediaUrlSchema.optional().or(z.literal("")),
         duration: z.number().optional(),
+        contentType: z.enum(["VIDEO", "FLASH"]).default("VIDEO"),
         tagIds: z.array(z.string()).optional(),
         tagNames: z.array(z.string()).optional(), // 新建标签名称
         pages: z
@@ -762,6 +766,7 @@ export const videoRouter = {
               description: data.description,
               videoUrl: data.videoUrl,
               duration: data.duration,
+              contentType: data.contentType,
               status: "PUBLISHED",
               coverUrl: coverUrl || null,
               subtitleUrl: subtitleUrl || null,
@@ -793,10 +798,11 @@ export const videoRouter = {
         id: z.string(),
         title: z.string().min(1).max(100).optional(),
         description: z.string().max(5000).optional(),
-        coverUrl: z.string().url().optional().or(z.literal("")),
-        videoUrl: z.string().url().optional(),
-        subtitleUrl: z.string().url().optional().or(z.literal("")),
-        danmakuUrl: z.string().url().optional().or(z.literal("")),
+        coverUrl: mediaUrlSchema.optional().or(z.literal("")),
+        videoUrl: mediaUrlSchema.optional(),
+        contentType: z.enum(["VIDEO", "FLASH"]).optional(),
+        subtitleUrl: mediaUrlSchema.optional().or(z.literal("")),
+        danmakuUrl: mediaUrlSchema.optional().or(z.literal("")),
         tagIds: z.array(z.string()).optional(),
         tagNames: z.array(z.string()).optional(), // 新建标签名称
       }),

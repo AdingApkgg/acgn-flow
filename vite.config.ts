@@ -9,6 +9,20 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       tailwindcss(),
+      {
+        name: "flash-public-assets-cors",
+        configureServer(server) {
+          // Vite 直接返回 public 文件，开发时也必须允许匿名沙箱读取指定资产。
+          server.middlewares.use((request, response, next) => {
+            const path = request.url?.split("?", 1)[0] || "";
+            if (request.method === "GET" && /^\/ruffle\/[a-zA-Z0-9._-]+\.(?:js|wasm)$/.test(path)) {
+              response.setHeader("Access-Control-Allow-Origin", "*");
+              response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+            }
+            next();
+          });
+        },
+      },
       devServer({
         entry: "src/server/index.ts",
         // 上传的 MPEG-TS 分片和退役脚本由 Hono 处理，不能进入 Vite 源码转换。
