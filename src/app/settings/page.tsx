@@ -1,18 +1,13 @@
-"use client";
-
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AtSign, Globe, Images, Link, Loader2, MapPin, Upload, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import { z } from "zod";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -22,9 +17,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "sonner";
-import { Loader2, Upload, Link, X, Images, MapPin, Globe, AtSign } from "lucide-react";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
@@ -33,6 +35,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { useSession } from "@/lib/auth-client";
+import { orpc } from "@/lib/orpc";
+import { pageMeta } from "@/routes/metadata";
 
 const PRONOUNS_OPTIONS = [
   { value: "", label: "不设置" },
@@ -51,21 +59,23 @@ const profileSchema = z.object({
   pronouns: z.string().max(30).optional(),
   website: z.string().url("请输入有效的URL").or(z.literal("")).optional(),
   location: z.string().max(100).optional(),
-  socialLinks: z.object({
-    twitter: z.string().optional(),
-    github: z.string().optional(),
-    discord: z.string().optional(),
-    bilibili: z.string().optional(),
-    youtube: z.string().optional(),
-    pixiv: z.string().optional(),
-  }).optional(),
+  socialLinks: z
+    .object({
+      twitter: z.string().optional(),
+      github: z.string().optional(),
+      discord: z.string().optional(),
+      bilibili: z.string().optional(),
+      youtube: z.string().optional(),
+      pixiv: z.string().optional(),
+    })
+    .optional(),
 });
 
 type ProfileForm = z.infer<typeof profileSchema>;
 
 export default function ProfileSettingsPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -73,36 +83,41 @@ export default function ProfileSettingsPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [customPronouns, setCustomPronouns] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const { data: user, isLoading: userLoading } = trpc.user.me.useQuery(
-    undefined,
-    { enabled: !!session }
+  const { data: user, isLoading: userLoading } = useQuery(
+    orpc.user.me.queryOptions({ input: undefined, ...{ enabled: !!session } }),
   );
 
-  const { data: avatarGallery } = trpc.user.getAvatarGallery.useQuery(
-    undefined,
-    { enabled: !!session && avatarDialogOpen }
+  const { data: avatarGallery } = useQuery(
+    orpc.user.getAvatarGallery.queryOptions({
+      input: undefined,
+      ...{ enabled: !!session && avatarDialogOpen },
+    }),
   );
 
-  const updateMutation = trpc.user.updateProfile.useMutation({
-    onSuccess: () => {
-      toast.success("个人资料已更新");
-      utils.user.me.invalidate();
-    },
-    onError: (error) => toast.error(error.message),
-  });
+  const updateMutation = useMutation(
+    orpc.user.updateProfile.mutationOptions({
+      onSuccess: () => {
+        toast.success("个人资料已更新");
+        queryClient.invalidateQueries({ queryKey: orpc.user.me.key() });
+      },
+      onError: (error) => toast.error(error.message),
+    }),
+  );
 
-  const updateAvatarMutation = trpc.user.updateAvatar.useMutation({
-    onSuccess: () => {
-      toast.success("头像已更新");
-      utils.user.me.invalidate();
-      setAvatarDialogOpen(false);
-      setAvatarUrl("");
-      setPreviewUrl(null);
-    },
-    onError: (error) => toast.error(error.message),
-  });
+  const updateAvatarMutation = useMutation(
+    orpc.user.updateAvatar.mutationOptions({
+      onSuccess: () => {
+        toast.success("头像已更新");
+        queryClient.invalidateQueries({ queryKey: orpc.user.me.key() });
+        setAvatarDialogOpen(false);
+        setAvatarUrl("");
+        setPreviewUrl(null);
+      },
+      onError: (error) => toast.error(error.message),
+    }),
+  );
 
   const form = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
@@ -120,9 +135,11 @@ export default function ProfileSettingsPage() {
     if (user) {
       const socialLinks = (user.socialLinks as Record<string, string>) || {};
       const pronounsValue = user.pronouns || "";
-      const isCustom = Boolean(pronounsValue && !PRONOUNS_OPTIONS.find(p => p.value === pronounsValue));
+      const isCustom = Boolean(
+        pronounsValue && !PRONOUNS_OPTIONS.find((p) => p.value === pronounsValue),
+      );
       setCustomPronouns(isCustom);
-      
+
       form.reset({
         nickname: user.nickname || "",
         bio: user.bio || "",
@@ -143,9 +160,9 @@ export default function ProfileSettingsPage() {
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.push("/login?callbackUrl=/settings");
+      navigate("/login?callbackUrl=/settings");
     }
-  }, [status, router]);
+  }, [status, navigate]);
 
   async function onSubmit(data: ProfileForm) {
     setIsLoading(true);
@@ -172,7 +189,7 @@ export default function ProfileSettingsPage() {
 
     setPreviewUrl(URL.createObjectURL(file));
     setIsUploading(true);
-    
+
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -215,16 +232,14 @@ export default function ProfileSettingsPage() {
       {/* 页面标题 */}
       <div>
         <h2 className="text-xl font-semibold">个人资料</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          管理你的公开个人信息
-        </p>
+        <p className="text-sm text-muted-foreground mt-1">管理你的公开个人信息</p>
       </div>
 
       {/* 头像 */}
       <div className="flex items-start gap-6 pb-6 border-b">
         <Dialog open={avatarDialogOpen} onOpenChange={setAvatarDialogOpen}>
           <DialogTrigger asChild>
-            <button className="relative group">
+            <button type="button" className="relative group">
               <Avatar className="h-24 w-24 border-2 border-border">
                 <AvatarImage src={user.avatar || undefined} />
                 <AvatarFallback className="text-2xl">
@@ -244,9 +259,18 @@ export default function ProfileSettingsPage() {
 
             <Tabs defaultValue="gallery" className="w-full">
               <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="gallery"><Images className="h-4 w-4 mr-1.5" />选择</TabsTrigger>
-                <TabsTrigger value="upload"><Upload className="h-4 w-4 mr-1.5" />上传</TabsTrigger>
-                <TabsTrigger value="url"><Link className="h-4 w-4 mr-1.5" />URL</TabsTrigger>
+                <TabsTrigger value="gallery">
+                  <Images className="h-4 w-4 mr-1.5" />
+                  选择
+                </TabsTrigger>
+                <TabsTrigger value="upload">
+                  <Upload className="h-4 w-4 mr-1.5" />
+                  上传
+                </TabsTrigger>
+                <TabsTrigger value="url">
+                  <Link className="h-4 w-4 mr-1.5" />
+                  URL
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="gallery" className="mt-4">
@@ -257,7 +281,11 @@ export default function ProfileSettingsPage() {
                         <AvatarImage src={previewUrl} />
                       </Avatar>
                       <button
-                        onClick={() => { setPreviewUrl(null); setAvatarUrl(""); }}
+                        type="button"
+                        onClick={() => {
+                          setPreviewUrl(null);
+                          setAvatarUrl("");
+                        }}
                         className="absolute -top-1 -right-1 p-0.5 bg-destructive text-white rounded-full"
                       >
                         <X className="h-3 w-3" />
@@ -267,10 +295,14 @@ export default function ProfileSettingsPage() {
                   <ScrollArea className="h-40 w-full">
                     {avatarGallery?.length ? (
                       <div className="grid grid-cols-6 gap-2 p-1">
-                        {avatarGallery.map((avatar, i) => (
+                        {avatarGallery.map((avatar) => (
                           <button
-                            key={i}
-                            onClick={() => { setPreviewUrl(avatar); setAvatarUrl(avatar); }}
+                            type="button"
+                            key={avatar}
+                            onClick={() => {
+                              setPreviewUrl(avatar);
+                              setAvatarUrl(avatar);
+                            }}
                             className={`rounded-full overflow-hidden border-2 transition-all hover:scale-105 ${
                               previewUrl === avatar ? "border-primary" : "border-transparent"
                             }`}
@@ -298,31 +330,63 @@ export default function ProfileSettingsPage() {
                         <AvatarImage src={previewUrl} />
                       </Avatar>
                       <button
-                        onClick={() => { setPreviewUrl(null); setAvatarUrl(""); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                        type="button"
+                        onClick={() => {
+                          setPreviewUrl(null);
+                          setAvatarUrl("");
+                          if (fileInputRef.current) fileInputRef.current.value = "";
+                        }}
                         className="absolute -top-1 -right-1 p-0.5 bg-destructive text-white rounded-full"
                       >
                         <X className="h-3 w-3" />
                       </button>
                     </div>
                   ) : (
-                    <div
+                    <button
+                      type="button"
+                      aria-label="上传头像"
                       onClick={() => fileInputRef.current?.click()}
                       className="h-24 w-24 rounded-full border-2 border-dashed flex items-center justify-center cursor-pointer hover:border-primary transition-colors"
                     >
-                      {isUploading ? <Loader2 className="h-6 w-6 animate-spin" /> : <Upload className="h-6 w-6 text-muted-foreground" />}
-                    </div>
+                      {isUploading ? (
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                      ) : (
+                        <Upload className="h-6 w-6 text-muted-foreground" />
+                      )}
+                    </button>
                   )}
-                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
-                  <p className="text-xs text-muted-foreground">JPG, PNG, GIF, WebP, AVIF · 最大 5MB</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileSelect}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    JPG, PNG, GIF, WebP, AVIF · 最大 5MB
+                  </p>
                 </div>
               </TabsContent>
 
               <TabsContent value="url" className="mt-4">
                 <div className="flex flex-col items-center gap-4">
-                  {previewUrl && <Avatar className="h-24 w-24"><AvatarImage src={previewUrl} /></Avatar>}
+                  {previewUrl && (
+                    <Avatar className="h-24 w-24">
+                      <AvatarImage src={previewUrl} />
+                    </Avatar>
+                  )}
                   <div className="w-full flex gap-2">
-                    <Input placeholder="输入图片 URL" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} />
-                    <Button variant="secondary" onClick={() => avatarUrl && setPreviewUrl(avatarUrl)}>预览</Button>
+                    <Input
+                      placeholder="输入图片 URL"
+                      value={avatarUrl}
+                      onChange={(e) => setAvatarUrl(e.target.value)}
+                    />
+                    <Button
+                      variant="secondary"
+                      onClick={() => avatarUrl && setPreviewUrl(avatarUrl)}
+                    >
+                      预览
+                    </Button>
                   </div>
                 </div>
               </TabsContent>
@@ -330,12 +394,22 @@ export default function ProfileSettingsPage() {
 
             <DialogFooter className="gap-2 sm:gap-0">
               {user.avatar && (
-                <Button variant="ghost" onClick={() => updateAvatarMutation.mutateAsync({ avatar: "" })} disabled={updateAvatarMutation.isPending} className="text-destructive">
+                <Button
+                  variant="ghost"
+                  onClick={() => updateAvatarMutation.mutateAsync({ avatar: "" })}
+                  disabled={updateAvatarMutation.isPending}
+                  className="text-destructive"
+                >
                   移除
                 </Button>
               )}
-              <Button onClick={handleSaveAvatar} disabled={(!avatarUrl && !previewUrl) || updateAvatarMutation.isPending}>
-                {updateAvatarMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <Button
+                onClick={handleSaveAvatar}
+                disabled={(!avatarUrl && !previewUrl) || updateAvatarMutation.isPending}
+              >
+                {updateAvatarMutation.isPending && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
                 保存
               </Button>
             </DialogFooter>
@@ -374,7 +448,11 @@ export default function ProfileSettingsPage() {
               <FormItem>
                 <FormLabel>个人简介</FormLabel>
                 <FormControl>
-                  <Textarea {...field} placeholder="介绍一下自己..." className="max-w-lg min-h-[100px] resize-none" />
+                  <Textarea
+                    {...field}
+                    placeholder="介绍一下自己..."
+                    className="max-w-lg min-h-[100px] resize-none"
+                  />
                 </FormControl>
                 <FormDescription>最多 500 个字符</FormDescription>
                 <FormMessage />
@@ -389,18 +467,47 @@ export default function ProfileSettingsPage() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="flex items-center gap-1.5">
-                    <AtSign className="h-3.5 w-3.5" />代词
+                    <AtSign className="h-3.5 w-3.5" />
+                    代词
                   </FormLabel>
                   {customPronouns ? (
                     <div className="flex gap-2">
-                      <FormControl><Input placeholder="自定义代词" {...field} /></FormControl>
-                      <Button type="button" variant="outline" size="sm" onClick={() => { setCustomPronouns(false); field.onChange(""); }}>选择</Button>
+                      <FormControl>
+                        <Input placeholder="自定义代词" {...field} />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setCustomPronouns(false);
+                          field.onChange("");
+                        }}
+                      >
+                        选择
+                      </Button>
                     </div>
                   ) : (
-                    <Select value={field.value || ""} onValueChange={(v) => { if (v === "custom") { setCustomPronouns(true); field.onChange(""); } else field.onChange(v); }}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="选择代词" /></SelectTrigger></FormControl>
+                    <Select
+                      value={field.value || ""}
+                      onValueChange={(v) => {
+                        if (v === "custom") {
+                          setCustomPronouns(true);
+                          field.onChange("");
+                        } else field.onChange(v);
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择代词" />
+                        </SelectTrigger>
+                      </FormControl>
                       <SelectContent>
-                        {PRONOUNS_OPTIONS.map((o) => <SelectItem key={o.value || "none"} value={o.value || "none"}>{o.label}</SelectItem>)}
+                        {PRONOUNS_OPTIONS.map((o) => (
+                          <SelectItem key={o.value || "none"} value={o.value || "none"}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   )}
@@ -414,9 +521,12 @@ export default function ProfileSettingsPage() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5" />所在地
+                    <MapPin className="h-3.5 w-3.5" />
+                    所在地
                   </FormLabel>
-                  <FormControl><Input placeholder="城市、国家" {...field} /></FormControl>
+                  <FormControl>
+                    <Input placeholder="城市、国家" {...field} />
+                  </FormControl>
                 </FormItem>
               )}
             />
@@ -428,9 +538,12 @@ export default function ProfileSettingsPage() {
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="flex items-center gap-1.5">
-                  <Globe className="h-3.5 w-3.5" />个人网站
+                  <Globe className="h-3.5 w-3.5" />
+                  个人网站
                 </FormLabel>
-                <FormControl><Input placeholder="https://example.com" {...field} className="max-w-md" /></FormControl>
+                <FormControl>
+                  <Input placeholder="https://example.com" {...field} className="max-w-md" />
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )}
@@ -455,7 +568,13 @@ export default function ProfileSettingsPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-sm">{item.label}</FormLabel>
-                      <FormControl><Input placeholder={item.placeholder} {...field} value={field.value as string || ""} /></FormControl>
+                      <FormControl>
+                        <Input
+                          placeholder={item.placeholder}
+                          {...field}
+                          value={(field.value as string) || ""}
+                        />
+                      </FormControl>
                     </FormItem>
                   )}
                 />
@@ -474,3 +593,5 @@ export default function ProfileSettingsPage() {
     </div>
   );
 }
+
+export const meta = () => pageMeta("个人资料", "管理您的个人资料", "/settings", { noindex: true });

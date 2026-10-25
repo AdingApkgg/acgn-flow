@@ -1,64 +1,83 @@
-"use client";
-
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
-import { Loader2, Check } from "lucide-react";
+import { z } from "zod";
+import { Button } from "@/components/ui/button";
+import { EmailCodeInput } from "@/components/ui/email-code-input";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSession } from "@/lib/auth-client";
+import { orpc } from "@/lib/orpc";
+import { pageMeta } from "@/routes/metadata";
 
 const accountSchema = z.object({
-  username: z.string().min(3, "用户名至少3个字符").max(20, "用户名最多20个字符").regex(/^[a-zA-Z0-9_]+$/, "只能包含字母、数字和下划线"),
+  username: z
+    .string()
+    .min(3, "用户名至少3个字符")
+    .max(20, "用户名最多20个字符")
+    .regex(/^[a-zA-Z0-9_]+$/, "只能包含字母、数字和下划线"),
   email: z.string().email("请输入有效的邮箱地址"),
+  code: z.string().optional(),
 });
 
-const passwordSchema = z.object({
-  currentPassword: z.string().min(1, "请输入当前密码"),
-  newPassword: z.string().min(6, "新密码至少6个字符"),
-  confirmPassword: z.string().min(1, "请确认新密码"),
-}).refine((data) => data.newPassword === data.confirmPassword, {
-  message: "两次输入的密码不一致",
-  path: ["confirmPassword"],
-});
+const passwordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "请输入当前密码"),
+    newPassword: z.string().min(6, "新密码至少6个字符"),
+    confirmPassword: z.string().min(1, "请确认新密码"),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "两次输入的密码不一致",
+    path: ["confirmPassword"],
+  });
 
 export default function AccountSettingsPage() {
   const { data: session, status } = useSession();
-  const router = useRouter();
+  const navigate = useNavigate();
   const [isAccountLoading, setIsAccountLoading] = useState(false);
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const { data: user, isLoading: userLoading } = trpc.user.me.useQuery(
-    undefined,
-    { enabled: !!session }
+  const { data: user, isLoading: userLoading } = useQuery(
+    orpc.user.me.queryOptions({ input: undefined, ...{ enabled: !!session } }),
   );
 
-  const updateAccountMutation = trpc.user.updateAccount.useMutation({
-    onSuccess: () => {
-      toast.success("账号信息已更新");
-      utils.user.me.invalidate();
-    },
-    onError: (error) => toast.error(error.message),
-  });
+  const updateAccountMutation = useMutation(
+    orpc.user.updateAccount.mutationOptions({
+      onSuccess: () => {
+        toast.success("账号信息已更新");
+        queryClient.invalidateQueries({ queryKey: orpc.user.me.key() });
+      },
+      onError: (error) => toast.error(error.message),
+    }),
+  );
 
-  const changePasswordMutation = trpc.user.changePassword.useMutation({
-    onSuccess: () => {
-      toast.success("密码已修改");
-      passwordForm.reset();
-    },
-    onError: (error) => toast.error(error.message),
-  });
+  const changePasswordMutation = useMutation(
+    orpc.user.changePassword.mutationOptions({
+      onSuccess: () => {
+        toast.success("密码已修改");
+        passwordForm.reset();
+      },
+      onError: (error) => toast.error(error.message),
+    }),
+  );
 
   const accountForm = useForm({
     resolver: zodResolver(accountSchema),
-    defaultValues: { username: "", email: "" },
+    defaultValues: { username: "", email: "", code: "" },
   });
 
   const passwordForm = useForm({
@@ -68,17 +87,22 @@ export default function AccountSettingsPage() {
 
   useEffect(() => {
     if (user) {
-      accountForm.reset({ username: user.username, email: user.email });
+      accountForm.reset({ username: user.username, email: user.email, code: "" });
     }
   }, [user, accountForm]);
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.push("/login?callbackUrl=/settings/account");
+      navigate("/login?callbackUrl=/settings/account");
     }
-  }, [status, router]);
+  }, [status, navigate]);
 
+  const pendingEmail = accountForm.watch("email");
   async function onAccountSubmit(data: z.infer<typeof accountSchema>) {
+    if (user && data.email !== user.email && !/^\d{6}$/.test(data.code || "")) {
+      accountForm.setError("code", { message: "请输入新邮箱收到的6位验证码" });
+      return;
+    }
     setIsAccountLoading(true);
     try {
       await updateAccountMutation.mutateAsync(data);
@@ -118,9 +142,7 @@ export default function AccountSettingsPage() {
       {/* 页面标题 */}
       <div>
         <h2 className="text-xl font-semibold">账号安全</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          管理你的账号信息和密码
-        </p>
+        <p className="text-sm text-muted-foreground mt-1">管理你的账号信息和密码</p>
       </div>
 
       {/* 账号信息 */}
@@ -160,6 +182,27 @@ export default function AccountSettingsPage() {
               )}
             />
 
+            {pendingEmail !== user.email && (
+              <FormField
+                control={accountForm.control}
+                name="code"
+                render={({ field }) => (
+                  <FormItem className="max-w-sm">
+                    <FormLabel>新邮箱验证码</FormLabel>
+                    <FormControl>
+                      <EmailCodeInput
+                        email={pendingEmail}
+                        type="CHANGE_EMAIL"
+                        value={field.value || ""}
+                        onChange={field.onChange}
+                        error={accountForm.formState.errors.code?.message}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             <div className="flex items-center gap-4 pt-2">
               <Button type="submit" disabled={isAccountLoading}>
                 {isAccountLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -190,7 +233,12 @@ export default function AccountSettingsPage() {
                 <FormItem>
                   <FormLabel>当前密码</FormLabel>
                   <FormControl>
-                    <Input type="password" {...field} className="max-w-sm" autoComplete="current-password" />
+                    <Input
+                      type="password"
+                      {...field}
+                      className="max-w-sm"
+                      autoComplete="current-password"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -237,3 +285,6 @@ export default function AccountSettingsPage() {
     </div>
   );
 }
+
+export const meta = () =>
+  pageMeta("账号安全", "管理账号信息和密码", "/settings/account", { noindex: true });

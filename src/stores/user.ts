@@ -9,10 +9,7 @@ interface UserPreferences {
 
 interface UserStore {
   preferences: UserPreferences;
-  setPreference: <K extends keyof UserPreferences>(
-    key: K,
-    value: UserPreferences[K]
-  ) => void;
+  setPreference: <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => void;
   resetPreferences: () => void;
 }
 
@@ -34,6 +31,6 @@ export const useUserStore = create<UserStore>()(
     }),
     {
       name: "user-preferences",
-    }
-  )
+    },
+  ),
 );
