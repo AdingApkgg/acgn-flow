@@ -1,0 +1,16 @@
+.git
+node_modules
+build
+.react-router
+.superpowers
+.env
+.env.*
+!.env.example
+!.env.production.example
+uploads
+logs
+coverage
+playwright-report
+test-results
+
+.preview*

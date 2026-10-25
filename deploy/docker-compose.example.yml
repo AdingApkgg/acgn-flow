@@ -6,17 +6,28 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      network: host
+      args:
+        http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+        https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+        HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+        HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+        APP_URL: ${APP_URL:-http://localhost:3000}
+        APP_NAME: ${APP_NAME:-ACGN Flow}
     container_name: acgn-flow-app
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/acgn_flow
       - REDIS_URL=redis://redis:6379
-      - AUTH_SECRET=${AUTH_SECRET}
-      - AUTH_URL=${AUTH_URL}
-      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
-      - NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME}
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-${AUTH_SECRET}}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-${AUTH_URL:-http://localhost:3000}}
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      - APP_NAME=${APP_NAME:-ACGN Flow}
     volumes:
       - ../uploads:/app/uploads
     depends_on:
@@ -25,7 +36,13 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "fetch('http://127.0.0.1:3000/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -1,58 +1,32 @@
 # syntax=docker/dockerfile:1
-
-FROM node:22-alpine AS base
-
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-# Dependencies stage
-FROM base AS deps
+FROM oven/bun:1.4.2 AS dependencies
 WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
 
-COPY package.json pnpm-lock.yaml ./
-COPY prisma ./prisma/
-
-RUN pnpm install --frozen-lockfile
-
-# Builder stage
-FROM base AS builder
-WORKDIR /app
-
-COPY --from=deps /app/node_modules ./node_modules
+FROM dependencies AS builder
 COPY . .
+ARG APP_URL=http://localhost:1270
+ARG APP_NAME="ACGN Flow"
+ENV APP_URL=$APP_URL APP_NAME=$APP_NAME
+RUN bun run build
 
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV SKIP_ENV_VALIDATION=1
-# Dummy DATABASE_URL for build time (actual URL provided at runtime)
-ENV DATABASE_URL="postgresql://user:pass@localhost:5432/db"
+# 复用已完成下载的缓存，避免两个安装阶段同时争用代理连接。
+FROM dependencies AS production-dependencies
+RUN rm -rf node_modules && bun install --frozen-lockfile --production
 
-RUN pnpm run build
-
-# Runner stage
-FROM base AS runner
+FROM oven/bun:1.4.2 AS runner
 WORKDIR /app
-
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-# Copy necessary files
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/src/generated ./src/generated
-
-# Create uploads directory
-RUN mkdir -p /app/uploads && chown -R nextjs:nodejs /app/uploads
-
-USER nextjs
-
+ENV NODE_ENV=production PORT=1270 HOST=0.0.0.0
+COPY --from=production-dependencies /app/node_modules ./node_modules
+COPY --from=builder /app/build ./build
+COPY --from=builder /app/src/db ./src/db
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /app/package.json ./package.json
+# 延续旧容器的 UID/GID，既有上传卷无需递归更改属主。
+RUN mkdir -p /app/uploads /app/data && chown 1001:1001 /app/uploads /app/data
+USER 1001:1001
 EXPOSE 1270
-
-ENV PORT=1270
-ENV HOSTNAME="0.0.0.0"
-
-CMD ["node", "server.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD bun -e 'fetch("http://127.0.0.1:" + (process.env.PORT || 1270) + "/healthz").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'
+CMD ["bun", "build/server/index.js"]

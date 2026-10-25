@@ -37,11 +37,19 @@ services:
       timeout: 5s
       retries: 5
 
-  # Next.js 应用
+  # Bun/Hono 应用
   app:
     build:
       context: .
       dockerfile: Dockerfile
+      network: host
+      args:
+        http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
+        https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
+        HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+        HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+        APP_URL: ${APP_URL:-http://localhost:1270}
+        APP_NAME: ${APP_NAME:-ACGN Flow}
     container_name: acgn-flow-app
     restart: unless-stopped
     depends_on:
@@ -52,13 +60,14 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=1270
+      - HOST=0.0.0.0
       # 数据库连接（使用容器内网络）
       - DATABASE_URL=postgresql://${POSTGRES_USER:-acgn}:${POSTGRES_PASSWORD:-acgn_password}@postgres:5432/${POSTGRES_DB:-acgn_flow}?schema=public
       # Redis 连接
       - REDIS_URL=redis://redis:6379
-      # NextAuth
-      - AUTH_SECRET=${AUTH_SECRET}
-      - AUTH_URL=${AUTH_URL:-http://localhost:1270}
+      # Better Auth
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-${AUTH_SECRET}}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-${AUTH_URL:-http://localhost:1270}}
       # OAuth（可选）
       - AUTH_GITHUB_ID=${AUTH_GITHUB_ID:-}
       - AUTH_GITHUB_SECRET=${AUTH_GITHUB_SECRET:-}
@@ -67,8 +76,8 @@ services:
       - AUTH_DISCORD_ID=${AUTH_DISCORD_ID:-}
       - AUTH_DISCORD_SECRET=${AUTH_DISCORD_SECRET:-}
       # 应用配置
-      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:1270}
-      - NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME:-ACGN Flow}
+      - APP_URL=${APP_URL:-http://localhost:1270}
+      - APP_NAME=${APP_NAME:-ACGN Flow}
       # 邮件（可选）
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -86,7 +95,7 @@ services:
       - BILIBILI_COOKIE=${BILIBILI_COOKIE:-}
     volumes:
       - uploads:/app/uploads
-      - ./data:/app/data:ro  # IP 地理位置数据库（只读）
+      - ./data:/app/data:ro # IP 地理位置数据库（只读）
     ports:
       - "1270:1270"
 

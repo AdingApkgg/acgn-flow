@@ -1,171 +1,56 @@
 # ACGN Flow
 
-ACGN Fans 流式媒体内容分享平台。不存储视频文件，仅通过用户提供的直链加载视频。
+ACGN Fans 流式媒体内容分享平台。用户提交视频直链，平台提供播放、字幕弹幕、合集、搜索、收藏、历史、评论和管理功能。
 
-## 技术栈
+技术栈：React Router 8 Framework Mode、Vite 8、React 19、Hono、oRPC、Drizzle、Bun、Better Auth、Biome、Video.js 10（`@videojs/react`）、PostgreSQL、Redis、Tailwind v4、shadcn/ui。
 
-- **框架**: Next.js 16 + React 19 + TypeScript + Turbopack
-- **样式**: Tailwind CSS v4 + shadcn/ui
-- **状态**: Zustand + TanStack Query
-- **API**: tRPC + Zod
-- **认证**: NextAuth.js v5
-- **数据库**: PostgreSQL + Prisma 7
-- **缓存**: Redis + ioredis
-- **播放器**: react-player + hls.js
-- **3D**: Three.js + React Three Fiber
+## 开发与验证
 
-## 开始开发
+本机 Mac 仅编辑代码；安装、构建、预览、整库类型检查与浏览器测试在专用构建机执行。项目迁移验证使用 `localhost-1.tailac9c6f.ts.net` 的 `/home/i/acgn-flow-migration-20261026`，与旧 `/home/i/acgn-flow` 分开。
 
-### 1. 安装依赖
+在构建机先核实 `hostname`，保留已配置 `http_proxy` / `https_proxy`，然后：
 
 ```bash
-pnpm install
-pnpm approve-builds  # 批准依赖的构建脚本
-```
-
-### 2. 配置环境变量
-
-复制 `.env.example` 到 `.env` 并填写配置：
-
-```bash
+bun install --frozen-lockfile
 cp .env.example .env
+# 填好连接信息、随机认证密钥和公开站点地址
+bun run db:init --confirm-database=acgn_flow
+bun run db:seed --confirm-database=acgn_flow
+bun run dev
 ```
 
-### 3. 初始化数据库
+`db:init` 只接受空库。已有数据库必须先备份并在独立副本演练，使用 `bun run db:migrate --confirm-database=<实际库名>` 升级。详细说明见 [数据库升级指南](drizzle/README.md)。应用启动不会自动迁移，也不会创建固定口令的管理员。
 
 ```bash
-# 生成 Prisma Client
-pnpm db:generate
-
-# 推送数据库 schema
-pnpm db:push
-
-# (可选) 填充初始数据
-pnpm db:seed
+bun run typecheck
+bun run lint
+bun run build
+bun run start
 ```
 
-### 4. 启动开发服务器
+`APP_URL` 与 `APP_NAME` 是仅有的公开构建配置；修改后重建客户端。认证读取 `BETTER_AUTH_SECRET` / `BETTER_AUTH_URL`，升级期间兼容旧 `AUTH_SECRET` / `AUTH_URL`。
 
-```bash
-pnpm dev
-```
+## 登录与播放器
 
-访问 http://localhost:3000
+Better Auth 管理密码、GitHub/Google/Discord OAuth 和数据库会话。旧 bcrypt 密码、用户 ID、OAuth 外部 ID 和业务关联通过增量迁移保留；旧登录态切换后需要重新登录。多账号使用 Better Auth 的设备会话，撤销后不能靠旧切换令牌恢复。OAuth 回调为 `/api/auth/callback/<provider>`，只有配置完整凭据的 provider 才显示。
 
-## 可用脚本
+Video.js 10 替换原媒体引擎，保留自定义控制、字幕和弹幕层。当前 MP4 使用 Video.js 原生媒体组件，HLS 使用其适配器。原 Serwist 缓存和新 worker 注册已移除；`/sw.js` 仅供旧客户端退役，不提供离线缓存。
 
-| 命令 | 说明 |
-|------|------|
-| `pnpm dev` | 启动开发服务器 (Turbopack, 端口 3000) |
-| `pnpm build` | 构建生产版本 |
-| `pnpm start` | 启动生产服务器 |
-| `pnpm lint` | 运行 ESLint |
-| `pnpm db:generate` | 生成 Prisma Client |
-| `pnpm db:push` | 推送 schema 到数据库 |
-| `pnpm db:migrate` | 运行数据库迁移 |
-| `pnpm db:studio` | 打开 Prisma Studio |
-| `pnpm db:seed` | 填充初始数据 |
+## 路由与结构
 
-## 生产部署
+公开页面保留 SSR 和逐页 SEO。业务接口在 `/api/rpc/*`；上传、B站导入、验证码、邮件、RSS、robots、站点地图、llms 与 `.well-known` 保留原路径。
 
-### 架构概览
+- `src/root.tsx`、`src/routes.ts`：RR8 根布局与路由。
+- `src/app/`：现有页面与全局样式。
+- `src/server/index.ts`：Bun/Hono 应用入口。
+- `src/server/routers/`：oRPC 业务接口。
+- `src/server/http/`：HTTP 资源端点。
+- `src/db/`、`drizzle/`：Drizzle 表、关系、迁移与夹具。
+- `src/components/video/video-player.tsx`：Video.js 播放器和字幕弹幕。
+- `tests/`：认证、HTTP、SSR 等隔离集成测试。
 
-```
-公网机 (Nginx + Rathole Server)
-         ↑
-    Rathole 隧道 (:2333)
-         ↑
-内网机 (Rathole Client + App)
-    |-- Next.js App (:1270)
-    |-- PostgreSQL (:5432)
-    |-- Redis (:6379)
-```
+## 部署
 
-### 使用 Podman Compose
-
-```bash
-# 构建并启动应用
-podman compose up -d --build
-
-# 查看日志
-podman compose logs -f app
-
-# 重启服务
-podman compose restart
-
-# 停止服务
-podman compose down
-```
-
-### 端口配置
-
-| 环境 | 端口 | 说明 |
-|------|------|------|
-| 开发环境 | 3000 | `pnpm dev` |
-| 生产环境 | 1270 | `podman compose` (host 网络模式) |
-
-### Rathole 隧道配置
-
-**内网机** (`/etc/rathole/client.toml`):
-```toml
-[client]
-remote_addr = "公网机IP:2333"
-default_token = "your-secret-token"
-
-[client.services.acgn-flow]
-local_addr = "127.0.0.1:1270"
-```
-
-**公网机** (`/etc/rathole/server.toml`):
-```toml
-[server]
-bind_addr = "0.0.0.0:2333"
-default_token = "your-secret-token"
-
-[server.services.acgn-flow]
-bind_addr = "127.0.0.1:1270"
-```
-
-详细部署说明见 [deploy/README.md](deploy/README.md)
-
-## 目录结构
-
-```
-acgn-flow/
-├── prisma/              # Prisma schema 和种子数据
-├── src/
-│   ├── app/             # Next.js App Router 页面
-│   ├── components/      # React 组件
-│   │   ├── layout/      # 布局组件
-│   │   ├── ui/          # shadcn/ui 组件
-│   │   ├── three/       # Three.js 3D 组件
-│   │   └── video/       # 视频相关组件
-│   ├── lib/             # 工具函数
-│   ├── server/          # 服务端代码
-│   │   └── routers/     # tRPC routers
-│   └── stores/          # Zustand stores
-├── deploy/              # 部署配置文件
-├── uploads/             # 上传文件目录
-├── compose.yaml         # Podman/Docker Compose 配置
-└── Dockerfile           # Docker 构建文件
-```
-
-## 默认账户
-
-运行 `pnpm db:seed` 后：
-
-- **管理员**: admin@acgnflow.com / admin123
-
-## SEO & AI 端点
-
-| 路径 | 说明 |
-|------|------|
-| `/sitemap.xml` | 动态站点地图 |
-| `/robots.txt` | 爬虫规则 |
-| `/feed.xml` | RSS 订阅 |
-| `/llms.txt` | AI/LLM 友好说明 |
-| `/.well-known/ai-plugin.json` | ChatGPT 插件发现 |
-
-## License
+默认生产端口 1270。Docker/Podman、PM2、Nginx/Rathole 配置见 [部署指南](deploy/README.md)。`/healthz` 检查数据库与 Redis 连通。开发验证通过不代表生产已切换；生产数据升级、OAuth 应用配置和生产发布都单独确认。
 
 [GNU AGPLv3](LICENSE)

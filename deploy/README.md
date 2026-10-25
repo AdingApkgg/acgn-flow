@@ -1,122 +1,66 @@
 # ACGN Flow 部署指南
 
-## 架构概览
+## 运行架构
 
+公网 Nginx 经 Rathole 将请求转到 Bun/Hono 的 1270 端口。同一应用提供 RR8 SSR、Vite 构建资源、oRPC、Better Auth 和原 HTTP 资源；PostgreSQL、Redis 和上传卷保持独立。
+
+## 构建机
+
+安装、构建、预览和测试均在专用构建机执行，先确认 `hostname`。本次隔离验证目录为 `localhost-1.tailac9c6f.ts.net:/home/i/acgn-flow-migration-20261026`，不能把它或其合成测试库当作生产数据源。境外下载使用机器现有代理，不清空 SSH 继承的代理环境。
+
+## 生产准备
+
+在生产副本完成升级演练与记录核对后，才申请生产切换。保留原程序版本、数据库完整备份和上传备份。旧认证表/字段会保留，密码迁入 `AuthAccount`，新会话使用 `AuthSession`；旧JWT登录态需要重新登录。
+
+环境变量采用 `.env.production.example`，必须提供随机 `BETTER_AUTH_SECRET`、正确 `BETTER_AUTH_URL`、`APP_URL`、数据库和缓存连接。公开 `APP_URL`/`APP_NAME` 同时作为构建参数与运行配置，修改后重新构建。OAuth 控制台回调更新为：
+
+```text
+https://你的域名/api/auth/callback/github
+https://你的域名/api/auth/callback/google
+https://你的域名/api/auth/callback/discord
 ```
-公网机 (Nginx + Rathole Server)
-         |
-         | TCP 隧道 (:2333)
-         v
-内网机 (Rathole Client)
-    |-- Next.js (:3000)
-    |-- PostgreSQL (:5432)
-    |-- Redis (:6379)
-```
 
-## 技术栈
+外部 OAuth 应用配置需要相应账户权限，合成测试不能替代真实 provider 登录验收。
 
-- **前端**: Next.js 16, React 19, TypeScript, Tailwind CSS v4, shadcn/ui, Three.js
-- **后端**: tRPC, Prisma 7, NextAuth.js v5
-- **数据库**: PostgreSQL, Redis
-- **部署**: Podman/Docker, Nginx, Rathole
-
-## 内网机部署
-
-### 1. 环境准备
+## 容器
 
 ```bash
-git clone https://github.com/your-repo/acgn-flow.git
-cd acgn-flow
-cp .env.example .env
-# 编辑 .env 配置
+# 确认并批准发布后，在专用构建机执行
+# 构建时下载使用构建机既有代理；Docker daemon也须已有可用代理。
+docker compose build app
+# 先启数据库/缓存，迁移命令不依赖正在运行的应用
+docker compose up -d postgres redis
+# 只对全新空库执行
+docker compose run --rm app bun scripts/db-init.ts --confirm-database=acgn_flow
+# 既有库改用以下命令（不要与上面同时执行）
+# docker compose run --rm app bun scripts/db-upgrade.ts --confirm-database=acgn_flow
+# 种子只补充标签，不清空内容、不创建固定口令管理员
+docker compose run --rm app bun scripts/db-seed.ts --confirm-database=acgn_flow
+docker compose up -d app
+curl --fail http://127.0.0.1:1270/healthz
 ```
 
-### 2. 启动服务
+上传卷、PostgreSQL卷、Redis卷保留现有名称，禁止用 `down -v` 更新。应用继续使用旧容器的 UID/GID `1001:1001`，避免既有上传卷失去写权限；不要按 Bun 基础镜像默认的 1000 递归改属主。IP地理位置数据库仍以只读 `./data:/app/data:ro` 挂载。容器绑定 `HOST=0.0.0.0`，对外端口由 Compose 和现有反向代理约束。
+
+Compose 构建阶段使用 Linux 构建机的 host 网络，并转发机器现有的大小写 HTTP(S) 代理变量；本次验证证实只传大写变量可能使容器安装停滞，显式同时传入后恢复。代理参数只用于构建，不写入运行环境或代码中的凭据。
+
+## PM2
 
 ```bash
-# Podman
-podman-compose up -d --build
-
-# Docker
-docker compose up -d --build
+bun install --frozen-lockfile
+bun run build
+# 按数据库指南单独执行已批准的迁移
+bun run pm2:start
+# 后续经过批准的版本更新
+pm2 reload ecosystem.config.cjs --update-env
 ```
 
-### 3. 初始化数据库
+默认 Bun 路径 `/home/i/.bun/bin/bun`，可用 `BUN_BIN` 覆盖。工作目录保持 `/home/i/acgn-flow`；迁移验证目录独立，不要覆盖已有工作区。
 
-```bash
-podman exec -it acgn-flow-app pnpm db:push
-podman exec -it acgn-flow-app pnpm db:seed
-```
+## 验收与回退
 
-### 4. 配置 Rathole 客户端
+逐项检查 `/healthz`、公开页面首包SSR、404、登录/退出/会话撤销、上传、播放/续播/字幕/弹幕、管理权限、RSS/sitemap 和 OAuth。`/sw.js` 是退役脚本，应返回不缓存响应；新客户端不再注册 worker。
 
-```bash
-cp deploy/rathole-client.example.toml deploy/rathole-client.toml
-# 编辑 remote_addr 和 default_token
-rathole -c deploy/rathole-client.toml
-```
+数据库升级前后用 `bun scripts/db-check.ts` 对照数量、摘要和外键；完整演练见 [数据库指南](../drizzle/README.md)。若切换失败，先停止新写入，再按记录恢复原程序和对应数据库备份；新认证产生后的数据不能通过回填旧密码字段假装无损回退。是否回滚及恢复窗口由用户确认。
 
-## 公网机部署
-
-### 1. 安装 Rathole
-
-```bash
-wget https://github.com/rapiz1/rathole/releases/latest/download/rathole-x86_64-unknown-linux-musl.zip
-unzip rathole-x86_64-unknown-linux-musl.zip
-sudo mv rathole /usr/local/bin/
-```
-
-### 2. 配置 Rathole 服务端
-
-```bash
-cp deploy/rathole-server.example.toml deploy/rathole-server.toml
-# 编辑 default_token
-rathole -s deploy/rathole-server.toml
-```
-
-### 3. 配置 Nginx
-
-```bash
-sudo cp deploy/nginx-public.conf /etc/nginx/sites-available/acgn-flow.conf
-sudo ln -s /etc/nginx/sites-available/acgn-flow.conf /etc/nginx/sites-enabled/
-sudo certbot certonly --webroot -w /var/www/certbot -d af.saop.cc
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-## SEO 和 AI 端点
-
-| 路径 | 说明 | 缓存 |
-|------|------|------|
-| `/sitemap.xml` | 动态站点地图 | 1h |
-| `/robots.txt` | 爬虫规则 | 1d |
-| `/feed.xml` | RSS 订阅 | 1h |
-| `/llms.txt` | AI/LLM 友好说明 | 1d |
-| `/.well-known/ai-plugin.json` | ChatGPT 插件发现 | 1d |
-
-## 防火墙
-
-```bash
-# 公网机
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw allow 2333/tcp
-```
-
-## 备份
-
-```bash
-# 数据库
-podman exec acgn-flow-postgres pg_dump -U postgres acgn_flow > backup.sql
-
-# 上传文件
-tar -czvf uploads-backup.tar.gz uploads/
-```
-
-## 更新
-
-```bash
-git pull
-podman-compose down
-podman-compose up -d --build
-podman exec -it acgn-flow-app pnpm db:push
-```
+Nginx 模板已将接口路径改为 `/api/rpc/`、静态资源改为 `/assets/`，保留 Rathole 的既有端口。发布前核实当前域名、证书、端口与隧道真实状态；模板检查不等于现网配置已生效。本次代码迁移不自动更改防火墙、隧道、生产数据库或生产服务。
