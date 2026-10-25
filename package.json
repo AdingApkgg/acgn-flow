@@ -9,7 +9,7 @@
     "typecheck": "bun --bun react-router typegen && tsc --noEmit",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "test": "bun test tests/auth-policy.test.ts tests/subtitles.test.ts tests/media-source.test.ts tests/media-url.test.ts tests/bilibili-import.test.ts tests/bilibili-http.test.ts tests/ruffle-player.test.ts tests/playback-intent.test.ts src/db/__tests__/safety.test.ts src/server/services/__tests__/query.test.ts",
+    "test": "bun test tests/auth-policy.test.ts tests/subtitles.test.ts tests/media-source.test.ts tests/media-url.test.ts tests/bilibili-import.test.ts tests/bilibili-http.test.ts tests/ruffle-player.test.ts tests/playback-intent.test.ts tests/public-request.test.ts src/db/__tests__/safety.test.ts src/server/services/__tests__/query.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:init": "bun scripts/db-init.ts",
     "db:migrate": "bun scripts/db-upgrade.ts",

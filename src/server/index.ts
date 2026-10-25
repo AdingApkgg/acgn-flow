@@ -9,6 +9,7 @@ import { handleAuthRequest } from "@/lib/auth";
 import { redis } from "@/lib/redis";
 import { httpApp } from "./http";
 import { createContext } from "./orpc";
+import { publicRequest } from "./public-request";
 import { retireWorker } from "./retire-worker";
 import { appRouter } from "./routers/_app";
 
@@ -70,5 +71,6 @@ app.all("*", (c) => render(c.req.raw));
 export default {
   hostname: process.env.HOST || "127.0.0.1",
   port: Number(process.env.PORT || 3000),
-  fetch: app.fetch,
+  fetch: (...[request, bindings, executionCtx]: Parameters<typeof app.fetch>) =>
+    app.fetch(publicRequest(request, process.env.APP_URL), bindings, executionCtx),
 };
