@@ -57,6 +57,13 @@ services:
       PORT: 1270
       HOST: 0.0.0.0
       APP_REVISION: ${APP_REVISION:-development}
+      # 运行时复用宿主机已有的容器可达代理，与构建代理分别配置。
+      HTTP_PROXY: ${OUTBOUND_PROXY:-}
+      HTTPS_PROXY: ${OUTBOUND_PROXY:-}
+      http_proxy: ${OUTBOUND_PROXY:-}
+      https_proxy: ${OUTBOUND_PROXY:-}
+      NO_PROXY: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis}
+      no_proxy: ${OUTBOUND_NO_PROXY:-localhost,127.0.0.1,postgres,redis}
       DATABASE_URL: postgresql://${POSTGRES_USER:-acgn}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-acgn_flow}
       REDIS_URL: redis://redis:6379
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-${AUTH_SECRET:-}}
