@@ -1,6 +1,3 @@
-"use client";
-
-import Image from "next/image";
 import { Film } from "lucide-react";
 
 interface VideoCoverProps {
@@ -12,7 +9,7 @@ interface VideoCoverProps {
 export function VideoCover({ coverUrl, title, className = "" }: VideoCoverProps) {
   if (!coverUrl) {
     return (
-      <div 
+      <div
         className={`absolute inset-0 bg-gradient-to-br from-primary/5 via-muted to-primary/10 flex items-center justify-center ${className}`}
       >
         <div className="text-center text-muted-foreground/60">
@@ -27,13 +24,11 @@ export function VideoCover({ coverUrl, title, className = "" }: VideoCoverProps)
   }
 
   return (
-    <Image
+    <img
       src={coverUrl}
       alt={title}
-      fill
-      className={`object-cover ${className}`}
+      className={`absolute inset-0 w-full h-full object-cover ${className}`}
       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-      unoptimized
     />
   );
 }

@@ -1,5 +1,5 @@
+import { importPKCS8, SignJWT } from "jose";
 import { env } from "@/env";
-import { SignJWT, importPKCS8 } from "jose";
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SCOPE = "https://www.googleapis.com/auth/webmasters";
@@ -25,7 +25,7 @@ async function getAccessToken(): Promise<string | null> {
 
   try {
     const now = Math.floor(Date.now() / 1000);
-    
+
     // 处理私钥格式（环境变量中的 \n 需要转换）
     const formattedKey = privateKey.replace(/\\n/g, "\n");
     const key = await importPKCS8(formattedKey, "RS256");
@@ -75,8 +75,8 @@ async function getAccessToken(): Promise<string | null> {
  */
 export async function submitSitemapToGoogle(): Promise<boolean> {
   const token = await getAccessToken();
-  const appUrl = env.NEXT_PUBLIC_APP_URL;
-  
+  const appUrl = env.APP_URL;
+
   if (!token || !appUrl) {
     return false;
   }
@@ -85,7 +85,7 @@ export async function submitSitemapToGoogle(): Promise<boolean> {
     // URL 编码站点地址
     const siteUrl = encodeURIComponent(appUrl);
     const sitemapUrl = encodeURIComponent(`${appUrl}/sitemap.xml`);
-    
+
     const response = await fetch(
       `https://www.googleapis.com/webmasters/v3/sites/${siteUrl}/sitemaps/${sitemapUrl}`,
       {
@@ -93,7 +93,7 @@ export async function submitSitemapToGoogle(): Promise<boolean> {
         headers: {
           Authorization: `Bearer ${token}`,
         },
-      }
+      },
     );
 
     if (response.ok || response.status === 204) {

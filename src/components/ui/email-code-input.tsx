@@ -1,10 +1,8 @@
-"use client";
-
-import { useState, useEffect, useCallback } from "react";
-import { Input } from "./input";
-import { Button } from "./button";
 import { Loader2, Mail } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "./button";
+import { Input } from "./input";
 
 interface EmailCodeInputProps {
   email: string;

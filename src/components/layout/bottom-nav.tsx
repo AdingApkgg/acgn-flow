@@ -1,16 +1,7 @@
-"use client";
-
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
-import {
-  Home,
-  Search,
-  Upload,
-  Heart,
-  User,
-} from "lucide-react";
+import { Heart, Home, Search, Upload, User } from "lucide-react";
+import { Link, useLocation } from "react-router";
 import { useStableSession } from "@/lib/hooks";
+import { cn } from "@/lib/utils";
 
 interface NavItem {
   href: string;
@@ -29,7 +20,7 @@ const navItems: NavItem[] = [
 ];
 
 export function BottomNav() {
-  const pathname = usePathname();
+  const pathname = useLocation().pathname;
   const { session } = useStableSession();
 
   return (
@@ -37,32 +28,24 @@ export function BottomNav() {
       <div className="flex h-14 items-center justify-around px-2">
         {navItems.map((item) => {
           // 对于需要登录的项，未登录时跳转到登录页
-          const href = item.auth && !session ? (item.loginHref || "/login") : item.href;
-          const isActive = pathname === item.href || 
-            (item.href !== "/" && pathname.startsWith(item.href));
-          
+          const href = item.auth && !session ? item.loginHref || "/login" : item.href;
+          const isActive =
+            pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+
           return (
             <Link
               key={item.href}
-              href={href}
+              to={href}
               className={cn(
                 "flex flex-col items-center justify-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors min-w-[56px]",
                 "active:scale-95 active:bg-accent/50",
-                isActive
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground"
+                isActive ? "text-primary" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              <item.icon
-                className={cn(
-                  "h-5 w-5 transition-transform",
-                  isActive && "scale-110"
-                )}
-              />
-              <span className={cn(
-                "text-[10px] font-medium leading-tight",
-                isActive && "font-semibold"
-              )}>
+              <item.icon className={cn("h-5 w-5 transition-transform", isActive && "scale-110")} />
+              <span
+                className={cn("text-[10px] font-medium leading-tight", isActive && "font-semibold")}
+              >
                 {item.label}
               </span>
             </Link>

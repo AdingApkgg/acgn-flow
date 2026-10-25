@@ -1,5 +1,3 @@
-"use client";
-
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -24,6 +22,6 @@ export const useVisualSettings = create<VisualSettings>()(
     }),
     {
       name: "visual-settings",
-    }
-  )
+    },
+  ),
 );

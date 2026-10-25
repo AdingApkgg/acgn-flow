@@ -1,38 +1,18 @@
-"use client";
-
+import { Check, Monitor, Moon, Palette, Settings, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useVisualSettings } from "@/components/visual-settings";
+import { useIsMounted } from "@/components/motion";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Settings,
-  Sun,
-  Moon,
-  Monitor,
-  Check,
-  Palette,
-} from "lucide-react";
-import { Slider } from "@/components/ui/slider";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
-import { useIsMounted } from "@/components/motion";
+import { Slider } from "@/components/ui/slider";
+import { useVisualSettings } from "@/components/visual-settings";
 
 // 外观设置内容（可复用）
 function SettingsContent() {
   const mounted = useIsMounted();
   const { theme, setTheme } = useTheme();
-  const {
-    opacity,
-    blur,
-    borderRadius,
-    setOpacity,
-    setBlur,
-    setBorderRadius,
-  } = useVisualSettings();
+  const { opacity, blur, borderRadius, setOpacity, setBlur, setBorderRadius } = useVisualSettings();
 
   const themeOptions = [
     { value: "system", label: "系统", icon: Monitor },
@@ -136,9 +116,7 @@ export function SettingsPanel() {
         <div className="space-y-4">
           <h4 className="font-medium text-sm">外观设置</h4>
           <SettingsContent />
-          <p className="text-xs text-muted-foreground text-center">
-            设置会自动保存到本地
-          </p>
+          <p className="text-xs text-muted-foreground text-center">设置会自动保存到本地</p>
         </div>
       </PopoverContent>
     </Popover>
@@ -151,6 +129,7 @@ export function SettingsPanelInMenu() {
     <Popover>
       <PopoverTrigger asChild>
         <button
+          type="button"
           className="relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
           onClick={(e) => e.stopPropagation()}
         >

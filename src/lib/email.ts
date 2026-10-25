@@ -1,13 +1,17 @@
-import nodemailer from "nodemailer";
+import { randomInt } from "node:crypto";
+import { and, eq, gt, sql } from "drizzle-orm";
 import Handlebars from "handlebars";
-import { prisma } from "./prisma";
 import { nanoid } from "nanoid";
+import nodemailer from "nodemailer";
+import { db } from "@/db";
+import { verificationCode } from "@/db/schema";
+import { redis } from "@/lib/redis";
 
 // 创建邮件传输器
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || "465"),
-  secure: parseInt(process.env.SMTP_PORT || "465") === 465,
+  port: parseInt(process.env.SMTP_PORT || "465", 10),
+  secure: parseInt(process.env.SMTP_PORT || "465", 10) === 465,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASSWORD,
@@ -80,33 +84,38 @@ export type VerificationType = "REGISTER" | "LOGIN" | "RESET_PASSWORD" | "CHANGE
 
 // 生成6位数字验证码
 function generateCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return randomInt(100000, 1000000).toString();
 }
 
 // 发送验证码邮件
 export async function sendVerificationCode(
   email: string,
-  type: VerificationType
+  type: VerificationType,
+  recipient?: string,
 ): Promise<{ success: boolean; message: string }> {
   try {
     const code = generateCode();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10分钟后过期
 
-    // 删除该邮箱之前的同类型验证码
-    await prisma.verificationCode.deleteMany({
-      where: { email, type },
+    email = email.trim().toLowerCase();
+    const allowed = await db.transaction(async (tx) => {
+      // 同一邮箱的发送串行化，防止并发请求绕过一分钟间隔。
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${email}))`);
+      const recent = await tx.query.verificationCode.findFirst({
+        where: and(
+          eq(verificationCode.email, email),
+          gt(verificationCode.createdAt, new Date(Date.now() - 60_000)),
+        ),
+        columns: { id: true },
+      });
+      if (recent) return false;
+      await tx
+        .delete(verificationCode)
+        .where(and(eq(verificationCode.email, email), eq(verificationCode.type, type)));
+      await tx.insert(verificationCode).values({ id: nanoid(), email, code, type, expiresAt });
+      return true;
     });
-
-    // 创建新验证码
-    await prisma.verificationCode.create({
-      data: {
-        id: nanoid(),
-        email,
-        code,
-        type,
-        expiresAt,
-      },
-    });
+    if (!allowed) return { success: false, message: "请稍后再发送验证码" };
 
     // 根据类型设置邮件内容
     const typeConfig: Record<VerificationType, { title: string; description: string }> = {
@@ -129,7 +138,7 @@ export async function sendVerificationCode(
     };
 
     const config = typeConfig[type];
-    const siteName = process.env.NEXT_PUBLIC_APP_NAME || "ACGN Flow";
+    const siteName = process.env.APP_NAME || "ACGN Flow";
 
     const html = templates.verificationCode({
       siteName,
@@ -142,7 +151,7 @@ export async function sendVerificationCode(
 
     await transporter.sendMail({
       from: `"${siteName}" <${process.env.SMTP_FROM}>`,
-      to: email,
+      to: recipient || email,
       subject: `【${siteName}】${config.title} - 验证码: ${code}`,
       html,
     });
@@ -154,48 +163,61 @@ export async function sendVerificationCode(
   }
 }
 
-// 验证验证码
+// 邮件预检只读；最终注册、重置和换邮箱必须在其数据库事务内消费验证码。
 export async function verifyCode(
   email: string,
   code: string,
-  type: VerificationType
+  type: VerificationType,
 ): Promise<{ valid: boolean; message: string }> {
-  try {
-    const record = await prisma.verificationCode.findFirst({
-      where: {
-        email,
-        code,
-        type,
-        expiresAt: { gt: new Date() },
-        used: false,
-      },
-    });
-
-    if (!record) {
-      return { valid: false, message: "验证码无效或已过期" };
-    }
-
-    // 标记为已使用
-    await prisma.verificationCode.update({
-      where: { id: record.id },
-      data: { used: true },
-    });
-
-    return { valid: true, message: "验证成功" };
-  } catch (error) {
-    console.error("Verify code error:", error);
-    return { valid: false, message: "验证失败" };
-  }
+  const record = await db.query.verificationCode.findFirst({
+    where: and(
+      eq(verificationCode.email, email.trim().toLowerCase()),
+      eq(verificationCode.code, code),
+      eq(verificationCode.type, type),
+      gt(verificationCode.expiresAt, new Date()),
+      eq(verificationCode.used, false),
+    ),
+    columns: { id: true },
+  });
+  return { valid: Boolean(record), message: record ? "验证成功" : "验证码无效或已过期" };
 }
 
-// 检查邮件发送频率限制（1分钟内只能发送1次）
+type VerificationWriter = Pick<typeof db, "update">;
+
+// UPDATE 的条件和返回行共同保证并发请求中只有一次消费成功。
+export async function consumeVerificationCode(
+  database: VerificationWriter,
+  email: string,
+  code: string,
+  type: VerificationType,
+): Promise<boolean> {
+  const attemptKey = `verification:attempts:${type}:${email.trim().toLowerCase()}`;
+  const attempts = await redis.incr(attemptKey);
+  if (attempts === 1) await redis.expire(attemptKey, 600);
+  if (attempts > 10) return false;
+  const consumed = await database
+    .update(verificationCode)
+    .set({ used: true })
+    .where(
+      and(
+        eq(verificationCode.email, email.trim().toLowerCase()),
+        eq(verificationCode.code, code),
+        eq(verificationCode.type, type),
+        gt(verificationCode.expiresAt, new Date()),
+        eq(verificationCode.used, false),
+      ),
+    )
+    .returning({ id: verificationCode.id });
+  return consumed.length > 0;
+}
+
 export async function checkRateLimit(email: string): Promise<boolean> {
-  const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
-  const recentCode = await prisma.verificationCode.findFirst({
-    where: {
-      email,
-      createdAt: { gt: oneMinuteAgo },
-    },
+  const record = await db.query.verificationCode.findFirst({
+    where: and(
+      eq(verificationCode.email, email.trim().toLowerCase()),
+      gt(verificationCode.createdAt, new Date(Date.now() - 60_000)),
+    ),
+    columns: { id: true },
   });
-  return !recentCode;
+  return !record;
 }

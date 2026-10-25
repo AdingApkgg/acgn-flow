@@ -1,24 +1,22 @@
-"use client";
-
-import { useState, useMemo } from "react";
+import { Plus, Search, Tag, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { X, Plus, Search, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface Tag {
+interface VideoTag {
   id: string;
   name: string;
   slug?: string;
 }
 
 interface TagSelectorProps {
-  allTags?: Tag[];
-  selectedTags: Tag[];
+  allTags?: VideoTag[];
+  selectedTags: VideoTag[];
   newTags: string[];
-  onSelectedTagsChange: (tags: Tag[]) => void;
+  onSelectedTagsChange: (tags: VideoTag[]) => void;
   onNewTagsChange: (tags: string[]) => void;
   maxTags?: number;
   className?: string;
@@ -43,9 +41,7 @@ export function TagSelector({
   const filteredTags = useMemo(() => {
     if (!searchQuery.trim()) return allTags;
     const query = searchQuery.toLowerCase();
-    return allTags.filter((tag) =>
-      tag.name.toLowerCase().includes(query)
-    );
+    return allTags.filter((tag) => tag.name.toLowerCase().includes(query));
   }, [allTags, searchQuery]);
 
   const handleAddNewTag = () => {
@@ -54,7 +50,7 @@ export function TagSelector({
     if (!canAddMore) return;
     if (newTags.includes(tag)) return;
     if (selectedTags.some((t) => t.name.toLowerCase() === tag.toLowerCase())) return;
-    
+
     // 检查是否匹配已有标签
     const existingTag = allTags.find((t) => t.name.toLowerCase() === tag.toLowerCase());
     if (existingTag) {
@@ -69,7 +65,7 @@ export function TagSelector({
     onNewTagsChange(newTags.filter((t) => t !== tag));
   };
 
-  const toggleTag = (tag: Tag) => {
+  const toggleTag = (tag: VideoTag) => {
     const exists = selectedTags.find((t) => t.id === tag.id);
     if (exists) {
       onSelectedTagsChange(selectedTags.filter((t) => t.id !== tag.id));
@@ -168,9 +164,7 @@ export function TagSelector({
                       variant={isSelected ? "default" : "outline"}
                       className={cn(
                         "cursor-pointer text-xs transition-colors",
-                        isSelected
-                          ? "hover:bg-primary/80"
-                          : "hover:bg-accent"
+                        isSelected ? "hover:bg-primary/80" : "hover:bg-accent",
                       )}
                       onClick={() => toggleTag(tag)}
                     >

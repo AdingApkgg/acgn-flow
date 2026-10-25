@@ -1,7 +1,5 @@
-"use client";
-
+import { Skeleton, skeletonKeys } from "@/components/ui/skeleton";
 import { VideoCard } from "./video-card";
-import { Skeleton } from "@/components/ui/skeleton";
 
 interface Video {
   id: string;
@@ -38,8 +36,8 @@ export function VideoGrid({ videos, isLoading, columns = 4 }: VideoGridProps) {
   if (isLoading) {
     return (
       <div className={`grid ${gridColumns[columns]} gap-3 sm:gap-4 lg:gap-5`}>
-        {Array.from({ length: 8 }).map((_, i) => (
-          <VideoCardSkeleton key={i} />
+        {skeletonKeys(8).map((skeletonKey) => (
+          <VideoCardSkeleton key={skeletonKey} />
         ))}
       </div>
     );

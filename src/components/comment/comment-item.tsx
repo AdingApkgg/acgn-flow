@@ -1,17 +1,25 @@
-"use client";
-
-import { useState, useCallback } from "react";
-import { useSession } from "next-auth/react";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  ChevronDown,
+  ChevronUp,
+  Edit,
+  Globe,
+  Globe2,
+  MapPin,
+  MessageSquare,
+  Monitor,
+  MoreVertical,
+  Pin,
+  Smartphone,
+  Tablet,
+  ThumbsDown,
+  ThumbsUp,
+  Trash2,
+} from "lucide-react";
+
+import { useCallback, useState } from "react";
+import { Link } from "react-router";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,31 +31,20 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import {
-  ThumbsUp,
-  ThumbsDown,
-  MessageSquare,
-  MoreVertical,
-  Edit,
-  Trash2,
-  Pin,
-  ChevronDown,
-  ChevronUp,
-  MapPin,
-  Globe,
-  Globe2,
-  Smartphone,
-  Monitor,
-  Tablet,
-} from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useSession } from "@/lib/auth-client";
 import { formatRelativeTime } from "@/lib/format";
-import { toast } from "sonner";
-import Link from "next/link";
+import { orpc } from "@/lib/orpc";
+
 import { cn } from "@/lib/utils";
 
 interface CommentUser {
@@ -90,9 +87,9 @@ interface CommentItemProps {
   onReplyToComment?: (user: CommentUser) => void; // 回调：回复此评论
 }
 
-export function CommentItem({ 
-  comment, 
-  videoId, 
+export function CommentItem({
+  comment,
+  videoId,
   parentId,
   isReply = false,
   onReplyToComment,
@@ -108,11 +105,11 @@ export function CommentItem({
   const [localReaction, setLocalReaction] = useState<boolean | null>(comment.userReaction);
   const [replyToUser, setReplyToUser] = useState<CommentUser | null>(null);
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const isOwner = session?.user?.id === comment.userId;
   const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "OWNER";
   const replyCount = comment._count?.replies ?? 0;
-  
+
   // 实际的顶级评论 ID
   const topLevelParentId = parentId || comment.id;
 
@@ -122,103 +119,120 @@ export function CommentItem({
     fetchNextPage: fetchMoreReplies,
     hasNextPage: hasMoreReplies,
     isFetchingNextPage: isFetchingReplies,
-  } = trpc.comment.getReplies.useInfiniteQuery(
-    { commentId: comment.id, limit: 10 },
-    {
-      enabled: showReplies && !isReply,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-    }
+  } = useInfiniteQuery(
+    orpc.comment.getReplies.infiniteOptions({
+      input: (cursor: string | undefined) => ({ ...{ commentId: comment.id, limit: 10 }, cursor }),
+      initialPageParam: undefined as string | undefined,
+      ...{
+        enabled: showReplies && !isReply,
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+      },
+    }),
   );
 
   const replies = repliesData?.pages.flatMap((page) => page.replies) ?? [];
 
   // 点赞/踩
-  const reactMutation = trpc.comment.react.useMutation({
-    onMutate: async ({ isLike }) => {
-      // 乐观更新
-      const prevReaction = localReaction;
-      setLocalReaction(isLike);
-      
-      if (isLike === null) {
-        // 取消反应
-        if (prevReaction === true) setLocalLikes((l) => l - 1);
-        if (prevReaction === false) setLocalDislikes((d) => d - 1);
-      } else if (prevReaction === null) {
-        // 新反应
-        if (isLike) setLocalLikes((l) => l + 1);
-        else setLocalDislikes((d) => d + 1);
-      } else if (prevReaction !== isLike) {
-        // 切换反应
-        if (isLike) {
-          setLocalLikes((l) => l + 1);
-          setLocalDislikes((d) => d - 1);
-        } else {
-          setLocalLikes((l) => l - 1);
-          setLocalDislikes((d) => d + 1);
+  const reactMutation = useMutation(
+    orpc.comment.react.mutationOptions({
+      onMutate: async ({ isLike }) => {
+        // 乐观更新
+        const prevReaction = localReaction;
+        setLocalReaction(isLike);
+
+        if (isLike === null) {
+          // 取消反应
+          if (prevReaction === true) setLocalLikes((l) => l - 1);
+          if (prevReaction === false) setLocalDislikes((d) => d - 1);
+        } else if (prevReaction === null) {
+          // 新反应
+          if (isLike) setLocalLikes((l) => l + 1);
+          else setLocalDislikes((d) => d + 1);
+        } else if (prevReaction !== isLike) {
+          // 切换反应
+          if (isLike) {
+            setLocalLikes((l) => l + 1);
+            setLocalDislikes((d) => d - 1);
+          } else {
+            setLocalLikes((l) => l - 1);
+            setLocalDislikes((d) => d + 1);
+          }
         }
-      }
-    },
-    onError: () => {
-      // 回滚
-      setLocalLikes(comment.likes);
-      setLocalDislikes(comment.dislikes);
-      setLocalReaction(comment.userReaction);
-      toast.error("操作失败");
-    },
-  });
+      },
+      onError: () => {
+        // 回滚
+        setLocalLikes(comment.likes);
+        setLocalDislikes(comment.dislikes);
+        setLocalReaction(comment.userReaction);
+        toast.error("操作失败");
+      },
+    }),
+  );
 
   // 发表回复
-  const createReplyMutation = trpc.comment.create.useMutation({
-    onSuccess: () => {
-      setReplyContent("");
-      setIsReplying(false);
-      setReplyToUser(null);
-      setShowReplies(true);
-      utils.comment.getReplies.invalidate({ commentId: topLevelParentId });
-      utils.comment.list.invalidate({ videoId });
-      toast.success("回复成功");
-    },
-    onError: (error) => {
-      toast.error(error.message || "回复失败");
-    },
-  });
+  const createReplyMutation = useMutation(
+    orpc.comment.create.mutationOptions({
+      onSuccess: () => {
+        setReplyContent("");
+        setIsReplying(false);
+        setReplyToUser(null);
+        setShowReplies(true);
+        queryClient.invalidateQueries({
+          queryKey: orpc.comment.getReplies.key({ input: { commentId: topLevelParentId } }),
+        });
+        queryClient.invalidateQueries({ queryKey: orpc.comment.list.key({ input: { videoId } }) });
+        toast.success("回复成功");
+      },
+      onError: (error) => {
+        toast.error(error.message || "回复失败");
+      },
+    }),
+  );
 
   // 编辑评论
-  const updateMutation = trpc.comment.update.useMutation({
-    onSuccess: () => {
-      setIsEditing(false);
-      utils.comment.list.invalidate({ videoId });
-      utils.comment.getReplies.invalidate();
-      toast.success("编辑成功");
-    },
-    onError: (error) => {
-      toast.error(error.message || "编辑失败");
-    },
-  });
+  const updateMutation = useMutation(
+    orpc.comment.update.mutationOptions({
+      onSuccess: () => {
+        setIsEditing(false);
+        queryClient.invalidateQueries({ queryKey: orpc.comment.list.key({ input: { videoId } }) });
+        queryClient.invalidateQueries({ queryKey: orpc.comment.getReplies.key() });
+        toast.success("编辑成功");
+      },
+      onError: (error) => {
+        toast.error(error.message || "编辑失败");
+      },
+    }),
+  );
 
   // 删除评论
-  const deleteMutation = trpc.comment.delete.useMutation({
-    onSuccess: () => {
-      utils.comment.list.invalidate({ videoId });
-      utils.comment.getReplies.invalidate();
-      utils.comment.getCount.invalidate({ videoId });
-      toast.success("删除成功");
-    },
-    onError: (error) => {
-      toast.error(error.message || "删除失败");
-    },
-  });
+  const deleteMutation = useMutation(
+    orpc.comment.delete.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: orpc.comment.list.key({ input: { videoId } }) });
+        queryClient.invalidateQueries({ queryKey: orpc.comment.getReplies.key() });
+        queryClient.invalidateQueries({
+          queryKey: orpc.comment.getCount.key({ input: { videoId } }),
+        });
+        toast.success("删除成功");
+      },
+      onError: (error) => {
+        toast.error(error.message || "删除失败");
+      },
+    }),
+  );
 
   // 置顶评论
-  const pinMutation = trpc.comment.pin.useMutation({
-    onSuccess: () => {
-      utils.comment.list.invalidate({ videoId });
-      toast.success(comment.isPinned ? "已取消置顶" : "已置顶");
-    },
-    onError: (error) => {
-      toast.error(error.message || "操作失败");
-    },
-  });
+  const pinMutation = useMutation(
+    orpc.comment.pin.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: orpc.comment.list.key({ input: { videoId } }) });
+        toast.success(comment.isPinned ? "已取消置顶" : "已置顶");
+      },
+      onError: (error) => {
+        toast.error(error.message || "操作失败");
+      },
+    }),
+  );
 
   const handleReact = useCallback(
     (isLike: boolean) => {
@@ -229,7 +243,7 @@ export function CommentItem({
       const newReaction = localReaction === isLike ? null : isLike;
       reactMutation.mutate({ commentId: comment.id, isLike: newReaction });
     },
-    [session, localReaction, reactMutation, comment.id]
+    [session, localReaction, reactMutation, comment.id],
   );
 
   const handleReply = useCallback(() => {
@@ -245,20 +259,23 @@ export function CommentItem({
   }, [replyContent, createReplyMutation, videoId, topLevelParentId, replyToUser, comment.user.id]);
 
   // 开始回复（顶级评论或回复的回复）
-  const startReply = useCallback((targetUser?: CommentUser) => {
-    if (!session) {
-      toast.error("请先登录");
-      return;
-    }
-    if (isReply && onReplyToComment) {
-      // 如果是回复，通知父组件处理
-      onReplyToComment(comment.user);
-    } else {
-      // 顶级评论，在当前组件处理
-      setReplyToUser(targetUser || null);
-      setIsReplying(true);
-    }
-  }, [session, isReply, onReplyToComment, comment.user]);
+  const startReply = useCallback(
+    (targetUser?: CommentUser) => {
+      if (!session) {
+        toast.error("请先登录");
+        return;
+      }
+      if (isReply && onReplyToComment) {
+        // 如果是回复，通知父组件处理
+        onReplyToComment(comment.user);
+      } else {
+        // 顶级评论，在当前组件处理
+        setReplyToUser(targetUser || null);
+        setIsReplying(true);
+      }
+    },
+    [session, isReply, onReplyToComment, comment.user],
+  );
 
   const handleEdit = useCallback(() => {
     if (!editContent.trim()) return;
@@ -288,9 +305,12 @@ export function CommentItem({
   const DeviceIcon = (() => {
     if (!normalizedDeviceInfo?.deviceType) return Monitor;
     switch (normalizedDeviceInfo.deviceType.toLowerCase()) {
-      case "mobile": return Smartphone;
-      case "tablet": return Tablet;
-      default: return Monitor;
+      case "mobile":
+        return Smartphone;
+      case "tablet":
+        return Tablet;
+      default:
+        return Monitor;
     }
   })();
 
@@ -307,9 +327,12 @@ export function CommentItem({
     if (!normalizedDeviceInfo) return null;
     const lines = [
       normalizedDeviceInfo.deviceType && `类型: ${normalizedDeviceInfo.deviceType}`,
-      normalizedDeviceInfo.os && `系统: ${[normalizedDeviceInfo.os, normalizedDeviceInfo.osVersion].filter(Boolean).join(" ")}`,
-      normalizedDeviceInfo.browser && `浏览器: ${[normalizedDeviceInfo.browser, normalizedDeviceInfo.browserVersion].filter(Boolean).join(" ")}`,
-      (normalizedDeviceInfo.brand || normalizedDeviceInfo.model) && `设备: ${[normalizedDeviceInfo.brand, normalizedDeviceInfo.model].filter(Boolean).join(" ")}`,
+      normalizedDeviceInfo.os &&
+        `系统: ${[normalizedDeviceInfo.os, normalizedDeviceInfo.osVersion].filter(Boolean).join(" ")}`,
+      normalizedDeviceInfo.browser &&
+        `浏览器: ${[normalizedDeviceInfo.browser, normalizedDeviceInfo.browserVersion].filter(Boolean).join(" ")}`,
+      (normalizedDeviceInfo.brand || normalizedDeviceInfo.model) &&
+        `设备: ${[normalizedDeviceInfo.brand, normalizedDeviceInfo.model].filter(Boolean).join(" ")}`,
       normalizedDeviceInfo.screen && `屏幕: ${normalizedDeviceInfo.screen}`,
       normalizedDeviceInfo.language && `语言: ${normalizedDeviceInfo.language}`,
       normalizedDeviceInfo.timezone && `时区: ${normalizedDeviceInfo.timezone}`,
@@ -318,11 +341,12 @@ export function CommentItem({
   })();
 
   // 是否有元信息需要显示
-  const hasMetaInfo = comment.ipv4Location || comment.ipv6Location || comment.gpsLocation || deviceBrief;
+  const hasMetaInfo =
+    comment.ipv4Location || comment.ipv6Location || comment.gpsLocation || deviceBrief;
 
   return (
     <div className={cn("flex gap-3", isReply && "ml-12")}>
-      <Link href={`/user/${comment.user.id}`}>
+      <Link to={`/user/${comment.user.id}`}>
         <Avatar className="h-10 w-10 shrink-0">
           <AvatarImage src={comment.user.avatar || undefined} />
           <AvatarFallback>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
@@ -332,10 +356,7 @@ export function CommentItem({
       <div className="flex-1 min-w-0">
         {/* 用户信息和时间 */}
         <div className="flex items-center gap-2 flex-wrap">
-          <Link
-            href={`/user/${comment.user.id}`}
-            className="font-medium text-sm hover:underline"
-          >
+          <Link to={`/user/${comment.user.id}`} className="font-medium text-sm hover:underline">
             {displayName}
           </Link>
           {comment.isPinned && (
@@ -452,7 +473,7 @@ export function CommentItem({
           <p className="mt-1 text-sm whitespace-pre-wrap break-words">
             {comment.replyToUser && (
               <Link
-                href={`/user/${comment.replyToUser.id}`}
+                to={`/user/${comment.replyToUser.id}`}
                 className="text-primary hover:underline mr-1"
               >
                 @{comment.replyToUser.nickname || comment.replyToUser.username}
@@ -467,10 +488,7 @@ export function CommentItem({
           <Button
             variant="ghost"
             size="sm"
-            className={cn(
-              "h-8 px-2",
-              localReaction === true && "text-primary"
-            )}
+            className={cn("h-8 px-2", localReaction === true && "text-primary")}
             onClick={() => handleReact(true)}
           >
             <ThumbsUp className="h-4 w-4 mr-1" />
@@ -479,24 +497,14 @@ export function CommentItem({
           <Button
             variant="ghost"
             size="sm"
-            className={cn(
-              "h-8 px-2",
-              localReaction === false && "text-destructive"
-            )}
+            className={cn("h-8 px-2", localReaction === false && "text-destructive")}
             onClick={() => handleReact(false)}
           >
             <ThumbsDown className="h-4 w-4 mr-1" />
-            {localDislikes > 0 && (
-              <span className="text-xs">{localDislikes}</span>
-            )}
+            {localDislikes > 0 && <span className="text-xs">{localDislikes}</span>}
           </Button>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2"
-            onClick={() => startReply()}
-          >
+          <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => startReply()}>
             <MessageSquare className="h-4 w-4 mr-1" />
             回复
           </Button>
@@ -542,15 +550,11 @@ export function CommentItem({
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>确定删除这条评论吗？</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        此操作无法撤销。
-                      </AlertDialogDescription>
+                      <AlertDialogDescription>此操作无法撤销。</AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>取消</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => deleteMutation.mutate({ id: comment.id })}
-                      >
+                      <AlertDialogAction onClick={() => deleteMutation.mutate({ id: comment.id })}>
                         删除
                       </AlertDialogAction>
                     </AlertDialogFooter>
@@ -566,9 +570,7 @@ export function CommentItem({
           <div className="mt-3 flex gap-3">
             <Avatar className="h-8 w-8 shrink-0">
               <AvatarImage src={session?.user?.image || undefined} />
-              <AvatarFallback>
-                {session?.user?.name?.charAt(0).toUpperCase() || "U"}
-              </AvatarFallback>
+              <AvatarFallback>{session?.user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
             </Avatar>
             <div className="flex-1 space-y-2">
               {/* 显示回复目标 */}
@@ -589,7 +591,7 @@ export function CommentItem({
                 </div>
               )}
               <Textarea
-                placeholder={`回复 @${replyToUser ? (replyToUser.nickname || replyToUser.username) : displayName}...`}
+                placeholder={`回复 @${replyToUser ? replyToUser.nickname || replyToUser.username : displayName}...`}
                 value={replyContent}
                 onChange={(e) => setReplyContent(e.target.value)}
                 className="min-h-[60px] resize-none"

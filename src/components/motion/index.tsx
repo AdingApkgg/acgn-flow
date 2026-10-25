@@ -1,24 +1,26 @@
-"use client";
-
-import { type ReactNode } from "react";
 import {
-  motion,
-  LazyMotion,
-  domAnimation,
   AnimatePresence,
-  type Variants,
+  domAnimation,
   type HTMLMotionProps,
+  LazyMotion,
+  motion,
+  type Variants,
 } from "framer-motion";
-import { useIsMounted as useIsMountedFn } from "usehooks-ts";
-import ReactCountUp from "react-countup";
+import { type ReactNode, useEffect, useId, useSyncExternalStore } from "react";
+import { useCountUp } from "react-countup";
+
+const subscribeToHydration = () => () => {};
 
 /**
  * 客户端挂载检测 Hook
- * 包装 usehooks-ts 的 useIsMounted，直接返回布尔值
+ * 服务端和首次水合均为 false；挂载后通知消费者更新。
  */
 export function useIsMounted(): boolean {
-  const isMountedFn = useIsMountedFn();
-  return isMountedFn();
+  return useSyncExternalStore(
+    subscribeToHydration,
+    () => true,
+    () => false,
+  );
 }
 
 // ============================================================================
@@ -56,10 +58,10 @@ export const scaleIn: Variants = {
 /** 弹性缩放 */
 export const springScale: Variants = {
   hidden: { opacity: 0, scale: 0.9 },
-  visible: { 
-    opacity: 1, 
-    scale: 1, 
-    transition: { type: "spring", stiffness: 300, damping: 20 } 
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: { type: "spring", stiffness: 300, damping: 20 },
   },
   exit: { opacity: 0, scale: 0.95, transition: { duration: 0.15 } },
 };
@@ -79,8 +81,8 @@ export const staggerContainer: Variants = {
 /** 交错子项 */
 export const staggerItem: Variants = {
   hidden: { opacity: 0, y: 15 },
-  visible: { 
-    opacity: 1, 
+  visible: {
+    opacity: 1,
     y: 0,
     transition: { duration: 0.3, ease: "easeOut" },
   },
@@ -129,19 +131,13 @@ interface ClientOnlyMotionProps extends HTMLMotionProps<"div"> {
 }
 
 /**
- * 客户端安全的动画 div - 服务端渲染时返回静态 div
- * 用于避免水合错误
+ * 保持服务端和客户端的元素类型一致，避免挂载时替换交互子树。
  */
 export function MotionDiv({ children, className, ...props }: ClientOnlyMotionProps) {
   const mounted = useIsMounted();
 
-  if (!mounted) {
-    // SSR/首次渲染时返回静态 div，避免动画属性导致的水合不匹配
-    return <div className={className}>{children}</div>;
-  }
-
   return (
-    <motion.div className={className} {...props}>
+    <motion.div className={className} {...props} initial={mounted ? props.initial : false}>
       {children}
     </motion.div>
   );
@@ -175,22 +171,23 @@ export function FadeIn({
 
   const getInitialPosition = () => {
     switch (direction) {
-      case "up": return { y: distance };
-      case "down": return { y: -distance };
-      case "left": return { x: distance };
-      case "right": return { x: -distance };
-      default: return {};
+      case "up":
+        return { y: distance };
+      case "down":
+        return { y: -distance };
+      case "left":
+        return { x: distance };
+      case "right":
+        return { x: -distance };
+      default:
+        return {};
     }
   };
-
-  if (!mounted) {
-    return <div className={className}>{children}</div>;
-  }
 
   return (
     <motion.div
       className={className}
-      initial={{ opacity: 0, ...getInitialPosition() }}
+      initial={mounted ? { opacity: 0, ...getInitialPosition() } : false}
       animate={{ opacity: 1, x: 0, y: 0 }}
       transition={{ duration, delay, ease: "easeOut" }}
     >
@@ -210,14 +207,10 @@ interface PageWrapperProps {
 export function PageWrapper({ children, className }: PageWrapperProps) {
   const mounted = useIsMounted();
 
-  if (!mounted) {
-    return <div className={className}>{children}</div>;
-  }
-
   return (
     <motion.div
       className={className}
-      initial={{ opacity: 0 }}
+      initial={mounted ? { opacity: 0 } : false}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
@@ -238,14 +231,10 @@ interface StaggerListProps {
 export function StaggerList({ children, className, staggerDelay = 0.05 }: StaggerListProps) {
   const mounted = useIsMounted();
 
-  if (!mounted) {
-    return <div className={className}>{children}</div>;
-  }
-
   return (
     <motion.div
       className={className}
-      initial="hidden"
+      initial={mounted ? "hidden" : false}
       animate="visible"
       variants={{
         hidden: { opacity: 0 },
@@ -270,10 +259,7 @@ interface StaggerItemProps {
  */
 export function StaggerItem({ children, className }: StaggerItemProps) {
   return (
-    <motion.div
-      className={className}
-      variants={staggerItem}
-    >
+    <motion.div className={className} variants={staggerItem}>
       {children}
     </motion.div>
   );
@@ -308,29 +294,28 @@ interface CountUpProps {
   formatter?: (value: number) => string;
 }
 
+const formatCount = (value: number) => Math.round(value).toString();
+
 /**
  * 数字递增动画 - 使用 react-countup
  */
-export function CountUp({ 
-  value, 
-  duration = 1, 
-  className,
-  formatter = (v) => Math.round(v).toString(),
-}: CountUpProps) {
-  const mounted = useIsMounted();
+export function CountUp({ value, duration = 1, className, formatter = formatCount }: CountUpProps) {
+  const id = useId();
+  const { update } = useCountUp({
+    ref: id,
+    end: value,
+    duration,
+    formattingFn: formatter,
+  });
 
-  if (!mounted) {
-    return <span className={className}>{formatter(value)}</span>;
-  }
+  useEffect(() => {
+    update(value);
+  }, [update, value]);
 
   return (
-    <ReactCountUp
-      end={value}
-      duration={duration}
-      formattingFn={(v) => formatter(v)}
-      className={className}
-      preserveValue
-    />
+    <span id={id} className={className}>
+      {formatter(value)}
+    </span>
   );
 }
 
@@ -338,4 +323,4 @@ export function CountUp({
 // 导出
 // ============================================================================
 
-export { motion, AnimatePresence };
+export { AnimatePresence, motion };
