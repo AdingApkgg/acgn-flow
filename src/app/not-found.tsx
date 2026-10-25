@@ -1,9 +1,8 @@
-"use client";
-
-import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { Home, RefreshCw } from "lucide-react";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
+import { Button } from "@/components/ui/button";
 
 interface RandomImageData {
   url: string;
@@ -19,7 +18,7 @@ export default function NotFound() {
   const [error, setError] = useState(false);
   const hasFetched = useRef(false);
 
-  const loadRandomImage = async () => {
+  const loadRandomImage = useCallback(async () => {
     setIsLoading(true);
     setError(false);
 
@@ -37,14 +36,14 @@ export default function NotFound() {
       setError(true);
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!hasFetched.current) {
       hasFetched.current = true;
       loadRandomImage();
     }
-  }, []);
+  }, [loadRandomImage]);
 
   const imageUrl = imageData?.proxiedUrl
     ? imageData.proxiedUrl
@@ -58,7 +57,6 @@ export default function NotFound() {
         {/* 2233娘漫画图片 */}
         <div className="relative mx-auto rounded-lg overflow-hidden bg-muted">
           {imageUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={imageUrl}
               alt="2233娘"
@@ -78,9 +76,7 @@ export default function NotFound() {
             </div>
           )}
           {error && !isLoading && (
-            <div className="w-64 h-48 flex items-center justify-center text-4xl">
-              😢
-            </div>
+            <div className="w-64 h-48 flex items-center justify-center text-4xl">😢</div>
           )}
         </div>
 
@@ -88,15 +84,13 @@ export default function NotFound() {
         <div className="space-y-2">
           <h1 className="text-6xl font-bold text-primary">404</h1>
           <h2 className="text-xl font-medium">页面不存在</h2>
-          <p className="text-muted-foreground">
-            你访问的页面可能已被删除、移动或从未存在过
-          </p>
+          <p className="text-muted-foreground">你访问的页面可能已被删除、移动或从未存在过</p>
         </div>
 
         {/* 操作按钮 */}
         <div className="flex items-center justify-center gap-3">
           <Button asChild>
-            <Link href="/">
+            <Link to="/">
               <Home className="mr-2 h-4 w-4" />
               返回首页
             </Link>

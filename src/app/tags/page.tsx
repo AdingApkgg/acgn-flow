@@ -1,57 +1,25 @@
-import { prisma } from "@/lib/prisma";
-import type { Metadata } from "next";
-import { TagsPageClient } from "./client";
+import { useLoaderData } from "react-router";
 import { CollectionPageJsonLd } from "@/components/seo/json-ld";
+import { tagsLoader } from "@/routes/data.server";
+import { pageMeta, siteName, siteUrl } from "@/routes/metadata";
+import { TagsPageClient } from "./client";
 
-const siteName = process.env.NEXT_PUBLIC_APP_NAME || "ACGN Flow";
-const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://acgn.app";
-
-export const metadata: Metadata = {
-  title: "标签",
-  description: `浏览 ${siteName} 的所有视频标签，按分类查找 ACGN 相关视频内容`,
-  keywords: ["标签", "分类", "ACGN", "动漫", "视频"],
-};
-
-// 获取服务端数据
-async function getTagsData() {
-  const [popularTags, allTags] = await Promise.all([
-    prisma.tag.findMany({
-      take: 20,
-      include: {
-        _count: { select: { videos: true } },
-      },
-      orderBy: {
-        videos: { _count: "desc" },
-      },
-    }),
-    prisma.tag.findMany({
-      take: 100,
-      include: {
-        _count: { select: { videos: true } },
-      },
-      orderBy: { name: "asc" },
-    }),
-  ]);
-
-  return { popularTags, allTags };
-}
-
-export default async function TagsPage() {
-  const { popularTags, allTags } = await getTagsData();
-  const totalTags = allTags.length;
-
+export const loader = tagsLoader;
+export const meta = () =>
+  pageMeta("标签", `浏览 ${siteName} 的所有视频标签，按分类查找 ACGN 相关视频内容`, "/tags", {
+    keywords: ["标签", "分类", "ACGN", "动漫", "视频"],
+  });
+export default function TagsPage() {
+  const { popularTags, allTags } = useLoaderData<typeof loader>();
   return (
     <>
       <CollectionPageJsonLd
         name={`标签 - ${siteName}`}
-        description={`浏览 ${siteName} 的 ${totalTags} 个视频标签`}
+        description={`浏览 ${siteName} 的 ${allTags.length} 个视频标签`}
         url={`${siteUrl}/tags`}
-        numberOfItems={totalTags}
+        numberOfItems={allTags.length}
       />
-      <TagsPageClient
-        initialPopularTags={popularTags}
-        initialAllTags={allTags}
-      />
+      <TagsPageClient initialPopularTags={popularTags} initialAllTags={allTags} />
     </>
   );
 }

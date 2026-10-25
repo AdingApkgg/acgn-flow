@@ -1,21 +1,41 @@
-"use client";
-
-import { trpc } from "@/lib/trpc";
-import { VideoGrid } from "@/components/video/video-grid";
-import { Button } from "@/components/ui/button";
-import { useState, useEffect, useRef } from "react";
+import { HydrationBoundary, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { AlertTriangle, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useInView } from "react-intersection-observer";
-import { AlertTriangle, X, ChevronLeft, ChevronRight } from "lucide-react";
-import { WebsiteJsonLd, OrganizationJsonLd } from "@/components/seo/json-ld";
+import { useLoaderData, useSearchParams } from "react-router";
+import { FadeIn, PageWrapper } from "@/components/motion";
+import { OrganizationJsonLd, WebsiteJsonLd } from "@/components/seo/json-ld";
 import { SiteStats } from "@/components/stats/site-stats";
-import { PageWrapper, FadeIn } from "@/components/motion";
+import { Button } from "@/components/ui/button";
+import { VideoGrid } from "@/components/video/video-grid";
+import { orpc } from "@/lib/orpc";
 import { cn } from "@/lib/utils";
+import { homeLoader } from "@/routes/data.server";
+import { pageMeta, siteName } from "@/routes/metadata";
 
 type SortBy = "recommend" | "latest" | "views" | "likes";
 
-export default function HomePage() {
-  const [sortBy, setSortBy] = useState<SortBy>("recommend");
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+function HomeContent() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSort = searchParams.get("sort");
+  const sortBy: SortBy =
+    requestedSort && ["recommend", "latest", "views", "likes"].includes(requestedSort)
+      ? (requestedSort as SortBy)
+      : "recommend";
+  const selectedTag = searchParams.get("tag");
+  const setSortBy = (sort: SortBy) =>
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("sort", sort);
+      return next;
+    });
+  const setSelectedTag = (tag: string | null) =>
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tag) next.set("tag", tag);
+      else next.delete("tag");
+      return next;
+    });
   const [showAnnouncement, setShowAnnouncement] = useState(true);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(false);
@@ -23,23 +43,23 @@ export default function HomePage() {
   const { ref, inView } = useInView();
 
   // 获取热门标签
-  const { data: tagsData } = trpc.tag.list.useQuery({ limit: 30 });
+  const { data: tagsData } = useQuery(orpc.tag.list.queryOptions({ input: { limit: 30 }, ...{} }));
 
-  const {
-    data,
-    isLoading,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = trpc.video.list.useInfiniteQuery(
-    { 
-      limit: 20, 
-      sortBy, 
-      tagId: selectedTag || undefined,
-    },
-    {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-    }
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery(
+    orpc.video.list.infiniteOptions({
+      input: (cursor: string | undefined) => ({
+        ...{
+          limit: 20,
+          sortBy,
+          tagId: selectedTag || undefined,
+        },
+        cursor,
+      }),
+      initialPageParam: undefined as string | undefined,
+      ...{
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+      },
+    }),
   );
 
   useEffect(() => {
@@ -49,17 +69,16 @@ export default function HomePage() {
   }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // 检查滚动箭头显示状态
-  const checkScrollArrows = () => {
+  const checkScrollArrows = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    
+
     setShowLeftArrow(container.scrollLeft > 0);
-    setShowRightArrow(
-      container.scrollLeft < container.scrollWidth - container.clientWidth - 10
-    );
-  };
+    setShowRightArrow(container.scrollLeft < container.scrollWidth - container.clientWidth - 10);
+  }, []);
 
   useEffect(() => {
+    if (!tagsData) return;
     checkScrollArrows();
     const container = scrollContainerRef.current;
     if (container) {
@@ -70,7 +89,7 @@ export default function HomePage() {
         window.removeEventListener("resize", checkScrollArrows);
       };
     }
-  }, [tagsData]);
+  }, [tagsData, checkScrollArrows]);
 
   const scroll = (direction: "left" | "right") => {
     const container = scrollContainerRef.current;
@@ -113,7 +132,7 @@ export default function HomePage() {
 
       <div className="px-4 md:px-6 py-4 overflow-x-hidden">
         {/* 公告横幅 */}
-        <div 
+        <div
           className={`mb-4 relative overflow-hidden transition-all duration-300 ${
             showAnnouncement ? "max-h-20 opacity-100" : "max-h-0 opacity-0"
           }`}
@@ -124,6 +143,7 @@ export default function HomePage() {
               本站目前处于开发阶段，对你的数据无 SLA 保证！
             </p>
             <button
+              type="button"
               onClick={() => setShowAnnouncement(false)}
               className="text-yellow-500 hover:text-yellow-600 dark:hover:text-yellow-300 transition-all hover:scale-110 active:scale-90"
             >
@@ -166,13 +186,14 @@ export default function HomePage() {
               {/* 排序按钮 */}
               {sortOptions.map((option) => (
                 <button
+                  type="button"
                   key={option.id}
                   onClick={() => handleSortClick(option.id)}
                   className={cn(
                     "shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap",
                     sortBy === option.id
                       ? "bg-foreground text-background"
-                      : "bg-muted hover:bg-muted/80 text-foreground"
+                      : "bg-muted hover:bg-muted/80 text-foreground",
                   )}
                 >
                   {option.label}
@@ -185,13 +206,14 @@ export default function HomePage() {
               {/* 标签按钮 */}
               {tagsData?.map((tag) => (
                 <button
+                  type="button"
                   key={tag.id}
                   onClick={() => handleTagClick(tag.id)}
                   className={cn(
                     "shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap",
                     selectedTag === tag.id
                       ? "bg-foreground text-background"
-                      : "bg-muted hover:bg-muted/80 text-foreground"
+                      : "bg-muted hover:bg-muted/80 text-foreground",
                   )}
                 >
                   {tag.name}
@@ -220,7 +242,7 @@ export default function HomePage() {
         <section>
           <div key={`${sortBy}-${selectedTag}`}>
             <VideoGrid videos={videos} isLoading={isLoading} />
-            
+
             {/* 无结果提示 */}
             {!isLoading && videos.length === 0 && (
               <div className="text-center py-16">
@@ -253,5 +275,21 @@ export default function HomePage() {
         </section>
       </div>
     </PageWrapper>
+  );
+}
+
+export const loader = homeLoader;
+export const meta = () =>
+  pageMeta(
+    "ACGN Fans 流式媒体内容分享平台",
+    `${siteName} 提供丰富的动画、漫画、游戏、轻小说相关内容。`,
+    "/",
+  );
+export default function HomePage() {
+  const { dehydratedState } = useLoaderData<typeof loader>();
+  return (
+    <HydrationBoundary state={dehydratedState}>
+      <HomeContent />
+    </HydrationBoundary>
   );
 }

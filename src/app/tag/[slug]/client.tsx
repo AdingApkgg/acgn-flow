@@ -1,12 +1,12 @@
-"use client";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { Tag } from "lucide-react";
 
 import { useEffect } from "react";
-import { trpc } from "@/lib/trpc";
-import { VideoGrid } from "@/components/video/video-grid";
-import { Button } from "@/components/ui/button";
 import { useInView } from "react-intersection-observer";
-import Link from "next/link";
-import { Tag } from "lucide-react";
+import { Link } from "react-router";
+import { Button } from "@/components/ui/button";
+import { VideoGrid } from "@/components/video/video-grid";
+import { orpc } from "@/lib/orpc";
 import type { SerializedTag } from "./page";
 
 interface TagPageClientProps {
@@ -18,30 +18,29 @@ export function TagPageClient({ slug, initialTag }: TagPageClientProps) {
   const { ref, inView } = useInView();
 
   // 客户端获取标签数据（如果需要刷新）
-  const { data: tag, isLoading: tagLoading } = trpc.tag.getBySlug.useQuery(
-    { slug },
-    {
-      // 如果有初始数据，延迟重新请求
-      staleTime: initialTag ? 60000 : 0,
-      refetchOnMount: !initialTag,
-    }
+  const { data: tag, isLoading: tagLoading } = useQuery(
+    orpc.tag.getBySlug.queryOptions({
+      input: { slug },
+      ...{
+        // 如果有初始数据，延迟重新请求
+        staleTime: initialTag ? 60000 : 0,
+        refetchOnMount: !initialTag,
+      },
+    }),
   );
 
   // 优先使用服务端数据，然后是客户端数据
   const displayTag = tag || initialTag;
 
-  const {
-    data,
-    isLoading,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = trpc.video.list.useInfiniteQuery(
-    { limit: 20, tagId: displayTag?.id },
-    {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-      enabled: !!displayTag?.id,
-    }
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery(
+    orpc.video.list.infiniteOptions({
+      input: (cursor: string | undefined) => ({ ...{ limit: 20, tagId: displayTag?.id }, cursor }),
+      initialPageParam: undefined as string | undefined,
+      ...{
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+        enabled: !!displayTag?.id,
+      },
+    }),
   );
 
   useEffect(() => {
@@ -59,7 +58,7 @@ export function TagPageClient({ slug, initialTag }: TagPageClientProps) {
         <h1 className="text-2xl font-bold">标签不存在</h1>
         <p className="text-muted-foreground mt-2">找不到标签 &ldquo;{slug}&rdquo;</p>
         <Button asChild className="mt-4">
-          <Link href="/tags">查看所有标签</Link>
+          <Link to="/tags">查看所有标签</Link>
         </Button>
       </div>
     );
@@ -99,7 +98,7 @@ export function TagPageClient({ slug, initialTag }: TagPageClientProps) {
         <div className="text-center py-12">
           <p className="text-muted-foreground">该标签下暂无视频</p>
           <Button asChild variant="outline" className="mt-4">
-            <Link href="/">浏览全部视频</Link>
+            <Link to="/">浏览全部视频</Link>
           </Button>
         </div>
       )}

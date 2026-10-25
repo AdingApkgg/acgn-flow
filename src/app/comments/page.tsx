@@ -1,12 +1,12 @@
-"use client";
-
-import { useState, useCallback, useEffect } from "react";
-import { useSession } from "next-auth/react";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowUpDown, ChevronRight, MessageCircle, Play, Send, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
+import { toast } from "sonner";
+import { GuestbookItem } from "@/components/guestbook/guestbook-item";
+import { useIsMounted } from "@/components/motion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -15,14 +15,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MessageCircle, ArrowUpDown, Send, Sparkles, Play, ChevronRight } from "lucide-react";
-import { toast } from "sonner";
-import { GuestbookItem } from "@/components/guestbook/guestbook-item";
-import Link from "next/link";
-import { parseDeviceInfo, getHighEntropyDeviceInfo, mergeDeviceInfo, type DeviceInfo } from "@/lib/device-info";
-import { getGpsLocation, formatGpsLocation } from "@/lib/geolocation";
+import { Skeleton, skeletonKeys } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { useSession } from "@/lib/auth-client";
+import {
+  type DeviceInfo,
+  getHighEntropyDeviceInfo,
+  mergeDeviceInfo,
+  parseDeviceInfo,
+} from "@/lib/device-info";
 import { formatRelativeTime } from "@/lib/format";
-import { useIsMounted } from "@/components/motion";
+import { formatGpsLocation, getGpsLocation } from "@/lib/geolocation";
+import { orpc } from "@/lib/orpc";
+import { pageMeta } from "@/routes/metadata";
 
 type SortType = "newest" | "oldest" | "popular";
 
@@ -35,7 +40,7 @@ export default function CommentsPage() {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [gpsLocation, setGpsLocation] = useState<string | null>(null);
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -54,7 +59,9 @@ export default function CommentsPage() {
     init();
   }, []);
 
-  const { data: messageCount } = trpc.guestbook.getCount.useQuery();
+  const { data: messageCount } = useQuery(
+    orpc.guestbook.getCount.queryOptions({ input: undefined, ...{} }),
+  );
 
   // 全站最新评论流
   const {
@@ -63,42 +70,44 @@ export default function CommentsPage() {
     fetchNextPage: fetchMoreComments,
     hasNextPage: hasMoreComments,
     isFetchingNextPage: isFetchingMoreComments,
-  } = trpc.comment.listRecent.useInfiniteQuery(
-    { limit: 10 },
-    {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-    }
+  } = useInfiniteQuery(
+    orpc.comment.listRecent.infiniteOptions({
+      input: (cursor: string | undefined) => ({ ...{ limit: 10 }, cursor }),
+      initialPageParam: undefined as string | undefined,
+      ...{
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+      },
+    }),
   );
 
   const recentComments = recentCommentsData?.pages.flatMap((page) => page.comments) ?? [];
 
-  const {
-    data,
-    isLoading,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = trpc.guestbook.list.useInfiniteQuery(
-    { sort, limit: 20 },
-    {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-    }
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery(
+    orpc.guestbook.list.infiniteOptions({
+      input: (cursor: string | undefined) => ({ ...{ sort, limit: 20 }, cursor }),
+      initialPageParam: undefined as string | undefined,
+      ...{
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+      },
+    }),
   );
 
-  const createMutation = trpc.guestbook.create.useMutation({
-    onSuccess: () => {
-      setNewMessage("");
-      utils.guestbook.list.invalidate();
-      utils.guestbook.getCount.invalidate();
-      toast.success("留言发表成功");
-    },
-    onError: (error) => {
-      toast.error(error.message || "发表失败");
-    },
-    onSettled: () => {
-      setIsSubmitting(false);
-    },
-  });
+  const createMutation = useMutation(
+    orpc.guestbook.create.mutationOptions({
+      onSuccess: () => {
+        setNewMessage("");
+        queryClient.invalidateQueries({ queryKey: orpc.guestbook.list.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.guestbook.getCount.key() });
+        toast.success("留言发表成功");
+      },
+      onError: (error) => {
+        toast.error(error.message || "发表失败");
+      },
+      onSettled: () => {
+        setIsSubmitting(false);
+      },
+    }),
+  );
 
   const handleSubmit = useCallback(async () => {
     if (!newMessage.trim() || isSubmitting) return;
@@ -144,9 +153,7 @@ export default function CommentsPage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold">留言板</h1>
-          <p className="text-sm text-muted-foreground">
-            欢迎留下您的想法和建议
-          </p>
+          <p className="text-sm text-muted-foreground">欢迎留下您的想法和建议</p>
         </div>
       </div>
 
@@ -157,15 +164,13 @@ export default function CommentsPage() {
             <Play className="h-4 w-4" />
             全站评论动态
           </CardTitle>
-          <CardDescription>
-            来自视频的最新评论
-          </CardDescription>
+          <CardDescription>来自视频的最新评论</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
             {recentCommentsLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex gap-3 p-3 rounded-lg bg-muted/30">
+              skeletonKeys(5).map((skeletonKey) => (
+                <div key={skeletonKey} className="flex gap-3 p-3 rounded-lg bg-muted/30">
                   <Skeleton className="h-8 w-8 rounded-full shrink-0" />
                   <div className="flex-1 space-y-2">
                     <Skeleton className="h-3 w-32" />
@@ -174,15 +179,13 @@ export default function CommentsPage() {
                 </div>
               ))
             ) : recentComments.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground text-sm">
-                暂无评论
-              </div>
+              <div className="text-center py-6 text-muted-foreground text-sm">暂无评论</div>
             ) : (
               <>
                 {recentComments.map((comment) => (
                   <Link
                     key={comment.id}
-                    href={`/video/${comment.video.id}`}
+                    to={`/video/${comment.video.id}`}
                     className="flex gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors group"
                   >
                     <Avatar className="h-8 w-8 shrink-0">
@@ -237,9 +240,7 @@ export default function CommentsPage() {
             <Sparkles className="h-4 w-4" />
             写下你的留言
           </CardTitle>
-          <CardDescription>
-            分享你的想法、建议或者只是打个招呼
-          </CardDescription>
+          <CardDescription>分享你的想法、建议或者只是打个招呼</CardDescription>
         </CardHeader>
         <CardContent>
           {session ? (
@@ -259,16 +260,10 @@ export default function CommentsPage() {
                   maxLength={2000}
                 />
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-muted-foreground">
-                    {newMessage.length}/2000
-                  </span>
+                  <span className="text-xs text-muted-foreground">{newMessage.length}/2000</span>
                   <div className="flex gap-2">
                     {newMessage && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setNewMessage("")}
-                      >
+                      <Button variant="ghost" size="sm" onClick={() => setNewMessage("")}>
                         取消
                       </Button>
                     )}
@@ -288,7 +283,7 @@ export default function CommentsPage() {
             <div className="bg-muted/50 rounded-lg p-6 text-center">
               <p className="text-muted-foreground mb-3">登录后即可发表留言</p>
               <Button asChild>
-                <Link href="/login">登录</Link>
+                <Link to="/login">登录</Link>
               </Button>
             </div>
           )}
@@ -322,8 +317,8 @@ export default function CommentsPage() {
         <CardContent>
           <div className="space-y-5">
             {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex gap-3">
+              skeletonKeys(5).map((skeletonKey) => (
+                <div key={skeletonKey} className="flex gap-3">
                   <Skeleton className="h-10 w-10 rounded-full shrink-0" />
                   <div className="flex-1 space-y-2">
                     <Skeleton className="h-4 w-24" />
@@ -365,3 +360,6 @@ export default function CommentsPage() {
     </div>
   );
 }
+
+export const meta = () =>
+  pageMeta("评论与留言", "浏览最新评论，给本站留下留言", "/comments", { noindex: true });

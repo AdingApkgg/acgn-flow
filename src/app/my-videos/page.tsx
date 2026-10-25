@@ -1,21 +1,25 @@
-"use client";
-
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  CheckSquare,
+  Clock,
+  Edit,
+  ExternalLink,
+  Eye,
+  Heart,
+  Layers,
+  Loader2,
+  MessageSquare,
+  MoreVertical,
+  Plus,
+  Search,
+  Trash2,
+  Video,
+  X,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { useInView } from "react-intersection-observer";
+import { Link, useNavigate } from "react-router";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +31,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,29 +41,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Video,
-  Plus,
-  Edit,
-  Trash2,
-  Eye,
-  Heart,
-  Loader2,
-  ExternalLink,
-  MoreVertical,
-  Search,
-  CheckSquare,
-  X,
-  MessageSquare,
-  Clock,
-  Layers,
-} from "lucide-react";
-import { useInView } from "react-intersection-observer";
-import { formatViews, formatRelativeTime } from "@/lib/format";
-import { toast } from "sonner";
-import Link from "next/link";
-import Image from "next/image";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton, skeletonKeys } from "@/components/ui/skeleton";
+import { useSession } from "@/lib/auth-client";
+import { formatRelativeTime, formatViews } from "@/lib/format";
+import { orpc } from "@/lib/orpc";
+import { pageMeta } from "@/routes/metadata";
 
 const statusMap = {
   PUBLISHED: { label: "已发布", variant: "default" as const, color: "text-green-600" },
@@ -69,61 +67,64 @@ type SortBy = "latest" | "views" | "likes";
 
 export default function MyVideosPage() {
   const { data: session, status: authStatus } = useSession();
-  const router = useRouter();
+  const navigate = useNavigate();
   const { ref, inView } = useInView();
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "PUBLISHED" | "PENDING" | "REJECTED">("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "PUBLISHED" | "PENDING" | "REJECTED">(
+    "ALL",
+  );
   const [sortBy, setSortBy] = useState<SortBy>("latest");
   const [searchQuery, setSearchQuery] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const {
-    data,
-    isLoading,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = trpc.video.getMyVideos.useInfiniteQuery(
-    { limit: 20, status: statusFilter },
-    {
-      enabled: !!session,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-    }
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery(
+    orpc.video.getMyVideos.infiniteOptions({
+      input: (cursor: string | undefined) => ({ ...{ limit: 20, status: statusFilter }, cursor }),
+      initialPageParam: undefined as string | undefined,
+      ...{
+        enabled: !!session,
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+      },
+    }),
   );
 
-  const deleteMutation = trpc.video.delete.useMutation({
-    onSuccess: () => {
-      toast.success("视频已删除");
-      utils.video.getMyVideos.invalidate();
-    },
-    onError: (error) => {
-      toast.error("删除失败", { description: error.message });
-    },
-    onSettled: () => {
-      setDeletingId(null);
-    },
-  });
+  const deleteMutation = useMutation(
+    orpc.video.delete.mutationOptions({
+      onSuccess: () => {
+        toast.success("视频已删除");
+        queryClient.invalidateQueries({ queryKey: orpc.video.getMyVideos.key() });
+      },
+      onError: (error) => {
+        toast.error("删除失败", { description: error.message });
+      },
+      onSettled: () => {
+        setDeletingId(null);
+      },
+    }),
+  );
 
   // 批量删除
-  const batchDeleteMutation = trpc.video.batchDelete.useMutation({
-    onSuccess: (data) => {
-      toast.success(`已删除 ${data.count} 个视频`);
-      setSelectedIds(new Set());
-      setSelectMode(false);
-      utils.video.getMyVideos.invalidate();
-    },
-    onError: (error) => {
-      toast.error("删除失败", { description: error.message });
-    },
-  });
+  const batchDeleteMutation = useMutation(
+    orpc.video.batchDelete.mutationOptions({
+      onSuccess: (data) => {
+        toast.success(`已删除 ${data.count} 个视频`);
+        setSelectedIds(new Set());
+        setSelectMode(false);
+        queryClient.invalidateQueries({ queryKey: orpc.video.getMyVideos.key() });
+      },
+      onError: (error) => {
+        toast.error("删除失败", { description: error.message });
+      },
+    }),
+  );
 
   useEffect(() => {
     if (authStatus === "unauthenticated") {
-      router.push("/login?callbackUrl=/my-videos");
+      navigate("/login?callbackUrl=/my-videos");
     }
-  }, [authStatus, router]);
+  }, [authStatus, navigate]);
 
   useEffect(() => {
     if (inView && hasNextPage && !isFetchingNextPage) {
@@ -156,8 +157,8 @@ export default function MyVideosPage() {
       <div className="px-4 md:px-6 py-6">
         <Skeleton className="h-10 w-48 mb-6" />
         <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 w-full rounded-lg" />
+          {skeletonKeys(5).map((skeletonKey) => (
+            <Skeleton key={skeletonKey} className="h-28 w-full rounded-lg" />
           ))}
         </div>
       </div>
@@ -169,16 +170,16 @@ export default function MyVideosPage() {
   }
 
   const allVideos = data?.pages.flatMap((page) => page.videos) ?? [];
-  
+
   // 客户端过滤和排序
   let videos = allVideos;
-  
+
   // 搜索过滤
   if (searchQuery.trim()) {
     const query = searchQuery.toLowerCase();
-    videos = videos.filter(v => v.title.toLowerCase().includes(query));
+    videos = videos.filter((v) => v.title.toLowerCase().includes(query));
   }
-  
+
   // 排序
   videos = [...videos].sort((a, b) => {
     switch (sortBy) {
@@ -196,15 +197,15 @@ export default function MyVideosPage() {
     if (selectedIds.size === videos.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(videos.map(v => v.id)));
+      setSelectedIds(new Set(videos.map((v) => v.id)));
     }
   };
 
   // 统计数据
   const stats = {
     total: allVideos.length,
-    published: allVideos.filter(v => v.status === "PUBLISHED").length,
-    pending: allVideos.filter(v => v.status === "PENDING").length,
+    published: allVideos.filter((v) => v.status === "PUBLISHED").length,
+    pending: allVideos.filter((v) => v.status === "PENDING").length,
     totalViews: allVideos.reduce((sum, v) => sum + v.views, 0),
     totalLikes: allVideos.reduce((sum, v) => sum + v._count.likes, 0),
   };
@@ -224,7 +225,7 @@ export default function MyVideosPage() {
         </div>
 
         <Button asChild>
-          <Link href="/upload">
+          <Link to="/upload">
             <Plus className="h-4 w-4 mr-2" />
             上传视频
           </Link>
@@ -297,10 +298,7 @@ export default function MyVideosPage() {
             </Select>
 
             {/* 排序 */}
-            <Select
-              value={sortBy}
-              onValueChange={(value) => setSortBy(value as SortBy)}
-            >
+            <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
               <SelectTrigger className="w-28">
                 <SelectValue />
               </SelectTrigger>
@@ -377,7 +375,7 @@ export default function MyVideosPage() {
           description="分享你喜欢的 ACGN 内容，与大家一起交流"
           action={{
             label: "上传第一个视频",
-            onClick: () => router.push("/upload"),
+            onClick: () => navigate("/upload"),
           }}
         />
       ) : videos.length === 0 ? (
@@ -407,15 +405,14 @@ export default function MyVideosPage() {
 
                 {/* 封面 */}
                 <Link
-                  href={`/video/${video.id}`}
+                  to={`/video/${video.id}`}
                   className="relative w-40 h-24 flex-shrink-0 rounded-md overflow-hidden bg-muted"
                 >
                   {video.coverUrl ? (
-                    <Image
+                    <img
                       src={video.coverUrl}
                       alt={video.title}
-                      fill
-                      className="object-cover"
+                      className="absolute inset-0 w-full h-full object-cover"
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full">
@@ -424,7 +421,8 @@ export default function MyVideosPage() {
                   )}
                   {video.duration && (
                     <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/80 text-white text-xs rounded">
-                      {Math.floor(video.duration / 60)}:{String(video.duration % 60).padStart(2, "0")}
+                      {Math.floor(video.duration / 60)}:
+                      {String(video.duration % 60).padStart(2, "0")}
                     </div>
                   )}
                 </Link>
@@ -434,14 +432,16 @@ export default function MyVideosPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <Link
-                        href={`/video/${video.id}`}
+                        to={`/video/${video.id}`}
                         className="font-medium hover:text-primary line-clamp-2"
                       >
                         {video.title}
                       </Link>
                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <Badge 
-                          variant={statusMap[video.status as keyof typeof statusMap]?.variant || "outline"}
+                        <Badge
+                          variant={
+                            statusMap[video.status as keyof typeof statusMap]?.variant || "outline"
+                          }
                           className="text-xs"
                         >
                           {statusMap[video.status as keyof typeof statusMap]?.label || video.status}
@@ -487,13 +487,13 @@ export default function MyVideosPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem asChild>
-                            <Link href={`/video/${video.id}`} target="_blank">
+                            <Link to={`/video/${video.id}`} target="_blank">
                               <ExternalLink className="h-4 w-4 mr-2" />
                               查看视频
                             </Link>
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>
-                            <Link href={`/video/edit/${video.id}`}>
+                            <Link to={`/video/edit/${video.id}`}>
                               <Edit className="h-4 w-4 mr-2" />
                               编辑视频
                             </Link>
@@ -550,3 +550,5 @@ export default function MyVideosPage() {
     </div>
   );
 }
+
+export const meta = () => pageMeta("我的视频", "管理您上传的视频", "/my-videos", { noindex: true });

@@ -1,27 +1,21 @@
-"use client";
-
-import { use, useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { ArrowLeft, Loader2 } from "lucide-react";
+
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { Link, type MetaFunction, useNavigate, useParams } from "react-router";
+import { toast } from "sonner";
 import { z } from "zod";
-import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormLabel } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
-import { Loader2, ArrowLeft } from "lucide-react";
-import Link from "next/link";
-import { VideoFormFields } from "@/components/video/video-form-fields";
 import { TagSelector } from "@/components/video/tag-selector";
+import { VideoFormFields } from "@/components/video/video-form-fields";
+import { useSession } from "@/lib/auth-client";
+import { orpc } from "@/lib/orpc";
+import { pageMeta } from "@/routes/metadata";
 
 const editSchema = z.object({
   title: z.string().min(1, "标题不能为空").max(100, "标题最多100个字符"),
@@ -34,34 +28,31 @@ const editSchema = z.object({
 
 type EditForm = z.infer<typeof editSchema>;
 
-interface EditVideoPageProps {
-  params: Promise<{ id: string }>;
-}
-
-export default function EditVideoPage({ params }: EditVideoPageProps) {
-  const { id } = use(params);
+export default function EditVideoPage() {
+  const { id = "" } = useParams<{ id: string }>();
   const { data: session, status: authStatus } = useSession();
-  const router = useRouter();
+  const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedTags, setSelectedTags] = useState<{ id: string; name: string }[]>([]);
   const [newTags, setNewTags] = useState<string[]>([]);
 
-  const { data: video, isLoading: videoLoading } = trpc.video.getForEdit.useQuery(
-    { id },
-    { enabled: !!session }
+  const { data: video, isLoading: videoLoading } = useQuery(
+    orpc.video.getForEdit.queryOptions({ input: { id }, ...{ enabled: !!session } }),
   );
 
-  const { data: allTags } = trpc.tag.list.useQuery({});
+  const { data: allTags } = useQuery(orpc.tag.list.queryOptions({ input: {}, ...{} }));
 
-  const updateMutation = trpc.video.update.useMutation({
-    onSuccess: () => {
-      toast.success("视频更新成功");
-      router.push("/my-videos");
-    },
-    onError: (error) => {
-      toast.error("更新失败", { description: error.message });
-    },
-  });
+  const updateMutation = useMutation(
+    orpc.video.update.mutationOptions({
+      onSuccess: () => {
+        toast.success("视频更新成功");
+        navigate("/my-videos");
+      },
+      onError: (error) => {
+        toast.error("更新失败", { description: error.message });
+      },
+    }),
+  );
 
   const form = useForm<EditForm>({
     resolver: zodResolver(editSchema),
@@ -91,9 +82,9 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
 
   useEffect(() => {
     if (authStatus === "unauthenticated") {
-      router.push("/login?callbackUrl=/video/edit/" + id);
+      navigate("/login?callbackUrl=/video/edit/" + id);
     }
-  }, [authStatus, router, id]);
+  }, [authStatus, navigate, id]);
 
   async function onSubmit(data: EditForm) {
     setIsSubmitting(true);
@@ -140,7 +131,7 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
     <div className="container py-6 max-w-3xl">
       <div className="flex items-center gap-4 mb-6">
         <Button variant="ghost" size="icon" asChild>
-          <Link href="/my-videos">
+          <Link to="/my-videos">
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
@@ -172,13 +163,11 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
 
               <div className="flex gap-4">
                 <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
+                  {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   保存更改
                 </Button>
                 <Button type="button" variant="outline" asChild>
-                  <Link href="/my-videos">取消</Link>
+                  <Link to="/my-videos">取消</Link>
                 </Button>
               </div>
             </form>
@@ -188,3 +177,6 @@ export default function EditVideoPage({ params }: EditVideoPageProps) {
     </div>
   );
 }
+
+export const meta: MetaFunction = ({ params }) =>
+  pageMeta("编辑视频", "编辑您上传的视频", `/video/edit/${params.id}`, { noindex: true });
