@@ -1,30 +1,29 @@
-"use client";
-
-import { useState, useCallback, useMemo } from "react";
-import Link from "next/link";
-import { trpc } from "@/lib/trpc";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Checkbox } from "@/components/ui/checkbox";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Ban,
+  Calendar,
+  CheckCircle,
+  CheckSquare,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Globe,
+  Heart,
+  Loader2,
+  Mail,
+  MapPin,
+  MessageSquare,
+  Search,
+  Shield,
+  Square,
+  UserCheck,
+  Users,
+  UserX,
+  Video,
+} from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Link } from "react-router";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,35 +34,33 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
-  Collapsible,
-  CollapsibleContent,
-} from "@/components/ui/collapsible";
-import { toast } from "sonner";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
-  Users,
-  Search,
-  Shield,
-  Loader2,
-  ChevronDown,
-  ChevronUp,
-  Ban,
-  CheckCircle,
-  Video,
-  MessageSquare,
-  Heart,
-  MapPin,
-  Globe,
-  Calendar,
-  Mail,
-  ExternalLink,
-  CheckSquare,
-  Square,
-  UserX,
-  UserCheck,
-} from "lucide-react";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton, skeletonKeys } from "@/components/ui/skeleton";
 import { ADMIN_SCOPES } from "@/lib/constants";
+import { orpc } from "@/lib/orpc";
 import { cn } from "@/lib/utils";
+import { pageMeta } from "@/routes/metadata";
 
 type UserRole = "USER" | "ADMIN" | "OWNER";
 
@@ -95,90 +92,111 @@ export default function AdminUsersPage() {
   const [banningUser, setBanningUser] = useState<UserItem | null>(null);
   const [banReason, setBanReason] = useState("");
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const { data: permissions } = trpc.admin.getMyPermissions.useQuery();
-  const { data: stats } = trpc.admin.getUserStats.useQuery(undefined, {
-    enabled: permissions?.scopes.includes("user:view"),
-  });
-
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    trpc.admin.listUsers.useInfiniteQuery(
-      {
-        limit: 20,
-        search: search || undefined,
-        role: roleFilter,
-        banned: bannedFilter,
+  const { data: permissions } = useQuery(
+    orpc.admin.getMyPermissions.queryOptions({ input: undefined, ...{} }),
+  );
+  const { data: stats } = useQuery(
+    orpc.admin.getUserStats.queryOptions({
+      input: undefined,
+      ...{
+        enabled: permissions?.scopes.includes("user:view"),
       },
-      {
+    }),
+  );
+
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery(
+    orpc.admin.listUsers.infiniteOptions({
+      input: (cursor: string | undefined) => ({
+        ...{
+          limit: 20,
+          search: search || undefined,
+          role: roleFilter,
+          banned: bannedFilter,
+        },
+        cursor,
+      }),
+      initialPageParam: undefined as string | undefined,
+      ...{
         getNextPageParam: (lastPage) => lastPage.nextCursor,
         enabled: permissions?.scopes.includes("user:view"),
-      }
-    );
-
-  const updateRoleMutation = trpc.admin.updateUserRole.useMutation({
-    onSuccess: () => {
-      toast.success("用户角色已更新");
-      utils.admin.listUsers.invalidate();
-      utils.admin.getUserStats.invalidate();
-      setSelectedUser(null);
-    },
-    onError: (error) => toast.error(error.message || "更新失败"),
-  });
-
-  const updateScopesMutation = trpc.admin.updateAdminScopes.useMutation({
-    onSuccess: () => {
-      toast.success("权限已更新");
-      utils.admin.listUsers.invalidate();
-      setSelectedUser(null);
-    },
-    onError: (error) => toast.error(error.message || "更新失败"),
-  });
-
-  const banUserMutation = trpc.admin.banUser.useMutation({
-    onSuccess: () => {
-      toast.success("用户已封禁");
-      utils.admin.listUsers.invalidate();
-      utils.admin.getUserStats.invalidate();
-      setBanningUser(null);
-      setBanReason("");
-    },
-    onError: (error) => toast.error(error.message || "封禁失败"),
-  });
-
-  const unbanUserMutation = trpc.admin.unbanUser.useMutation({
-    onSuccess: () => {
-      toast.success("用户已解封");
-      utils.admin.listUsers.invalidate();
-      utils.admin.getUserStats.invalidate();
-    },
-    onError: (error) => toast.error(error.message || "解封失败"),
-  });
-
-  const batchBanMutation = trpc.admin.batchBanUsers.useMutation({
-    onSuccess: (result) => {
-      toast.success(`已封禁 ${result.count} 个用户`);
-      utils.admin.listUsers.invalidate();
-      utils.admin.getUserStats.invalidate();
-      setSelectedIds(new Set());
-    },
-    onError: (error) => toast.error(error.message || "批量封禁失败"),
-  });
-
-  const batchUnbanMutation = trpc.admin.batchUnbanUsers.useMutation({
-    onSuccess: (result) => {
-      toast.success(`已解封 ${result.count} 个用户`);
-      utils.admin.listUsers.invalidate();
-      utils.admin.getUserStats.invalidate();
-      setSelectedIds(new Set());
-    },
-    onError: (error) => toast.error(error.message || "批量解封失败"),
-  });
-
-  const users = useMemo(
-    () => data?.pages.flatMap((page) => page.users) || [],
-    [data?.pages]
+      },
+    }),
   );
+
+  const updateRoleMutation = useMutation(
+    orpc.admin.updateUserRole.mutationOptions({
+      onSuccess: () => {
+        toast.success("用户角色已更新");
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listUsers.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getUserStats.key() });
+        setSelectedUser(null);
+      },
+      onError: (error) => toast.error(error.message || "更新失败"),
+    }),
+  );
+
+  const updateScopesMutation = useMutation(
+    orpc.admin.updateAdminScopes.mutationOptions({
+      onSuccess: () => {
+        toast.success("权限已更新");
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listUsers.key() });
+        setSelectedUser(null);
+      },
+      onError: (error) => toast.error(error.message || "更新失败"),
+    }),
+  );
+
+  const banUserMutation = useMutation(
+    orpc.admin.banUser.mutationOptions({
+      onSuccess: () => {
+        toast.success("用户已封禁");
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listUsers.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getUserStats.key() });
+        setBanningUser(null);
+        setBanReason("");
+      },
+      onError: (error) => toast.error(error.message || "封禁失败"),
+    }),
+  );
+
+  const unbanUserMutation = useMutation(
+    orpc.admin.unbanUser.mutationOptions({
+      onSuccess: () => {
+        toast.success("用户已解封");
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listUsers.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getUserStats.key() });
+      },
+      onError: (error) => toast.error(error.message || "解封失败"),
+    }),
+  );
+
+  const batchBanMutation = useMutation(
+    orpc.admin.batchBanUsers.mutationOptions({
+      onSuccess: (result) => {
+        toast.success(`已封禁 ${result.count} 个用户`);
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listUsers.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getUserStats.key() });
+        setSelectedIds(new Set());
+      },
+      onError: (error) => toast.error(error.message || "批量封禁失败"),
+    }),
+  );
+
+  const batchUnbanMutation = useMutation(
+    orpc.admin.batchUnbanUsers.mutationOptions({
+      onSuccess: (result) => {
+        toast.success(`已解封 ${result.count} 个用户`);
+        queryClient.invalidateQueries({ queryKey: orpc.admin.listUsers.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.admin.getUserStats.key() });
+        setSelectedIds(new Set());
+      },
+      onError: (error) => toast.error(error.message || "批量解封失败"),
+    }),
+  );
+
+  const users = useMemo(() => data?.pages.flatMap((page) => page.users) || [], [data?.pages]);
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -246,7 +264,7 @@ export default function AdminUsersPage() {
 
   const toggleScope = (scope: string) => {
     setEditingScopes((prev) =>
-      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
+      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
     );
   };
 
@@ -313,10 +331,7 @@ export default function AdminUsersPage() {
             className="pl-10"
           />
         </div>
-        <Select
-          value={roleFilter}
-          onValueChange={(v) => setRoleFilter(v as typeof roleFilter)}
-        >
+        <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as typeof roleFilter)}>
           <SelectTrigger className="w-[130px]">
             <SelectValue placeholder="角色" />
           </SelectTrigger>
@@ -345,25 +360,20 @@ export default function AdminUsersPage() {
       {/* 批量操作栏 */}
       {users.length > 0 && permissions?.scopes.includes("user:manage") && (
         <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleSelectAll}
-            className="gap-1"
-          >
+          <Button variant="ghost" size="sm" onClick={toggleSelectAll} className="gap-1">
             {selectedIds.size === selectableUsers.length && selectableUsers.length > 0 ? (
               <CheckSquare className="h-4 w-4" />
             ) : (
               <Square className="h-4 w-4" />
             )}
-            {selectedIds.size === selectableUsers.length && selectableUsers.length > 0 ? "取消全选" : "全选"}
+            {selectedIds.size === selectableUsers.length && selectableUsers.length > 0
+              ? "取消全选"
+              : "全选"}
           </Button>
 
           {selectedIds.size > 0 && (
             <>
-              <span className="text-sm text-muted-foreground">
-                已选 {selectedIds.size} 个
-              </span>
+              <span className="text-sm text-muted-foreground">已选 {selectedIds.size} 个</span>
               <div className="flex items-center gap-2 ml-auto">
                 <Button
                   variant="outline"
@@ -392,8 +402,8 @@ export default function AdminUsersPage() {
       {/* 用户列表 */}
       {isLoading ? (
         <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 w-full" />
+          {skeletonKeys(5).map((skeletonKey) => (
+            <Skeleton key={skeletonKey} className="h-24 w-full" />
           ))}
         </div>
       ) : users.length === 0 ? (
@@ -415,7 +425,7 @@ export default function AdminUsersPage() {
                 className={cn(
                   "transition-colors",
                   isSelected && "ring-2 ring-primary",
-                  user.isBanned && "opacity-60"
+                  user.isBanned && "opacity-60",
                 )}
               >
                 <CardContent className="p-4">
@@ -437,10 +447,7 @@ export default function AdminUsersPage() {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Link
-                          href={`/user/${user.id}`}
-                          className="font-medium hover:underline"
-                        >
+                        <Link to={`/user/${user.id}`} className="font-medium hover:underline">
                           {user.nickname || user.username}
                         </Link>
                         {getRoleBadge(user.role)}
@@ -525,13 +532,8 @@ export default function AdminUsersPage() {
                         </Button>
                       )}
 
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        asChild
-                      >
-                        <Link href={`/user/${user.id}`} target="_blank" title="查看主页">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                        <Link to={`/user/${user.id}`} target="_blank" title="查看主页">
                           <ExternalLink className="h-4 w-4" />
                         </Link>
                       </Button>
@@ -577,7 +579,11 @@ export default function AdminUsersPage() {
                           </div>
                           <div>
                             <div className="font-medium text-foreground mb-1">角色</div>
-                            {user.role === "OWNER" ? "站长" : user.role === "ADMIN" ? "管理员" : "普通用户"}
+                            {user.role === "OWNER"
+                              ? "站长"
+                              : user.role === "ADMIN"
+                                ? "管理员"
+                                : "普通用户"}
                           </div>
                         </div>
 
@@ -615,9 +621,7 @@ export default function AdminUsersPage() {
                 onClick={() => fetchNextPage()}
                 disabled={isFetchingNextPage}
               >
-                {isFetchingNextPage ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : null}
+                {isFetchingNextPage ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 加载更多
               </Button>
             </div>
@@ -648,19 +652,23 @@ export default function AdminUsersPage() {
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <div className="font-medium">{selectedUser.nickname || selectedUser.username}</div>
+                  <div className="font-medium">
+                    {selectedUser.nickname || selectedUser.username}
+                  </div>
                   <div className="text-sm text-muted-foreground">@{selectedUser.username}</div>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">用户角色</label>
+                <label className="text-sm font-medium" htmlFor="dashboard-users-field-1">
+                  用户角色
+                </label>
                 <Select
                   value={selectedUser.role}
                   onValueChange={(v) => handleUpdateRole(v as "USER" | "ADMIN")}
                   disabled={isUpdating}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="dashboard-users-field-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -672,7 +680,7 @@ export default function AdminUsersPage() {
 
               {selectedUser.role === "ADMIN" && (
                 <div className="space-y-3">
-                  <label className="text-sm font-medium">权限范围</label>
+                  <p className="text-sm font-medium">权限范围</p>
                   <div className="space-y-2">
                     {Object.entries(ADMIN_SCOPES).map(([scope, label]) => (
                       <div key={scope} className="flex items-center space-x-2">
@@ -713,12 +721,16 @@ export default function AdminUsersPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>封禁用户</AlertDialogTitle>
             <AlertDialogDescription>
-              确定要封禁 {banningUser?.nickname || banningUser?.username} 吗？封禁后该用户将无法登录。
+              确定要封禁 {banningUser?.nickname || banningUser?.username}{" "}
+              吗？封禁后该用户将无法登录。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-4">
-            <label className="text-sm font-medium">封禁原因（可选）</label>
+            <label className="text-sm font-medium" htmlFor="dashboard-users-field-2">
+              封禁原因（可选）
+            </label>
             <Input
+              id="dashboard-users-field-2"
               value={banReason}
               onChange={(e) => setBanReason(e.target.value)}
               placeholder="请输入封禁原因..."
@@ -746,3 +758,6 @@ export default function AdminUsersPage() {
     </div>
   );
 }
+
+export const meta = () =>
+  pageMeta("用户管理", "管理站点用户", "/dashboard/users", { noindex: true });

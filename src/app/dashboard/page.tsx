@@ -1,36 +1,37 @@
-"use client";
-
-import { useState } from "react";
-import { trpc } from "@/lib/trpc";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Users,
-  Video,
-  Tag,
+  Activity,
+  ArrowUpRight,
+  BarChart3,
   Eye,
   Heart,
-  Star,
-  TrendingUp,
-  BarChart3,
   MessageSquare,
-  ArrowUpRight,
   Sparkles,
-  Activity,
+  Star,
+  Tag,
+  TrendingUp,
+  Users,
+  Video,
 } from "lucide-react";
+
+import { useState } from "react";
 import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
 } from "recharts";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton, skeletonKeys } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { orpc } from "@/lib/orpc";
+import { pageMeta } from "@/routes/metadata";
 
 function formatNumber(num: number): string {
   if (num >= 1000000) {
@@ -43,21 +44,87 @@ function formatNumber(num: number): string {
 }
 
 const totalStatItems = [
-  { key: "userCount", label: "用户", icon: Users, color: "text-blue-500", bgColor: "bg-blue-500/10" },
-  { key: "videoCount", label: "视频", icon: Video, color: "text-green-500", bgColor: "bg-green-500/10" },
-  { key: "tagCount", label: "标签", icon: Tag, color: "text-purple-500", bgColor: "bg-purple-500/10" },
-  { key: "commentCount", label: "评论", icon: MessageSquare, color: "text-cyan-500", bgColor: "bg-cyan-500/10" },
-  { key: "totalViews", label: "播放量", icon: Eye, color: "text-orange-500", bgColor: "bg-orange-500/10" },
+  {
+    key: "userCount",
+    label: "用户",
+    icon: Users,
+    color: "text-blue-500",
+    bgColor: "bg-blue-500/10",
+  },
+  {
+    key: "videoCount",
+    label: "视频",
+    icon: Video,
+    color: "text-green-500",
+    bgColor: "bg-green-500/10",
+  },
+  {
+    key: "tagCount",
+    label: "标签",
+    icon: Tag,
+    color: "text-purple-500",
+    bgColor: "bg-purple-500/10",
+  },
+  {
+    key: "commentCount",
+    label: "评论",
+    icon: MessageSquare,
+    color: "text-cyan-500",
+    bgColor: "bg-cyan-500/10",
+  },
+  {
+    key: "totalViews",
+    label: "播放量",
+    icon: Eye,
+    color: "text-orange-500",
+    bgColor: "bg-orange-500/10",
+  },
   { key: "likeCount", label: "点赞", icon: Heart, color: "text-red-500", bgColor: "bg-red-500/10" },
-  { key: "favoriteCount", label: "收藏", icon: Star, color: "text-yellow-500", bgColor: "bg-yellow-500/10" },
+  {
+    key: "favoriteCount",
+    label: "收藏",
+    icon: Star,
+    color: "text-yellow-500",
+    bgColor: "bg-yellow-500/10",
+  },
 ] as const;
 
 const growthStatItems = [
-  { key: "newUsers", label: "新增用户", icon: Users, color: "text-blue-500", bgColor: "bg-blue-500/10" },
-  { key: "newVideos", label: "新增视频", icon: Video, color: "text-green-500", bgColor: "bg-green-500/10" },
-  { key: "newTags", label: "新增标签", icon: Tag, color: "text-purple-500", bgColor: "bg-purple-500/10" },
-  { key: "newLikes", label: "新增点赞", icon: Heart, color: "text-red-500", bgColor: "bg-red-500/10" },
-  { key: "newFavorites", label: "新增收藏", icon: Star, color: "text-yellow-500", bgColor: "bg-yellow-500/10" },
+  {
+    key: "newUsers",
+    label: "新增用户",
+    icon: Users,
+    color: "text-blue-500",
+    bgColor: "bg-blue-500/10",
+  },
+  {
+    key: "newVideos",
+    label: "新增视频",
+    icon: Video,
+    color: "text-green-500",
+    bgColor: "bg-green-500/10",
+  },
+  {
+    key: "newTags",
+    label: "新增标签",
+    icon: Tag,
+    color: "text-purple-500",
+    bgColor: "bg-purple-500/10",
+  },
+  {
+    key: "newLikes",
+    label: "新增点赞",
+    icon: Heart,
+    color: "text-red-500",
+    bgColor: "bg-red-500/10",
+  },
+  {
+    key: "newFavorites",
+    label: "新增收藏",
+    icon: Star,
+    color: "text-yellow-500",
+    bgColor: "bg-yellow-500/10",
+  },
 ] as const;
 
 function StatCard({
@@ -86,7 +153,10 @@ function StatCard({
         <div className="flex items-center gap-2">
           <span className="text-xl font-bold">{formatNumber(value)}</span>
           {trend !== undefined && trend > 0 && (
-            <Badge variant="secondary" className="text-green-600 bg-green-100 dark:bg-green-900/30 text-xs px-1.5 py-0">
+            <Badge
+              variant="secondary"
+              className="text-green-600 bg-green-100 dark:bg-green-900/30 text-xs px-1.5 py-0"
+            >
               <ArrowUpRight className="h-3 w-3" />
               {trend}%
             </Badge>
@@ -114,9 +184,17 @@ function StatCardSkeleton() {
 }
 
 // 自定义 Tooltip 样式
-const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; name: string; color: string }>; label?: string }) => {
+const CustomTooltip = ({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; name: string; color: string }>;
+  label?: string;
+}) => {
   if (!active || !payload || !label) return null;
-  
+
   // 解析日期
   let dateStr = label;
   if (typeof label === "string") {
@@ -125,13 +203,13 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
       dateStr = `${parseInt(parts[1])}月${parseInt(parts[2])}日`;
     }
   }
-  
+
   return (
     <div className="bg-popover border rounded-lg shadow-lg p-3 min-w-[120px]">
       <div className="text-xs text-muted-foreground mb-2">{dateStr}</div>
       <div className="space-y-1">
-        {payload.map((item, index) => (
-          <div key={index} className="flex items-center justify-between gap-4">
+        {payload.map((item) => (
+          <div key={item.name} className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
               <span className="text-xs">{item.name}</span>
@@ -148,14 +226,17 @@ export default function DashboardPage() {
   const [trendDays, setTrendDays] = useState(30);
   const [chartType, setChartType] = useState<"area" | "bar">("area");
 
-  const { data: totalStats, isLoading: totalLoading } =
-    trpc.admin.getPublicStats.useQuery();
+  const { data: totalStats, isLoading: totalLoading } = useQuery(
+    orpc.admin.getPublicStats.queryOptions({ input: undefined, ...{} }),
+  );
 
-  const { data: growthStats, isLoading: growthLoading } =
-    trpc.admin.getGrowthStats.useQuery({ days: 30 });
+  const { data: growthStats, isLoading: growthLoading } = useQuery(
+    orpc.admin.getGrowthStats.queryOptions({ input: { days: 30 }, ...{} }),
+  );
 
-  const { data: trendData, isLoading: trendLoading } =
-    trpc.admin.getGrowthTrend.useQuery({ days: trendDays });
+  const { data: trendData, isLoading: trendLoading } = useQuery(
+    orpc.admin.getGrowthTrend.queryOptions({ input: { days: trendDays }, ...{} }),
+  );
 
   return (
     <div className="space-y-6">
@@ -183,7 +264,7 @@ export default function DashboardPage() {
           <CardContent className="pt-0">
             <div className="grid grid-cols-2 gap-2">
               {totalLoading
-                ? Array(7).fill(0).map((_, i) => <StatCardSkeleton key={i} />)
+                ? skeletonKeys(7).map((skeletonKey) => <StatCardSkeleton key={skeletonKey} />)
                 : totalStats &&
                   totalStatItems.map((item) => (
                     <StatCard
@@ -210,7 +291,7 @@ export default function DashboardPage() {
           <CardContent className="pt-0">
             <div className="grid grid-cols-2 gap-2">
               {growthLoading
-                ? Array(5).fill(0).map((_, i) => <StatCardSkeleton key={i} />)
+                ? skeletonKeys(5).map((skeletonKey) => <StatCardSkeleton key={skeletonKey} />)
                 : growthStats &&
                   growthStatItems.map((item) => (
                     <StatCard
@@ -239,16 +320,26 @@ export default function DashboardPage() {
               {/* 图表类型切换 */}
               <Tabs value={chartType} onValueChange={(v) => setChartType(v as "area" | "bar")}>
                 <TabsList className="h-8">
-                  <TabsTrigger value="area" className="text-xs px-2 h-6">面积图</TabsTrigger>
-                  <TabsTrigger value="bar" className="text-xs px-2 h-6">柱状图</TabsTrigger>
+                  <TabsTrigger value="area" className="text-xs px-2 h-6">
+                    面积图
+                  </TabsTrigger>
+                  <TabsTrigger value="bar" className="text-xs px-2 h-6">
+                    柱状图
+                  </TabsTrigger>
                 </TabsList>
               </Tabs>
               {/* 时间范围切换 */}
               <Tabs value={trendDays.toString()} onValueChange={(v) => setTrendDays(parseInt(v))}>
                 <TabsList className="h-8">
-                  <TabsTrigger value="7" className="text-xs px-2 h-6">7天</TabsTrigger>
-                  <TabsTrigger value="30" className="text-xs px-2 h-6">30天</TabsTrigger>
-                  <TabsTrigger value="90" className="text-xs px-2 h-6">90天</TabsTrigger>
+                  <TabsTrigger value="7" className="text-xs px-2 h-6">
+                    7天
+                  </TabsTrigger>
+                  <TabsTrigger value="30" className="text-xs px-2 h-6">
+                    30天
+                  </TabsTrigger>
+                  <TabsTrigger value="90" className="text-xs px-2 h-6">
+                    90天
+                  </TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>
@@ -271,7 +362,11 @@ export default function DashboardPage() {
                       <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="hsl(var(--border))"
+                    vertical={false}
+                  />
                   <XAxis
                     dataKey="date"
                     tickFormatter={(value: string) => {
@@ -316,7 +411,11 @@ export default function DashboardPage() {
                 </AreaChart>
               ) : (
                 <BarChart data={trendData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="hsl(var(--border))"
+                    vertical={false}
+                  />
                   <XAxis
                     dataKey="date"
                     tickFormatter={(value: string) => {
@@ -360,7 +459,7 @@ export default function DashboardPage() {
               暂无数据
             </div>
           )}
-          
+
           {/* 图例 */}
           {trendData && trendData.length > 0 && (
             <div className="flex items-center justify-center gap-6 mt-4 pt-4 border-t">
@@ -379,3 +478,5 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+export const meta = () => pageMeta("管理后台", "站点管理概览", "/dashboard", { noindex: true });
